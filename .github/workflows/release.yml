@@ -1,0 +1,84 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Published stable version (vX.Y.Z)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Verify and attach Windows release
+    if: github.event_name == 'workflow_dispatch' || (github.event.release.draft == false && github.event.release.prerelease == false)
+    runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Find the verified main build for the tagged commit
+        id: build
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'A stable vX.Y.Z tag is required.' }
+          $release = gh release view $env:RELEASE_TAG --json tagName,isDraft,isPrerelease | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $release.tagName -cne $env:RELEASE_TAG -or $release.isDraft -or $release.isPrerelease) { throw 'A published stable release is required.' }
+          $version = python -c "import tomllib;print(tomllib.load(open('Cargo.toml','rb'))['workspace']['package']['version'])"
+          if ("v$version" -ne $env:RELEASE_TAG) { throw 'Version mismatch.' }
+          $commit = git rev-parse HEAD
+          git merge-base --is-ancestor HEAD origin/main
+          if ($LASTEXITCODE -ne 0) { throw 'Tagged commit is outside main.' }
+          $runs = gh run list --workflow ci.yml --branch main --event push --commit $commit --status success --limit 10 --json databaseId,headSha | ConvertFrom-Json
+          $run = $runs | Where-Object headSha -eq $commit | Select-Object -First 1
+          if (-not $run) { throw 'The tagged commit needs a successful Windows and Linux CI run on main.' }
+          "run_id=$($run.databaseId)" >> $env:GITHUB_OUTPUT
+      - name: Download matching Windows package
+        shell: pwsh
+        run: gh run download ${{ steps.build.outputs.run_id }} --name windows-package --dir dist
+      - name: Retest release files on a clean runner
+        shell: pwsh
+        run: |
+          $v=$env:RELEASE_TAG.Substring(1)
+          python scripts/verify-package.py dist --expected-version $v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Expand-Archive -LiteralPath "dist/shipforge-$v-windows-x64.zip" -DestinationPath dist
+          python scripts/verify-installer.py dist --expected-version $v
+      - name: Publish verified binaries and checksums
+        shell: pwsh
+        run: |
+          $base = "dist/shipforge-$($env:RELEASE_TAG.Substring(1))-windows-x64"
+          $release = gh release view $env:RELEASE_TAG --json assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read published assets.' }
+          $downloadDir = Join-Path $env:RUNNER_TEMP "published-$env:RELEASE_TAG"
+          New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+          foreach ($file in @("$base.zip", "$base.zip.sha256", "$base-setup.exe", "$base-setup.exe.sha256")) {
+            $name = Split-Path -Leaf $file
+            if ($release.assets.name -ccontains $name) {
+              gh release download $env:RELEASE_TAG --pattern $name --dir $downloadDir --clobber
+              if ($LASTEXITCODE -ne 0) { throw "Could not verify existing asset $name." }
+              $existing = Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $downloadDir $name)
+              if ($existing.Hash -ne (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash) { throw "Published bytes differ for $name." }
+            } else {
+              gh release upload $env:RELEASE_TAG $file
+              if ($LASTEXITCODE -ne 0) { throw "Could not attach $name." }
+            }
+          }

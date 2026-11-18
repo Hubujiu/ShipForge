@@ -1,0 +1,747 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ShipForge workspace request",
+  "type": "object",
+  "required": [
+    "op"
+  ],
+  "properties": {
+    "op": {
+      "type": "string",
+      "enum": [
+        "schema",
+        "whoami",
+        "list",
+        "get",
+        "search",
+        "space.list",
+        "organization.list",
+        "events",
+        "view.run",
+        "dashboard",
+        "iteration.preview",
+        "iteration.timeline",
+        "task.relations",
+        "project.progress",
+        "document.history",
+        "export",
+        "import.preview",
+        "provider.preview",
+        "attachment.download",
+        "create",
+        "update",
+        "delete",
+        "iteration.close",
+        "triage",
+        "follow",
+        "notification.act",
+        "document.restore",
+        "artifact.save",
+        "import",
+        "provider.ingest",
+        "attachment.upload",
+        "agent.resolve",
+        "catalog.list",
+        "catalog.install",
+        "tool.authorize",
+        "machine.register",
+        "machine.heartbeat",
+        "machine.disable",
+        "machine.enable",
+        "run.enqueue",
+        "run.claim",
+        "run.heartbeat",
+        "run.report",
+        "run.cancel",
+        "run.retry",
+        "run.reply",
+        "run.tool",
+        "automation.fire",
+        "automation.tick",
+        "connector.ingest",
+        "connector.export",
+        "access.whoami",
+        "access.issue",
+        "access.list",
+        "access.revoke",
+        "sync.status",
+        "sync.pending",
+        "sync.enqueue",
+        "sync.flush",
+        "sync.resolve"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "space",
+        "organization",
+        "member",
+        "task",
+        "task_type",
+        "status",
+        "field",
+        "tag",
+        "relation",
+        "relation_type",
+        "view",
+        "iteration",
+        "project",
+        "comment",
+        "notification",
+        "chat",
+        "message",
+        "document",
+        "artifact",
+        "agent",
+        "crew",
+        "skill",
+        "machine",
+        "run",
+        "automation",
+        "connector",
+        "tool",
+        "settings",
+        "invitation",
+        "note"
+      ]
+    },
+    "space": {
+      "type": "string",
+      "default": "default"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fields": {
+      "type": "object"
+    },
+    "expected_rev": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "filter": {
+      "type": "object"
+    },
+    "query": {
+      "type": "string"
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5000
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "as_of": {
+      "type": "string",
+      "format": "date"
+    },
+    "after": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "target": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "provider": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "filename": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "media_type": {
+      "type": "string"
+    },
+    "attachment_id": {
+      "type": "string"
+    },
+    "content_base64": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "maxLength": 5592408
+    },
+    "machine_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "tool_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "call_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "handler_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "chat_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "external_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "source_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "lease": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "machine_key": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 256,
+      "writeOnly": true
+    },
+    "handler_kind": {
+      "enum": [
+        "agent",
+        "crew"
+      ]
+    },
+    "capacity": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64
+    },
+    "runtimes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 128
+    },
+    "scope": {
+      "enum": [
+        "read",
+        "write",
+        "worker",
+        "hook"
+      ]
+    },
+    "actor": {
+      "type": "string"
+    },
+    "allow_cached": {
+      "type": "boolean"
+    },
+    "queue_if_offline": {
+      "type": "boolean"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "list",
+              "get",
+              "create",
+              "update",
+              "delete"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "kind"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "get",
+              "update",
+              "delete",
+              "view.run",
+              "iteration.preview",
+              "iteration.close",
+              "triage",
+              "follow",
+              "document.history",
+              "document.restore",
+              "artifact.save",
+              "notification.act",
+              "task.relations",
+              "project.progress"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "create"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "title"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "provider.preview",
+              "provider.ingest"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "provider",
+          "payload"
+        ],
+        "properties": {
+          "provider": {
+            "enum": [
+              "gitlab",
+              "jira",
+              "feishu",
+              "lark",
+              "slack",
+              "telegram",
+              "linear",
+              "asana",
+              "teams",
+              "discord",
+              "wecom",
+              "dingtalk"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "attachment.upload"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "kind",
+          "filename",
+          "content_base64"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "document",
+              "artifact",
+              "message",
+              "task"
+            ]
+          }
+        },
+        "if": {
+          "properties": {
+            "kind": {
+              "enum": [
+                "artifact",
+                "message",
+                "task"
+              ]
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "id"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "attachment.download"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "kind",
+          "id",
+          "attachment_id"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "document",
+              "artifact",
+              "message",
+              "task"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "agent.resolve",
+              "catalog.install",
+              "machine.enable",
+              "machine.disable",
+              "run.cancel",
+              "run.retry"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "tool.authorize"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "tool_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "machine.register"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "machine_key",
+          "title"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "machine.heartbeat",
+              "run.claim"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "machine_key"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "run.heartbeat",
+              "run.report",
+              "run.tool"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "machine_key",
+          "id",
+          "lease"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "run.tool"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "tool_id",
+          "call_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "run.report"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "status"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "run.reply"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "text"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "run.enqueue"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "handler_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "automation.fire"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "event_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "connector.ingest"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "external_id",
+          "event_id",
+          "source_version",
+          "title"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "connector.export"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "task_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "run.report"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "status": {
+            "enum": [
+              "done",
+              "failed",
+              "cancelled",
+              "waiting"
+            ]
+          },
+          "artifacts": {
+            "type": "array",
+            "maxItems": 100
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "access.issue"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "actor",
+          "scope"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "access.revoke"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "sync.enqueue"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "request"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "sync.resolve"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    }
+  ]
+}

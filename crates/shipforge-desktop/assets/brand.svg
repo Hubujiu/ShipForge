@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64" fill="none">
+  <title>ShipForge</title>
+  <desc>Two geometric sails above a ship hull on an neutral rounded square.</desc>
+  <rect width="64" height="64" rx="16" fill="#303030"/>
+  <path d="M30 12 13 36h17V12Z" fill="#FFFFFF"/>
+  <path d="m35 20 15 16H35V20Z" fill="#CBCBCB"/>
+  <path d="M12 41h40L42 52H22L12 41Z" fill="#FFFFFF"/>
+</svg>

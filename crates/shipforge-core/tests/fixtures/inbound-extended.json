@@ -1,0 +1,168 @@
+[
+  {
+    "provider": "linear",
+    "delivery": "delivery-linear-1",
+    "expected": [
+      "linear:baca91a3-08db-4f10-a3ac-092b3c042a65",
+      "Check item history",
+      "Review markdown **history**.",
+      false
+    ],
+    "payload": {
+      "type": "Issue",
+      "action": "create",
+      "organizationId": "aa01",
+      "webhookTimestamp": 1767963600000,
+      "data": {
+        "id": "baca91a3-08db-4f10-a3ac-092b3c042a65",
+        "teamId": "team-example",
+        "title": "Check item history",
+        "description": "Review markdown **history**.",
+        "state": {
+          "type": "unstarted"
+        },
+        "updatedAt": "2026-01-09T13:00:00.000Z"
+      }
+    }
+  },
+  {
+    "provider": "asana",
+    "delivery": "delivery-asana-1",
+    "expected": [
+      "asana:120033",
+      "Adjust task order",
+      "Pin the urgent items.",
+      false
+    ],
+    "payload": {
+      "events": [
+        {
+          "action": "changed",
+          "created_at": "2026-01-09T13:00:00.000Z",
+          "resource": {
+            "resource_type": "task",
+            "gid": "120033"
+          },
+          "change": {
+            "field": "name",
+            "action": "changed"
+          }
+        }
+      ],
+      "task": {
+        "data": {
+          "resource_type": "task",
+          "gid": "120033",
+          "name": "Adjust task order",
+          "notes": "Pin the urgent items.",
+          "completed": false,
+          "modified_at": "2026-01-09T13:00:00.000Z",
+          "memberships": [
+            {
+              "project": {
+                "gid": "project-3"
+              }
+            }
+          ],
+          "workspace": {
+            "gid": "workspace-7"
+          }
+        }
+      }
+    }
+  },
+  {
+    "provider": "teams",
+    "expected": [
+      "teams:19%3Ademo%40thread.tacv2:1767963600000",
+      "Review the handoff",
+      "Review the handoff\nSee the checklist.",
+      false
+    ],
+    "payload": {
+      "type": "message",
+      "channelId": "msteams",
+      "id": "1767963600000",
+      "timestamp": "2026-01-09T13:00:00.000Z",
+      "from": {
+        "id": "29:example-person",
+        "aadObjectId": "9ca55733-cd50-41b8-bc5a-1e290e162826"
+      },
+      "recipient": {
+        "id": "28:example-bot"
+      },
+      "conversation": {
+        "id": "19:demo@thread.tacv2",
+        "conversationType": "channel"
+      },
+      "channelData": {
+        "tenant": {
+          "id": "example-tenant"
+        }
+      },
+      "text": "Review the handoff\nSee the checklist."
+    }
+  },
+  {
+    "provider": "discord",
+    "expected": [
+      "discord:900111:900222",
+      "Try the setup wizard",
+      "Try the setup wizard",
+      false
+    ],
+    "payload": {
+      "op": 0,
+      "t": "MESSAGE_CREATE",
+      "s": 135,
+      "d": {
+        "id": "900222",
+        "channel_id": "900111",
+        "guild_id": "900000",
+        "type": 0,
+        "author": {
+          "id": "900333",
+          "bot": false
+        },
+        "content": "Try the setup wizard",
+        "timestamp": "2026-01-09T13:00:00.000Z"
+      }
+    }
+  },
+  {
+    "provider": "wecom",
+    "expected": [
+      "wecom:wwdemo:100001:8498736571278",
+      "核对发布附件",
+      "核对发布附件",
+      false
+    ],
+    "payload": {
+      "ToUserName": "wwdemo",
+      "FromUserName": "demo-user",
+      "CreateTime": "1767963600",
+      "MsgType": "text",
+      "Content": "核对发布附件",
+      "MsgId": "8498736571278",
+      "AgentID": 100001
+    }
+  },
+  {
+    "provider": "dingtalk",
+    "expected": [
+      "dingtalk:cidabc%3D%3D:msg%2Fd%2B1%3D",
+      "整理版本变更",
+      "整理版本变更",
+      false
+    ],
+    "payload": {
+      "specVersion": "1.0",
+      "type": "CALLBACK",
+      "headers": {
+        "topic": "/v1.0/im/bot/messages/get",
+        "messageId": "request-1"
+      },
+      "data": "{\"msgtype\":\"text\",\"msgId\":\"msg/d+1=\",\"conversationId\":\"cidabc==\",\"chatbotCorpId\":\"dingdemo\",\"conversationType\":\"2\",\"senderId\":\"sender-3\",\"chatbotUserId\":\"bot-8\",\"createAt\":1767963600000,\"text\":{\"content\":\"整理版本变更\"}}"
+    }
+  }
+]

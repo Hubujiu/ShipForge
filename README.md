@@ -1,14 +1,28 @@
 # ShipForge
 
-ShipForge 是以 Rust 和 GPUI 设计的开源团队协作工作台。团队在一个空间里管理任务、迭代和文档，把工作指派给同事、Agent 或小队，并在原任务上追踪执行结果。
+ShipForge 是用 Rust 和 GPUI 编写的开源协作工作台。你可以在 Windows 本机管理任务、看板、迭代、专项、讨论与文档，也可以连接自托管服务，让团队成员和执行机器在同一空间工作。机器调用你配置的外部工具，将进度、回复和产物关联到任务。
 
-当前交付为第一版产品与界面基线。桌面端、CLI、协作服务与机器执行端列入开发路线，首个可运行里程碑是本机任务看板与详情。
+**[下载 Windows x64 安装程序](https://github.com/Hubujiu/ShipForge/releases/latest) · [Windows 使用指南](docs/windows.md) · [CLI 手册](docs/cli.md)**
 
-| 文档 | 可以查到什么 |
+打开 ShipForge 即可创建第一条本地任务。想先看看有数据的看板，可在程序目录运行 `shipforge-desktop.exe --demo`。团队协作、外部工具和第三方同步按需配置。
+
+![Windows 上的 ShipForge 任务看板](docs/images/windows-board.jpg)
+
+| 文档 | 内容 |
 | --- | --- |
-| [功能清单与验收条件](docs/features.md) | 逐项对照官网、帮助中心和 Windows 实机，标出已开放、需配置、仅有文档和预告的能力。 |
-| [界面索引](docs/interfaces.md) | 36 个页面、面板和表单状态，导航路径以及可直接查看的官方截图。 |
-| [客户端与 REA 分析](docs/client-analysis.md) | 0.4.538 安装包内容、可读模块的恢复结果、桌面桥接证据和工具覆盖边界。 |
-| [Rust + GPUI 架构与实施顺序](docs/architecture.md) | core、原生桌面、CLI、团队服务和执行机器的职责、协议、数据边界及五个可验收里程碑。 |
+| [Windows 功能对照](docs/windows-coverage.md) | 从参考能力定位到 Windows 实际入口，列明本机、团队及第三方接入范围。 |
+| [Windows 实机截图与验收](docs/design-qa.md) | 查看原生看板、任务详情和定时规则编辑器，以及附件、重开和文档版本的测试结果。 |
+| [功能清单与验收条件](docs/features.md) | 对照 HiFox 官网、帮助中心和 Windows 实机梳理的 26 项能力。 |
+| [界面索引](docs/interfaces.md) | 36 个实机页面、面板和表单状态，含导航路径与可公开查看的官方参考。 |
+| [客户端与 REA 分析](docs/client-analysis.md) | HiFox 0.4.538 安装包、可读模块恢复结果和桌面桥接职责。 |
+| [Rust 与 GPUI 架构](docs/architecture.md) | 单机、团队服务、CLI 和执行机器的职责，以及设计目标与当前实现的区别。 |
+| [命令协议](docs/protocol.schema.json) | 桌面、服务、CLI 共享的操作名称和 JSON 请求结构。 |
 
-产品参考为 [HiFox 官网](https://hifox.com/) 和[官方帮助](https://help.hifox.com/docs/welcome)。ShipForge 采用独立实现。项目内容使用 [MIT 许可证](LICENSE)。
+## 从源码运行
+
+```powershell
+cargo build --release --workspace --locked
+.\target\release\shipforge-desktop.exe
+```
+
+产品参考来自 HiFox 官网和官方帮助。ShipForge 源码按 MIT 许可公开，应用图标授权见仓库随附文件。[HiFox 官网](https://hifox.com/) · [官方帮助](https://help.hifox.com/docs/welcome) · [MIT 许可证](LICENSE)
