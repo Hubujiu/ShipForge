@@ -16,7 +16,7 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
                     actor: c.actor,
                     space: &space.id,
                 };
-                if dest.role().is_ok() {
+                if dest.metadata_role().is_ok() {
                     spaces.push(space);
                 }
             }
@@ -46,6 +46,9 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
                 return organizations(c);
             }
             let mut records = matching(c, kind, q)?;
+            if kind == "task" {
+                crate::im::decorate(c, &mut records)?;
+            }
             if matches!(
                 kind,
                 "status" | "task_type" | "relation_type" | "field" | "tag"
@@ -267,6 +270,20 @@ fn satisfies(c: &Context<'_>, r: &Record, filter: Option<&Value>) -> Result<bool
         let key = key.strip_suffix("_not").unwrap_or(key);
         let value = match key {
             "status_category" if r.kind == "task" => json!(c.status_category(r)?),
+            "assignee" if r.kind == "task" => {
+                let mut handlers = r.fields["assignees"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                if let Some(id) = r.fields["executor"]["id"].as_str() {
+                    handlers.push(json!(id));
+                }
+                if handlers.is_empty() {
+                    Value::Null
+                } else {
+                    Value::Array(handlers)
+                }
+            }
             "title" => json!(r.title),
             "id" => json!(r.id),
             "kind" => json!(r.kind),
@@ -365,12 +382,25 @@ fn iteration_timeline(c: &Context<'_>, q: &Value) -> Result<Value> {
         None => chrono::Utc::now().date_naive(),
     };
     let today = today.to_string();
-    let mut counts: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    #[derive(Default)]
+    struct Scope {
+        total: usize,
+        completed: usize,
+        estimate: f64,
+        completed_estimate: f64,
+    }
+    let estimates_enabled = c.get("space", c.space)?.fields["estimates_enabled"] == true;
+    let mut counts: BTreeMap<String, Scope> = BTreeMap::new();
     for task in visible_records(c, "task")? {
         if let Some(iteration) = task.fields["iteration"].as_str() {
             let entry = counts.entry(iteration.to_owned()).or_default();
-            entry.0 += 1;
-            entry.1 += usize::from(c.status_category(&task)? == "done");
+            let estimate = task.fields["estimate"].as_f64().unwrap_or_default();
+            entry.total += 1;
+            entry.estimate += estimate;
+            if c.status_category(&task)? == "done" {
+                entry.completed += 1;
+                entry.completed_estimate += estimate;
+            }
         }
     }
     let mut rows = visible_records(c, "iteration")?;
@@ -390,9 +420,13 @@ fn iteration_timeline(c: &Context<'_>, q: &Value) -> Result<Value> {
         } else {
             "unscheduled"
         };
-        let (total, completed) = counts.remove(&it.id).unwrap_or_default();
-        it.fields["planning"] = json!({"phase":phase,"start":start,"end":end,"total":total,
-            "completed":completed,"capacity":it.fields["capacity"].as_u64()});
+        let scope = counts.remove(&it.id).unwrap_or_default();
+        it.fields["planning"] = json!({"phase":phase,"start":start,"end":end,"total":scope.total,
+            "completed":scope.completed,"capacity":it.fields["capacity"].as_u64()});
+        if estimates_enabled {
+            it.fields["planning"]["estimate"] = json!(scope.estimate);
+            it.fields["planning"]["completed_estimate"] = json!(scope.completed_estimate);
+        }
     }
     rows.sort_by(|a, b| {
         b.fields["planning"]["start"]

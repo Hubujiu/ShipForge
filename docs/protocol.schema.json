@@ -1,282 +1,5 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "ShipForge workspace request",
-  "type": "object",
-  "required": [
-    "op"
-  ],
-  "properties": {
-    "op": {
-      "type": "string",
-      "enum": [
-        "schema",
-        "whoami",
-        "list",
-        "get",
-        "search",
-        "space.list",
-        "organization.list",
-        "events",
-        "view.run",
-        "dashboard",
-        "iteration.preview",
-        "iteration.timeline",
-        "task.relations",
-        "project.progress",
-        "document.history",
-        "export",
-        "import.preview",
-        "provider.preview",
-        "attachment.download",
-        "create",
-        "update",
-        "delete",
-        "iteration.close",
-        "triage",
-        "follow",
-        "notification.act",
-        "document.restore",
-        "artifact.save",
-        "import",
-        "provider.ingest",
-        "attachment.upload",
-        "agent.resolve",
-        "catalog.list",
-        "catalog.install",
-        "tool.authorize",
-        "machine.register",
-        "machine.heartbeat",
-        "machine.disable",
-        "machine.enable",
-        "run.enqueue",
-        "run.claim",
-        "run.heartbeat",
-        "run.report",
-        "run.cancel",
-        "run.retry",
-        "run.reply",
-        "run.tool",
-        "automation.fire",
-        "automation.tick",
-        "connector.ingest",
-        "connector.export",
-        "access.whoami",
-        "access.issue",
-        "access.list",
-        "access.revoke",
-        "sync.status",
-        "sync.pending",
-        "sync.enqueue",
-        "sync.flush",
-        "sync.resolve"
-      ]
-    },
-    "kind": {
-      "type": "string",
-      "enum": [
-        "space",
-        "organization",
-        "member",
-        "task",
-        "task_type",
-        "status",
-        "field",
-        "tag",
-        "relation",
-        "relation_type",
-        "view",
-        "iteration",
-        "project",
-        "comment",
-        "notification",
-        "chat",
-        "message",
-        "document",
-        "artifact",
-        "agent",
-        "crew",
-        "skill",
-        "machine",
-        "run",
-        "automation",
-        "connector",
-        "tool",
-        "settings",
-        "invitation",
-        "note"
-      ]
-    },
-    "space": {
-      "type": "string",
-      "default": "default"
-    },
-    "id": {
-      "type": "string",
-      "minLength": 1
-    },
-    "title": {
-      "type": "string",
-      "minLength": 1
-    },
-    "fields": {
-      "type": "object"
-    },
-    "expected_rev": {
-      "type": "integer",
-      "minimum": 1
-    },
-    "request_id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 160
-    },
-    "filter": {
-      "type": "object"
-    },
-    "query": {
-      "type": "string"
-    },
-    "limit": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 5000
-    },
-    "offset": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "as_of": {
-      "type": "string",
-      "format": "date"
-    },
-    "after": {
-      "type": "integer",
-      "minimum": 0
-    },
-    "target": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "version": {
-      "type": "integer",
-      "minimum": 1
-    },
-    "provider": {
-      "type": "string"
-    },
-    "payload": {
-      "type": "object"
-    },
-    "event_id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 256
-    },
-    "filename": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 255
-    },
-    "media_type": {
-      "type": "string"
-    },
-    "attachment_id": {
-      "type": "string"
-    },
-    "content_base64": {
-      "type": "string",
-      "contentEncoding": "base64",
-      "maxLength": 5592408
-    },
-    "machine_id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 4096
-    },
-    "tool_id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 4096
-    },
-    "call_id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 4096
-    },
-    "handler_id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 4096
-    },
-    "task_id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 4096
-    },
-    "chat_id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 4096
-    },
-    "external_id": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 4096
-    },
-    "source_version": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 4096
-    },
-    "lease": {
-      "type": "string",
-      "minLength": 1,
-      "maxLength": 4096
-    },
-    "machine_key": {
-      "type": "string",
-      "minLength": 32,
-      "maxLength": 256,
-      "writeOnly": true
-    },
-    "handler_kind": {
-      "enum": [
-        "agent",
-        "crew"
-      ]
-    },
-    "capacity": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 64
-    },
-    "runtimes": {
-      "type": "array",
-      "items": {
-        "type": "string"
-      },
-      "maxItems": 128
-    },
-    "scope": {
-      "enum": [
-        "read",
-        "write",
-        "worker",
-        "hook"
-      ]
-    },
-    "actor": {
-      "type": "string"
-    },
-    "allow_cached": {
-      "type": "boolean"
-    },
-    "queue_if_offline": {
-      "type": "boolean"
-    }
-  },
   "allOf": [
     {
       "if": {
@@ -353,14 +76,10 @@
         }
       },
       "then": {
-        "required": [
-          "id",
-          "provider",
-          "payload"
-        ],
         "properties": {
           "provider": {
             "enum": [
+              "github",
               "gitlab",
               "jira",
               "feishu",
@@ -375,7 +94,12 @@
               "dingtalk"
             ]
           }
-        }
+        },
+        "required": [
+          "id",
+          "provider",
+          "payload"
+        ]
       }
     },
     {
@@ -387,21 +111,6 @@
         }
       },
       "then": {
-        "required": [
-          "kind",
-          "filename",
-          "content_base64"
-        ],
-        "properties": {
-          "kind": {
-            "enum": [
-              "document",
-              "artifact",
-              "message",
-              "task"
-            ]
-          }
-        },
         "if": {
           "properties": {
             "kind": {
@@ -413,6 +122,21 @@
             }
           }
         },
+        "properties": {
+          "kind": {
+            "enum": [
+              "document",
+              "artifact",
+              "message",
+              "task"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "filename",
+          "content_base64"
+        ],
         "then": {
           "required": [
             "id"
@@ -429,11 +153,6 @@
         }
       },
       "then": {
-        "required": [
-          "kind",
-          "id",
-          "attachment_id"
-        ],
         "properties": {
           "kind": {
             "enum": [
@@ -442,6 +161,185 @@
               "message",
               "task"
             ]
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "attachment_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "onboarding.setup"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "organization_name": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "organization_slug": {
+            "maxLength": 63,
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "organization_name",
+          "organization_slug",
+          "work_type",
+          "task_types"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "onboarding.display"
+          }
+        }
+      },
+      "then": {
+        "anyOf": [
+          {
+            "required": [
+              "sidebar_visible"
+            ]
+          },
+          {
+            "required": [
+              "sidebar_expanded"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "agent"
+          },
+          "op": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "properties": {
+              "working_hours": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "not": {
+                      "required": [
+                        "week"
+                      ]
+                    },
+                    "properties": {
+                      "end": {
+                        "maximum": 23,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "start": {
+                        "maximum": 23,
+                        "minimum": 0,
+                        "type": "integer"
+                      },
+                      "utc_offset_minutes": {
+                        "maximum": 840,
+                        "minimum": -840,
+                        "type": "integer"
+                      }
+                    },
+                    "required": [
+                      "start",
+                      "end"
+                    ],
+                    "type": "object"
+                  },
+                  {
+                    "not": {
+                      "anyOf": [
+                        {
+                          "required": [
+                            "start"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "end"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "utc_offset_minutes"
+                          ]
+                        }
+                      ]
+                    },
+                    "properties": {
+                      "timezone": {
+                        "description": "IANA time zone",
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "week": {
+                        "additionalProperties": {
+                          "items": {
+                            "properties": {
+                              "end": {
+                                "pattern": "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$",
+                                "type": "string"
+                              },
+                              "start": {
+                                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+                                "type": "string"
+                              }
+                            },
+                            "required": [
+                              "start",
+                              "end"
+                            ],
+                            "type": "object"
+                          },
+                          "maxItems": 2,
+                          "type": "array"
+                        },
+                        "propertyNames": {
+                          "pattern": "^[1-7]$"
+                        },
+                        "type": "object"
+                      }
+                    },
+                    "required": [
+                      "timezone",
+                      "week"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              }
+            }
           }
         }
       }
@@ -671,6 +569,10 @@
       },
       "then": {
         "properties": {
+          "artifacts": {
+            "maxItems": 100,
+            "type": "array"
+          },
           "status": {
             "enum": [
               "done",
@@ -678,12 +580,623 @@
               "cancelled",
               "waiting"
             ]
-          },
-          "artifacts": {
-            "type": "array",
-            "maxItems": 100
           }
         }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "invitation.issue"
+          }
+        }
+      },
+      "then": {
+        "else": {
+          "properties": {
+            "role": {
+              "enum": [
+                "member",
+                "guest"
+              ]
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "channel": {
+              "const": "email"
+            }
+          }
+        },
+        "properties": {
+          "channel": {
+            "enum": [
+              "email",
+              "link"
+            ]
+          },
+          "email": {
+            "format": "email",
+            "type": "string"
+          },
+          "expires_at": {
+            "type": "integer"
+          },
+          "role": {
+            "enum": [
+              "member",
+              "guest",
+              "admin"
+            ]
+          },
+          "spaces": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "channel",
+          "role"
+        ],
+        "then": {
+          "required": [
+            "email"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "invitation.copy",
+              "invitation.revoke"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "invitation.accept"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "link": {
+            "pattern": "^shipforge://invite/",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "chat.info",
+              "chat.manage",
+              "chat.preferences"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "chat.manage"
+          }
+        }
+      },
+      "then": {
+        "if": {
+          "properties": {
+            "action": {
+              "enum": [
+                "add",
+                "remove",
+                "invite",
+                "revoke",
+                "transfer"
+              ]
+            }
+          }
+        },
+        "properties": {
+          "action": {
+            "enum": [
+              "add",
+              "remove",
+              "invite",
+              "accept",
+              "decline",
+              "revoke",
+              "transfer",
+              "leave",
+              "dissolve",
+              "clear"
+            ]
+          },
+          "target_kind": {
+            "enum": [
+              "member",
+              "agent"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "then": {
+          "properties": {
+            "target": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "required": [
+            "target"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "chat.preferences"
+          }
+        }
+      },
+      "then": {
+        "anyOf": [
+          {
+            "required": [
+              "muted"
+            ]
+          },
+          {
+            "required": [
+              "ignore_all"
+            ]
+          }
+        ],
+        "properties": {
+          "ignore_all": {
+            "type": "boolean"
+          },
+          "muted": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "chat.share.create"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "message_ids": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "scope": {
+            "enum": [
+              "organization",
+              "link"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "message_ids"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "chat.share.read",
+              "chat.share.revoke"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "share": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "share"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "chat.share.revoke"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "im.bind",
+              "im.unbind"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "provider",
+          "payload",
+          "task_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "im.outbox",
+              "im.claim"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "im.threads"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "task_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "im.reply"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "task_id",
+          "thread",
+          "body",
+          "request_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "im.ack"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "delivery_id",
+          "lease",
+          "outcome"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "im.retry"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "delivery_id",
+          "decision"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "im.ack"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "enum": [
+              "sent",
+              "retry",
+              "uncertain",
+              "failed"
+            ]
+          },
+          "retry_after": {
+            "maximum": 86400,
+            "minimum": 1,
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "im.retry"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "decision": {
+            "enum": [
+              "resend",
+              "confirm"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "im.outbox"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "available_only": {
+            "type": "boolean"
+          },
+          "state": {
+            "enum": [
+              "pending",
+              "leased",
+              "uncertain",
+              "failed",
+              "sent",
+              "cancelled"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "preferences.update"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "preferences"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "task.assign"
+          }
+        }
+      },
+      "then": {
+        "anyOf": [
+          {
+            "required": [
+              "assignees"
+            ]
+          },
+          {
+            "required": [
+              "executor"
+            ]
+          }
+        ],
+        "dependentRequired": {
+          "mode": [
+            "assignees"
+          ]
+        },
+        "properties": {
+          "mode": {
+            "enum": [
+              "append",
+              "replace"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "task"
+          },
+          "op": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "properties": {
+              "assignees": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "executor": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "additionalProperties": false,
+                    "properties": {
+                      "id": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "kind": {
+                        "enum": [
+                          "agent",
+                          "crew"
+                        ]
+                      }
+                    },
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
+                    "type": "object"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "task.move"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "target"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "task.conversation",
+              "task.command"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
       }
     },
     {
@@ -743,5 +1256,455 @@
         ]
       }
     }
-  ]
+  ],
+  "properties": {
+    "actor": {
+      "type": "string"
+    },
+    "after": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "allow_cached": {
+      "type": "boolean"
+    },
+    "as_of": {
+      "format": "date",
+      "type": "string"
+    },
+    "assignees": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "attachment_id": {
+      "type": "string"
+    },
+    "call_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "capacity": {
+      "maximum": 64,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "chat_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "content_base64": {
+      "contentEncoding": "base64",
+      "maxLength": 5592408,
+      "type": "string"
+    },
+    "event_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "executor": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "kind": {
+              "enum": [
+                "agent",
+                "crew"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "id"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "expected_rev": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "external_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "fields": {
+      "type": "object"
+    },
+    "filename": {
+      "maxLength": 255,
+      "minLength": 1,
+      "type": "string"
+    },
+    "filter": {
+      "type": "object"
+    },
+    "handler_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "handler_kind": {
+      "enum": [
+        "agent",
+        "crew"
+      ]
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "space",
+        "organization",
+        "member",
+        "task",
+        "task_type",
+        "status",
+        "field",
+        "tag",
+        "relation",
+        "relation_type",
+        "view",
+        "iteration",
+        "project",
+        "comment",
+        "notification",
+        "chat",
+        "message",
+        "document",
+        "artifact",
+        "agent",
+        "crew",
+        "skill",
+        "machine",
+        "run",
+        "automation",
+        "connector",
+        "tool",
+        "settings",
+        "invitation",
+        "note"
+      ],
+      "type": "string"
+    },
+    "lease": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "limit": {
+      "maximum": 5000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "machine_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "machine_key": {
+      "maxLength": 256,
+      "minLength": 32,
+      "type": "string",
+      "writeOnly": true
+    },
+    "media_type": {
+      "type": "string"
+    },
+    "offset": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "op": {
+      "enum": [
+        "invitation.list",
+        "chat.info",
+        "chat.invitations",
+        "chat.share.read",
+        "onboarding.catalog",
+        "onboarding.get",
+        "preferences.get",
+        "schema",
+        "whoami",
+        "list",
+        "get",
+        "search",
+        "space.list",
+        "organization.list",
+        "events",
+        "view.run",
+        "dashboard",
+        "iteration.preview",
+        "iteration.timeline",
+        "task.relations",
+        "project.progress",
+        "document.history",
+        "export",
+        "import.preview",
+        "provider.preview",
+        "im.outbox",
+        "im.threads",
+        "attachment.download",
+        "invitation.issue",
+        "invitation.copy",
+        "invitation.revoke",
+        "invitation.accept",
+        "chat.manage",
+        "chat.preferences",
+        "chat.share.create",
+        "chat.share.revoke",
+        "onboarding.display",
+        "onboarding.setup",
+        "preferences.update",
+        "task.move",
+        "task.assign",
+        "task.conversation",
+        "task.command",
+        "create",
+        "update",
+        "delete",
+        "iteration.close",
+        "triage",
+        "follow",
+        "notification.act",
+        "document.restore",
+        "artifact.save",
+        "import",
+        "provider.ingest",
+        "im.bind",
+        "im.reply",
+        "im.unbind",
+        "im.claim",
+        "im.ack",
+        "im.retry",
+        "attachment.upload",
+        "agent.resolve",
+        "catalog.list",
+        "catalog.install",
+        "tool.authorize",
+        "machine.register",
+        "machine.heartbeat",
+        "machine.disable",
+        "machine.enable",
+        "run.enqueue",
+        "run.claim",
+        "run.heartbeat",
+        "run.report",
+        "run.cancel",
+        "run.retry",
+        "run.reply",
+        "run.tool",
+        "automation.fire",
+        "automation.tick",
+        "connector.ingest",
+        "connector.export",
+        "access.whoami",
+        "access.issue",
+        "access.list",
+        "access.revoke",
+        "sync.status",
+        "sync.pending",
+        "sync.enqueue",
+        "sync.flush",
+        "sync.resolve"
+      ],
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "preferences": {
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "frame_color": {
+          "enum": [
+            "none",
+            "color-1",
+            "color-2",
+            "color-3",
+            "color-4",
+            "color-5",
+            "color-6",
+            "color-7",
+            "color-8",
+            "color-9",
+            "color-10",
+            "color-11",
+            "color-12"
+          ]
+        },
+        "language": {
+          "enum": [
+            "zh-Hans",
+            "en"
+          ]
+        },
+        "open_after_assignment": {
+          "type": "boolean"
+        },
+        "open_after_command": {
+          "type": "boolean"
+        },
+        "send_with": {
+          "enum": [
+            "enter",
+            "shift-enter"
+          ]
+        },
+        "shortcuts": {
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "command_menu": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "find_in_view": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "move_task": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        },
+        "theme": {
+          "enum": [
+            "system",
+            "light",
+            "dark",
+            "magic-blue",
+            "classic-dark"
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "queue_if_offline": {
+      "type": "boolean"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "type": "string"
+    },
+    "runtimes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 128,
+      "type": "array"
+    },
+    "scope": {
+      "enum": [
+        "read",
+        "write",
+        "worker",
+        "hook"
+      ]
+    },
+    "sidebar_expanded": {
+      "type": "boolean"
+    },
+    "sidebar_visible": {
+      "type": "boolean"
+    },
+    "source_assignees": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
+    },
+    "source_version": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "space": {
+      "default": "default",
+      "type": "string"
+    },
+    "target": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "task_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "task_types": {
+      "items": {
+        "enum": [
+          "requirement",
+          "bug",
+          "task",
+          "story"
+        ]
+      },
+      "minItems": 1,
+      "type": "array",
+      "uniqueItems": true
+    },
+    "title": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "tool_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "version": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "work_type": {
+      "maxLength": 80,
+      "minLength": 1,
+      "type": "string"
+    }
+  },
+  "required": [
+    "op"
+  ],
+  "title": "ShipForge workspace request",
+  "type": "object"
 }

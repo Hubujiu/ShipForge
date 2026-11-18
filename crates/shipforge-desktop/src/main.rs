@@ -1,12 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
+mod appearance;
+mod assignees;
+use app::personal;
 mod assets;
 mod backend;
 mod catalog;
 mod controls;
 mod files;
 mod forms;
+mod locale;
 mod machine;
 mod motion;
 mod shell;
@@ -44,6 +48,7 @@ fn main() {
     let mut demo = false;
     let mut smoke = false;
     let mut dir: Option<PathBuf> = None;
+    let mut invitation = None;
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
         if arg == "--version" || arg == "-V" {
@@ -52,7 +57,7 @@ fn main() {
         }
         if arg == "--help" || arg == "-h" {
             print_information(
-                "ShipForge Windows 工作台\nshipforge-desktop [--data-dir <目录>] [--demo] [--smoke-test]\n--demo 使用内存示例数据。",
+                "ShipForge Windows 工作台\nshipforge-desktop [--data-dir <目录>] [--demo] [--smoke-test] [--open-invitation <邀请链接>]\n--demo 使用内存示例数据。",
             );
             return;
         }
@@ -60,6 +65,22 @@ fn main() {
             smoke = true;
         } else if arg == "--demo" {
             demo = true;
+        } else if arg == "--open-invitation" {
+            invitation = args
+                .next()
+                .and_then(|arg| arg.into_string().ok())
+                .filter(|s| {
+                    s.strip_prefix("shipforge://invite/").is_some_and(|body| {
+                        body.len() == 80
+                            && body.bytes().all(|b| {
+                                b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_')
+                            })
+                    })
+                });
+            if invitation.is_none() || args.next().is_some() {
+                print_information("邀请链接无效");
+                std::process::exit(2);
+            }
         } else if arg == "--data-dir" {
             let Some(value) = args
                 .next()
@@ -112,7 +133,15 @@ fn main() {
                 ..TitleBar::window_options()
             },
             cx,
-            move |window, cx| cx.new(|cx| Workbench::new(dir.clone(), demo, smoke, window, cx)),
+            move |window, cx| {
+                cx.new(|cx| {
+                    let mut workbench = Workbench::new(dir.clone(), demo, smoke, window, cx);
+                    if let Some(link) = invitation.clone() {
+                        workbench.open_invitation(link, window, cx);
+                    }
+                    workbench
+                })
+            },
         )
         .expect("打开 ShipForge 窗口");
         cx.activate(true);

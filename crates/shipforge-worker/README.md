@@ -49,7 +49,15 @@
 }
 ```
 
-机器容量取 1–64。个人机器执行归属本人的工作。空间管理员可注册共享机器。Agent 的 `runtime`、`machine_id`、`profile`、`max_parallel`、`chat_parallel`、`working_hours` 决定匹配范围。时段示例 `{"start":9,"end":18,"utc_offset_minutes":480}`。工作时段支持跨午夜。变体通过 `parent_id` 继承，字段设为 `null` 时重新采用上级设置。
+机器容量取 1–64。个人机器执行归属本人的工作。空间管理员可注册共享机器。Agent 的 `runtime`、`machine_id`、`profile`、`max_parallel`、`chat_parallel`、`working_hours` 决定匹配范围。变体通过 `parent_id` 继承，`working_hours` 设为 `null` 时重新采用上级设置。
+
+周排班按 IANA 时区和当地时钟查看能否开始新运行。下例安排上海时间周一两个时段和周六全天。星期键为周一 `"1"` 至周日 `"7"`；未列出或空数组的日期休息。每个日期最多两段，开始时刻包含在内，结束时刻排除在外。午夜结束可填 `24:00`，跨天班次分别填写两天。`week:{}` 一周都不接新运行。
+
+```json
+{"timezone":"Asia/Shanghai","week":{"1":[{"start":"09:00","end":"12:00"},{"start":"13:30","end":"18:00"}],"6":[{"start":"00:00","end":"24:00"}]}}
+```
+
+夏令时跳过的当地分钟没有对应运行时刻；回拨后重复出现的当地分钟，两次均可按该段接单。运行使用入队时保存的有效配置，已开始的运行跨过结束时刻仍可继续。旧式配置 `{"start":21,"end":3,"utc_offset_minutes":480}` 仍按每天固定偏移、整点判断，支持跨午夜，同一开始与结束表示全天。
 
 隔离模式会针对绑定的 Git 仓库从 `HEAD` 创建独立分离工作树，也可省略 `workspace` 让每次运行使用空目录。工作树及产物保存在配置文件旁，例如 `machine.json.state/work`，数据库记录机器路径。直接使用已有目录时，同时设置机器 `allow_direct: true` 和 Agent `directory_mode: "direct"`。涉及同一规范化路径的直接运行通过系统文件锁串行访问。[Git worktree 文档](https://git-scm.com/docs/git-worktree)
 

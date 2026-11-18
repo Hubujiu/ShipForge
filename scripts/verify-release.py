@@ -65,7 +65,15 @@ def verify(directory, version):
         if not schema_file.is_file():
             schema_file = ROOT / "docs" / "protocol.schema.json"
         checked = json.loads(schema_file.read_text(encoding="utf-8"))
-        assert checked == schema
+        if checked != schema:
+            executable_ops = set(schema["properties"]["op"]["enum"])
+            manual_ops = set(checked["properties"]["op"]["enum"])
+            raise AssertionError(
+                f"{schema_file} differs from the {version} CLI schema; "
+                f"missing operations {sorted(executable_ops - manual_ops)}, "
+                f"extra operations {sorted(manual_ops - executable_ops)}. "
+                "Run scripts/sync-protocol.py with the matching CLI before packaging."
+            )
         for entry in ("iteration.close","document.restore","run.enqueue","sync.flush","access.whoami"):
             assert entry in schema["properties"]["op"]["enum"]
         machine = Path(tmp) / "工作机.json"

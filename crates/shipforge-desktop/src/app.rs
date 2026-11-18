@@ -5,6 +5,10 @@ use crate::{
     motion::Motion,
 };
 use gpui_kit::{prelude::*, *};
+#[path = "onboarding.rs"]
+pub(crate) mod onboarding;
+#[path = "personal.rs"]
+pub(crate) mod personal;
 use serde_json::{Map, Value, json};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -41,6 +45,9 @@ impl Default for Location {
 }
 #[derive(Clone)]
 pub enum UiAction {
+    CopyInvitation(String),
+    Guide(onboarding::Action),
+    Personal(crate::personal::Action),
     AddTrigger,
     RemoveTrigger(u64),
     Browse { index: usize, save: Option<String> },
@@ -77,6 +84,7 @@ pub enum UiAction {
     Versions(Record),
     RestoreVersion(Record, i64),
     Copy(String),
+    OpenSourceUrl(String),
     Export,
     Import,
     RuleFire(Record),
@@ -88,6 +96,17 @@ pub enum UiAction {
     Tokens,
 }
 enum After {
+    ChatShareCreated,
+    ChatShareOpened,
+    InvitationLink,
+    JoinedOrganization,
+    CheckAgent(u64),
+    SetupFinished,
+    Guide,
+    Personal,
+    TaskConversation,
+    RunConversation,
+    MovedTask,
     Saved(String),
     Notice(String),
     Search(String),
@@ -108,6 +127,8 @@ struct Pending {
     write: bool,
 }
 pub struct Workbench {
+    pub guide: onboarding::Guide,
+    pub personal: crate::personal::Personal,
     pub loc: Location,
     pub rows: Rows,
     pub errors: BTreeMap<String, String>,
@@ -154,6 +175,8 @@ impl Workbench {
         let root_focus = cx.focus_handle();
         root_focus.focus(window, cx);
         let app = Self {
+            guide: onboarding::Guide::default(),
+            personal: crate::personal::Personal::default(),
             directory: dir.clone(),
             smoke,
             history: vec![loc.clone()],
@@ -265,7 +288,8 @@ impl Workbench {
         !matches!(self.role.as_str(), "viewer" | "read")
     }
     pub fn notify_text(&mut self, s: impl Into<String>) {
-        self.notice = Some((s.into(), Instant::now()));
+        let message = s.into();
+        self.notice = Some((crate::locale::label(&message).to_owned(), Instant::now()));
     }
     fn register(&mut self, after: After, write: bool) -> u64 {
         self.sequence += 1;
@@ -317,8 +341,11 @@ impl Workbench {
             ]);
         }
         match self.loc.page {
+            Page::Members if matches!(self.role.as_str(), "admin" | "owner") => {
+                kinds.push("member_invitation")
+            }
             Page::Dashboard | Page::Projects | Page::Iterations | Page::Views => kinds.push("task"),
-            Page::Assistant | Page::Chats => kinds.extend(["agent", "chat"]),
+            Page::Assistant | Page::Chats => kinds.extend(["agent", "chat", "chat_invitation"]),
             Page::Market => kinds.extend(["skill", "agent"]),
             Page::Inbox => kinds.push("task"),
             Page::Spaces | Page::Organizations => kinds.push("organization"),
@@ -385,6 +412,11 @@ impl Workbench {
             kinds: kinds.into_iter().map(str::to_owned).collect(),
         });
         self.poll_at = Instant::now() + Duration::from_secs(5);
+        self.send(
+            json!({"op":"onboarding.get","space":self.loc.space}),
+            After::Guide,
+            false,
+        );
         if self.loc.page == Page::Dashboard || self.loc.layout == "dashboard" {
             let mut filter = self
                 .loc
@@ -407,7 +439,7 @@ impl Workbench {
                     if self.loc.mine_created {
                         "creator"
                     } else {
-                        "assignee"
+                        "assignees"
                     }
                     .into(),
                     json!(self.actor),
@@ -447,13 +479,17 @@ impl Workbench {
         );
     }
     fn tick(&mut self, w: &mut Window, cx: &mut Context<Self>) {
+        crate::appearance::apply(&self.personal.options, w, cx, false);
         let mut changed = false;
         while let Ok(event) = self.backend.results.try_recv() {
             changed = true;
             match event {
                 Event::Ready(result) => match result {
                     Ok(mode) => {
+                        self.guide = onboarding::Guide::default();
                         self.mode = mode;
+                        self.personal = crate::personal::Personal::default();
+                        self.send(json!({"op":"preferences.get"}), After::Personal, false);
                         self.error = None;
                         self.who();
                         self.read(true);
@@ -512,12 +548,26 @@ impl Workbench {
                         if p.write {
                             self.busy = false;
                         }
-                        if p.space != self.loc.space {
+                        if p.space != self.loc.space && !matches!(p.after, After::Personal) {
                             continue;
                         }
                         match result {
                             Ok(value) => self.reply(p.after, value, w, cx),
                             Err(error) => match p.after {
+                                After::Guide => self.guide.failed(error),
+                                After::Personal => {
+                                    if p.write {
+                                        self.send(
+                                            json!({"op":"preferences.get"}),
+                                            After::Personal,
+                                            false,
+                                        );
+                                    }
+                                    self.notify_text(format!(
+                                        "{} · {error}",
+                                        crate::locale::label("个人设置未同步")
+                                    ));
+                                }
                                 After::Who => {
                                     self.role.clear();
                                 }
@@ -597,7 +647,51 @@ impl Workbench {
             return;
         }
         match after {
+            After::RunConversation => {
+                if let Ok(chat) = serde_json::from_value::<Record>(value["chat"].clone()) {
+                    self.open(chat, true);
+                }
+            }
+            After::Personal => {
+                if let Ok(prefs) = serde_json::from_value(value["preferences"].clone()) {
+                    self.personal.options = prefs;
+                    crate::locale::select(&self.personal.options.language);
+                    self.personal.rev = value["rev"].as_i64().unwrap_or(1);
+                    crate::appearance::apply(&self.personal.options, w, cx, true);
+                }
+            }
+            After::TaskConversation => {
+                self.close_form(w, cx);
+                if let Ok(chat) = serde_json::from_value::<Record>(value) {
+                    self.open(chat, true);
+                }
+            }
+            After::MovedTask => {
+                self.close_form(w, cx);
+                if let Ok(task) = serde_json::from_value::<Record>(value) {
+                    if let Some(space) = self.find("space", &task.space).cloned() {
+                        self.switch_space(space);
+                    }
+                    self.open(task, true);
+                }
+            }
             After::Saved(kind) => {
+                let open_assignment = self.personal.options.open_after_assignment
+                    && kind == "task"
+                    && matches!(
+                        value["fields"]["assignee_kind"].as_str(),
+                        Some("agent" | "crew")
+                    )
+                    && value["fields"]["assignee"].is_string()
+                    && self.form.as_ref().is_some_and(|f| match &f.mode {
+                        Mode::Create(k) => k == "task",
+                        Mode::Edit(old) => {
+                            old.fields["assignee"] != value["fields"]["assignee"]
+                                || old.fields["assignee_kind"] != value["fields"]["assignee_kind"]
+                        }
+                        _ => false,
+                    });
+                let new_task = value["id"].as_str().map(str::to_owned);
                 self.close_form(w, cx);
                 self.notify_text("已保存");
                 if let Ok(r) = serde_json::from_value::<Record>(value)
@@ -611,6 +705,9 @@ impl Workbench {
                     }
                 }
                 self.read(false);
+                if open_assignment && let Some(id) = new_task {
+                    self.personal_conversation(&id);
+                }
             }
             After::Notice(s) => {
                 self.close_form(w, cx);
@@ -649,6 +746,36 @@ impl Workbench {
                     self.metrics = value;
                 }
             }
+            After::Guide => {
+                self.guide.accept(value);
+                if self.mode != "demo"
+                    && !self.smoke
+                    && self.form.is_none()
+                    && self.guide.offer_setup()
+                {
+                    self.open_form(Mode::SetupOrganization, w, cx);
+                }
+            }
+            After::CheckAgent(revision) if self.revision == revision && self.form.is_none() => {
+                let ready = value.as_array().is_some_and(|machines| {
+                    machines.iter().any(|m| m["fields"]["disabled"] != true)
+                });
+                self.open_form(
+                    if ready {
+                        Mode::Create("agent".into())
+                    } else {
+                        Mode::MissingMachine
+                    },
+                    w,
+                    cx,
+                );
+            }
+            After::CheckAgent(_) => {}
+            After::SetupFinished => {
+                self.guide.accept(value);
+                self.close_form(w, cx);
+                self.navigate(Page::GettingStarted);
+            }
             After::Who => {
                 self.actor = value
                     .get("actor")
@@ -676,6 +803,61 @@ impl Workbench {
                     w,
                     cx,
                 );
+            }
+            After::ChatShareCreated => {
+                if let Some(link) = value["link"].as_str().or(value["share"].as_str()) {
+                    cx.write_to_clipboard(ClipboardItem::new_string(link.to_owned()));
+                    self.open_form(
+                        Mode::Output {
+                            heading: if self.mode == "team" {
+                                "已复制对话分享链接"
+                            } else {
+                                "已复制本工作区分享码"
+                            }
+                            .into(),
+                            content: link.to_owned(),
+                        },
+                        w,
+                        cx,
+                    );
+                    self.read(false);
+                }
+            }
+            After::ChatShareOpened => {
+                self.open_form(
+                    Mode::Output {
+                        heading: "已分享的对话".into(),
+                        content: shipforge_core::share_text(&value),
+                    },
+                    w,
+                    cx,
+                );
+            }
+            After::InvitationLink => {
+                if let Some(link) = value["link"].as_str() {
+                    cx.write_to_clipboard(ClipboardItem::new_string(link.to_owned()));
+                    self.open_form(
+                        Mode::Output {
+                            heading: "邀请链接已复制".into(),
+                            content: link.into(),
+                        },
+                        w,
+                        cx,
+                    );
+                    self.read(false);
+                }
+            }
+            After::JoinedOrganization => {
+                self.close_form(w, cx);
+                if let Some(org) = value["organization"].as_str() {
+                    self.loc.space = org.into();
+                    self.rows.clear();
+                    self.errors.clear();
+                    self.guide = onboarding::Guide::default();
+                    self.who();
+                    self.navigate(Page::Members);
+                    self.notify_text("已加入组织");
+                }
             }
             After::Preview(path) => {
                 if let Some(f) = &mut self.form {
@@ -714,6 +896,7 @@ impl Workbench {
         self.revision += 1;
     }
     fn navigate(&mut self, page: Page) {
+        self.guide.close_menu();
         self.remember();
         let space = self.loc.space.clone();
         self.loc = Location {
@@ -729,6 +912,7 @@ impl Workbench {
         if self.loc.space != r.id {
             self.rows.clear();
             self.errors.clear();
+            self.guide.change_space();
         }
         self.navigate(Page::Tasks);
         self.loc.space = r.id;
@@ -764,6 +948,7 @@ impl Workbench {
         self.reset_detail();
         if self.loc.space != oldspace {
             self.rows.clear();
+            self.guide.change_space();
             self.who();
         }
         self.read(true);
@@ -780,10 +965,41 @@ impl Workbench {
         self.revision += 1;
     }
     fn open_form(&mut self, mode: Mode, w: &mut Window, cx: &mut Context<Self>) {
+        self.open_prefilled(mode, Map::new(), w, cx);
+    }
+    pub fn open_invitation(&mut self, link: String, w: &mut Window, cx: &mut Context<Self>) {
+        self.open_prefilled(
+            Mode::JoinInvite,
+            Map::from_iter([("link".into(), json!(link))]),
+            w,
+            cx,
+        );
+    }
+    fn open_prefilled(
+        &mut self,
+        mode: Mode,
+        preset: Map<String, Value>,
+        w: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.error = None;
         let mut value = Map::new();
         match &mode {
+            Mode::FindInView => value = self.loc.filter.clone(),
+            Mode::MoveTask => {
+                if let Some(task) = self.loc.selected.as_ref().filter(|r| r.kind == "task") {
+                    value.insert("task".into(), json!(task.id));
+                }
+            }
             Mode::Edit(r) => value = initial_record(r),
+            Mode::Create(k) if k == "agent" => {
+                if let Some(default) = self
+                    .find("space", &self.loc.space)
+                    .and_then(|s| s.fields.get("agent_type_default"))
+                {
+                    value.insert("agent_type".into(), default.clone());
+                }
+            }
             Mode::Filter => value = self.loc.filter.clone(),
             Mode::Machine { .. } => {
                 if let Ok(path) =
@@ -798,6 +1014,13 @@ impl Workbench {
                 value.insert("layout".into(), json!(self.loc.layout));
             }
             Mode::Create(k) if k == "task" => {
+                if let Some(t) = self
+                    .list("task_type")
+                    .iter()
+                    .find(|r| r.fields.get("default") == Some(&Value::Bool(true)))
+                {
+                    value.insert("type".into(), json!(t.id));
+                }
                 if !self.loc.task_type.is_empty() {
                     value.insert("type".into(), json!(self.loc.task_type));
                 }
@@ -812,7 +1035,20 @@ impl Workbench {
             }
             _ => {}
         }
-        self.form = Some(Form::new(mode, &value, w, cx));
+        value.extend(preset);
+        let is_task = matches!(&mode,Mode::Create(k) if k=="task")
+            || matches!(&mode,Mode::Edit(r) if r.kind=="task");
+        let show_estimate = self
+            .find("space", &self.loc.space)
+            .is_some_and(|r| r.fields.get("estimates_enabled") == Some(&Value::Bool(true)));
+        let mut form = Form::new(mode, &value, w, cx);
+        if is_task {
+            self.configure_assignees(&mut form, &value);
+        }
+        if is_task && !show_estimate {
+            form.entries.retain(|e| e.spec.key != "estimate");
+        }
+        self.form = Some(form);
         if let Some(f) = &self.form
             && let Some(e) = f.entries.first()
         {
@@ -841,6 +1077,18 @@ impl Workbench {
     pub fn act(&mut self, action: UiAction, w: &mut Window, cx: &mut Context<Self>) {
         use UiAction::*;
         match action {
+            CopyInvitation(id) => self.send(
+                json!({"op":"invitation.copy","space":self.loc.space,"id":id}),
+                After::InvitationLink,
+                true,
+            ),
+            Guide(action) => self.guide_action(action, w, cx),
+            Personal(action) => self.personal_action(action, w, cx),
+            Go(Page::GettingStarted) => {
+                self.navigate(Page::GettingStarted);
+                self.loc.section = "settings".into();
+                self.history[self.pos] = self.loc.clone();
+            }
             Go(p) => self.navigate(p),
             Open(r) => self.open(r, false),
             OpenSearch(r) => {
@@ -852,6 +1100,11 @@ impl Workbench {
             Forward => self.history(true),
             CloseDetail => self.act_detail_close(),
 
+            Create(k) if k == "agent" => self.send(
+                json!({"op":"list","kind":"machine","space":self.loc.space}),
+                After::CheckAgent(self.revision),
+                false,
+            ),
             Create(k) => self.open_form(Mode::Create(k), w, cx),
             Edit(r) => self.open_form(Mode::Edit(r), w, cx),
 
@@ -922,6 +1175,21 @@ impl Workbench {
                 }
             }
             Choose(i, v) => {
+                let setup_defaults = self
+                    .form
+                    .as_ref()
+                    .is_some_and(|f| {
+                        (matches!(f.mode, Mode::SetupSpace { .. })
+                            || matches!(&f.mode,Mode::Create(k) if k=="space"))
+                            && f.entries
+                                .get(i)
+                                .is_some_and(|e| e.spec.key == "work_type" && e.raw(cx) != v)
+                    })
+                    .then_some(if matches!(v.as_str(), "software" | "project") {
+                        "requirement, bug"
+                    } else {
+                        "task"
+                    });
                 if let Some(f) = &mut self.form
                     && let Some(e) = f.entries.get_mut(i)
                     && let Control::Pick { value, focus } = &mut e.control
@@ -945,6 +1213,15 @@ impl Workbench {
                         f.open_pick = None;
                     }
                     focus.focus(w, cx);
+                }
+                if let Some(defaults) = setup_defaults
+                    && let Some(entry) = self
+                        .form
+                        .as_mut()
+                        .and_then(|f| f.entries.iter_mut().find(|e| e.spec.key == "task_types"))
+                    && let Control::Pick { value, .. } = &mut entry.control
+                {
+                    *value = defaults.into();
                 }
             }
 
@@ -1023,6 +1300,11 @@ impl Workbench {
             Copy(s) => {
                 cx.write_to_clipboard(ClipboardItem::new_string(s));
                 self.notify_text("已复制");
+            }
+            OpenSourceUrl(url) => {
+                if url.starts_with("https://") && !url.chars().any(char::is_control) {
+                    cx.open_url(&url);
+                }
             }
 
             Export => self.open_form(Mode::Export, w, cx),
@@ -1147,21 +1429,76 @@ cx);
                 .to_string()
         };
         match mode {
+            Mode::Invite { email } => {
+                let mut q = json!({"op":"invitation.issue","space":self.loc.space,"channel":if email{"email"}else{"link"},"role":val("role"),"spaces":values["spaces"]});
+                if email {
+                    q["email"] = json!(val("email"));
+                }
+                self.send(q, After::InvitationLink, true);
+            }
+            Mode::JoinInvite => self.send(
+                json!({"op":"invitation.accept","link":val("link")}),
+                After::JoinedOrganization,
+                true,
+            ),
+            Mode::OpenChatShare => {
+                let pasted = val("share");
+                let share = pasted.trim().rsplit('/').next().unwrap_or_default();
+                self.send(
+                    json!({"op":"chat.share.read","share":share}),
+                    After::ChatShareOpened,
+                    false,
+                );
+            }
+            Mode::SetupOrganization => {
+                let organization = val("organization_name");
+                let slug = val("organization_slug");
+                if organization.is_empty() || slug.is_empty() {
+                    return Err("请填写组织名称和地址标识".into());
+                }
+                self.open_form(Mode::SetupSpace { organization, slug }, w, cx);
+            }
+            Mode::SetupSpace { organization, slug } => {
+                self.send(json!({"op":"onboarding.setup","space":self.loc.space,"organization_name":organization,
+                    "organization_slug":slug,"work_type":val("work_type"),"task_types":values.get("task_types")}),After::SetupFinished,true);
+            }
+            Mode::MissingMachine => {
+                self.close_form(w, cx);
+                self.guide_action(onboarding::Action::Start("connect_machine"), w, cx);
+            }
+            Mode::GuideTarget { step, kind } => {
+                let record = self
+                    .find(kind, &val("target"))
+                    .cloned()
+                    .ok_or("请先选择对象")?;
+                self.guide_target(step, record, w, cx);
+            }
+            Mode::FindInView => {
+                let query = val("query");
+                if query.is_empty() {
+                    self.loc.filter.remove("query");
+                } else {
+                    self.loc.filter.insert("query".into(), json!(query));
+                }
+                self.close_form(w, cx);
+                self.read(false);
+            }
+            Mode::MoveTask => {
+                let id = val("task");
+                let target = val("target");
+                let task = self.find("task", &id).ok_or("请选择要移动的任务")?;
+                if target.is_empty() {
+                    return Err("请选择目标空间".into());
+                }
+                self.send(json!({"op":"task.move","id":id,"expected_rev":task.rev,"space":self.loc.space,"target":target}),After::MovedTask,true);
+            }
             Mode::Create(ref k) | Mode::Edit(Record { kind: ref k, .. }) => {
                 let old = if let Mode::Edit(r) = &mode {
                     Some(r)
                 } else {
                     None
                 };
-                let kind = if let Some(h) = values.get("assignee").and_then(Value::as_str) {
-                    ["agent", "crew", "member"]
-                        .into_iter()
-                        .find(|k| self.find(k, h).is_some())
-                } else {
-                    None
-                };
-
-                let (title, mut fields) = compile_record(k, values, kind, old.is_none())?;
+                let (title, mut fields) = compile_record(k, values, old.is_none())?;
 
                 if k == "automation"
                     && let Some(id) = fields.get("handler_id").and_then(Value::as_str)
@@ -1193,6 +1530,17 @@ cx);
                 self.send(cmd, After::Saved(k.clone()), true);
             }
 
+            Mode::ThreadReply {
+                task,
+                target,
+                request_id,
+            } => {
+                let body = val("body");
+                if body.trim().is_empty() {
+                    return Err("请输入回复内容。".into());
+                }
+                self.send(json!({"op":"im.reply","space":self.loc.space,"id":target["id"],"task_id":task,"thread":target["thread"],"body":body,"request_id":request_id}),After::Saved("comment".into()),true);
+            }
             Mode::Comment(ref r) | Mode::Message(ref r) => {
                 let body = val("body");
                 if body.is_empty() {
@@ -1203,6 +1551,9 @@ cx);
                 } else {
                     ("message", "chat")
                 };
+                let mut fields = values;
+                fields.insert(key.into(), json!(r.id));
+                fields.insert("body".into(), json!(body));
 
                 self.send(
                     json!({
@@ -1210,8 +1561,7 @@ cx);
                     "kind":kind,
                     "space":self.loc.space,
                     "title":body.chars().take(60).collect::<String>(),
-                    "fields":{
-                    (key):r.id,"body":body}
+                    "fields":fields
                     }
                     ),
                     After::Saved(kind.into()),
@@ -1363,6 +1713,14 @@ cx);
                 q["space"] = json!(self.loc.space);
                 q["id"] = json!(record.id);
 
+                if op == "chat.agents" {
+                    q["op"] = json!("chat.manage");
+                    q["target_kind"] = json!("agent");
+                }
+                if matches!(op, "chat.manage" | "chat.agents") {
+                    q["expected_rev"] = json!(record.rev);
+                }
+
                 if op == "tool.authorize" {
                     q["id"] = q["agent"].take();
                     q["tool_id"] = json!(record.id);
@@ -1377,7 +1735,9 @@ cx);
                     op,
                     "tool.authorize" | "connector.export" | "provider.preview"
                 );
-                let after = if inspect {
+                let after = if op == "chat.share.create" {
+                    After::ChatShareCreated
+                } else if inspect {
                     After::Output(crate::forms::workflow_name(op).into())
                 } else {
                     After::Notice("已保存".into())
@@ -1432,6 +1792,45 @@ cx);
                 .collect::<Vec<_>>()
         };
         match source {
+            "$chat_messages" => {
+                let room = self.loc.selected.as_ref().map(|s| s.id.as_str());
+                self.list("message")
+                    .iter()
+                    .filter(|m| {
+                        Some(m.field("chat")) == room
+                            && (m.field("run").is_empty()
+                                || self
+                                    .find("run", m.field("run"))
+                                    .is_some_and(|r| r.field("status") == "done"))
+                    })
+                    .map(|m| {
+                        let body = m.field("body");
+                        (
+                            m.id.clone(),
+                            if body.is_empty() {
+                                m.title.clone()
+                            } else {
+                                body.chars().take(80).collect()
+                            },
+                        )
+                    })
+                    .collect()
+            }
+            "$invite_spaces" => {
+                let org = self
+                    .find("space", &self.loc.space)
+                    .map(|s| s.field("organization"))
+                    .unwrap_or("default");
+                self.list("space")
+                    .iter()
+                    .filter(|s| s.field("organization") == org && s.id != org)
+                    .map(|s| (s.id.clone(), s.title.clone()))
+                    .collect()
+            }
+            "$other_spaces" => from("space")
+                .into_iter()
+                .filter(|(id, _)| id != &self.loc.space)
+                .collect(),
             "$weekdays" => ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
                 .iter()
                 .enumerate()
@@ -1441,6 +1840,7 @@ cx);
                 ("guest".into(), "访客".into()),
                 ("external".into(), "外部集成".into()),
             ],
+            "$executors" => self.executor_choices(),
             "$handlers" | "$agents" => {
                 let mut v = if source == "$handlers" {
                     from("member")
@@ -1451,12 +1851,25 @@ cx);
                 v.extend(from("crew"));
                 v
             }
+            "$setup_types" => [
+                ("requirement", "需求"),
+                ("bug", "缺陷"),
+                ("task", "任务"),
+                ("story", "用户故事"),
+            ]
+            .iter()
+            .map(|(v, l)| (v.to_string(), crate::locale::label(l).to_owned()))
+            .collect(),
             "$types" => {
                 let mut v: Vec<_> = crate::catalog::TYPES
                     .iter()
                     .map(|(v, l)| (v.to_string(), l.to_string()))
                     .collect();
                 overlay_options(&mut v, from("task_type"));
+                v.retain(|(id, _)| {
+                    self.find("task_type", id)
+                        .is_none_or(|r| r.fields.get("enabled") != Some(&Value::Bool(false)))
+                });
                 v
             }
             "$statuses" => {
@@ -1493,11 +1906,11 @@ cx);
                     return false;
                 }
                 if self.loc.page == Page::Mine
-                    && r.field(if self.loc.mine_created {
-                        "creator"
+                    && if self.loc.mine_created {
+                        r.field("creator") != self.actor
                     } else {
-                        "assignee"
-                    }) != self.actor
+                        !r.members().contains(&self.actor.as_str())
+                    }
                 {
                     return false;
                 }
@@ -1511,7 +1924,7 @@ cx);
                         .get(&format!("filter_{key}"))
                         .and_then(Value::as_str)
                         && !value.is_empty()
-                        && r.field(key) != value
+                        && !r.matches_filter(key, value)
                     {
                         return false;
                     }
@@ -1541,6 +1954,9 @@ cx);
         out
     }
     pub fn key(&mut self, e: &KeyDownEvent, w: &mut Window, cx: &mut Context<Self>) {
+        if self.personal_key(e, w, cx) {
+            return;
+        }
         let key = e.keystroke.key.as_str();
         let mods = e.keystroke.modifiers;
         let action = if key == "escape" {
@@ -1563,8 +1979,6 @@ cx);
             } else {
                 None
             }
-        } else if mods.control && key == "k" {
-            Some(UiAction::Search)
         } else if mods.control && key == "n" && self.loc.page.creatable() {
             Some(UiAction::Create(self.loc.page.info().kind.into()))
         } else if mods.alt && key == "left" {
@@ -1592,3 +2006,7 @@ fn overlay_options(defaults: &mut Vec<(String, String)>, records: Vec<(String, S
         }
     }
 }
+
+#[cfg(all(test, windows))]
+#[path = "onboarding_ui.rs"]
+pub(crate) mod onboarding_ui;

@@ -13,6 +13,7 @@ use gpui_kit::{
 };
 
 pub const INK: u32 = 0x23242a;
+use crate::appearance::{paint as rgb, surface as white};
 pub const MUTED: u32 = 0x686b77;
 pub const DIM: u32 = 0x858895;
 pub const LINE: u32 = 0xe5e6ec;
@@ -28,12 +29,12 @@ pub fn row() -> Div {
 pub fn col() -> Div {
     div().flex().flex_col()
 }
-pub fn text(s: impl Into<SharedString>, size: f32, color: u32) -> Div {
+pub fn text(s: impl crate::locale::DisplayText, size: f32, color: u32) -> Div {
     div()
         .text_size(px(size))
         .line_height(relative(1.5))
         .text_color(rgb(color))
-        .child(s.into())
+        .child(s.display_text())
 }
 pub fn icon(name: &str, size: f32) -> Icon {
     Icon::default()
@@ -41,10 +42,10 @@ pub fn icon(name: &str, size: f32) -> Icon {
         .size(px(size))
         .flex_shrink_0()
 }
-pub fn headline(s: impl Into<SharedString>, size: f32) -> Div {
+pub fn headline(s: impl crate::locale::DisplayText, size: f32) -> Div {
     text(s, size, INK).font_weight(FontWeight::SEMIBOLD)
 }
-pub fn chip(s: impl Into<SharedString>, background: u32, color: u32) -> Div {
+pub fn chip(s: impl crate::locale::DisplayText, background: u32, color: u32) -> Div {
     row()
         .px(px(7.))
         .py(px(1.))
@@ -124,18 +125,24 @@ impl Field {
             Self::Multi(s) => s.read(cx).focus_handle(cx),
         }
     }
+    pub fn composing(&self, w: &mut Window, cx: &mut App) -> bool {
+        match self {
+            Self::Single(state) => state.update(cx, |s, cx| s.marked_text_range(w, cx).is_some()),
+            Self::Multi(state) => state.update(cx, |s, cx| s.marked_text_range(w, cx).is_some()),
+        }
+    }
 }
 impl Workbench {
     pub fn button(
         &self,
         id: impl Into<ElementId>,
-        label: impl Into<SharedString>,
+        label: impl crate::locale::DisplayText,
         action: UiAction,
         cx: &Context<Self>,
     ) -> Button {
         let accent = cx.theme().accent;
         Button::new(id)
-            .accessibility_label(label)
+            .accessibility_label(label.display_text())
             .h(px(30.))
             .px(px(8.))
             .gap(px(6.))

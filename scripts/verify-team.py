@@ -17,9 +17,11 @@ from importlib import import_module
 release = import_module("verify-release")
 
 
-def start(server, data, address):
-    p = subprocess.Popen([str(server), "--data-dir", str(data), "serve", "--listen", address],
-                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8")
+def start(server, data, address, *, extra=(), env=None):
+    if env is None:
+        env = {k: v for k, v in os.environ.items() if k not in ("SHIPFORGE_SLACK_CONFIG","SHIPFORGE_GITHUB_WEBHOOKS")}
+    p = subprocess.Popen([str(server), "--data-dir", str(data), "serve", "--listen", address, *extra],
+                         stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", env=env)
     ready = queue.Queue()
     threading.Thread(target=lambda: ready.put(p.stdout.readline()), daemon=True).start()
     try:
@@ -132,6 +134,10 @@ def verify(bin_dir):
         finally:
             if p is not None:stop(p)
     print("Verified member scopes, two clients, request replay, concurrent writes, offline drafts, reconnect and revocation.")
+    import_module("verify-slack").verify(bin_dir, start, stop)
+    import_module("verify-vcs").verify(bin_dir, start, stop)
+    import_module("verify-chat").verify(bin_dir, start, stop)
+    import_module("verify-invitations").verify(bin_dir, start, stop, connect)
 
 
 if __name__=="__main__":

@@ -120,6 +120,51 @@ fn task_assignment_is_deferred_in_backlog_and_leases_are_fenced() {
     );
 }
 #[test]
+fn weekly_hours_are_inherited_validated_and_checked_on_actual_claim() {
+    let mut db = Store::memory().unwrap();
+    machine(&mut db);
+    let closed = json!({"timezone":"Asia/Shanghai","week":{}});
+    create(&mut db, "agent", "parent", json!({"working_hours":closed}));
+    create(&mut db, "agent", "child", json!({"parent_id":"parent"}));
+    let resolved = execute(&mut db, json!({"op":"agent.resolve","id":"child"}));
+    assert_eq!(resolved["working_hours"], closed);
+    let queue = json!({"op":"run.enqueue","handler_id":"child","instruction":"Inspect report"});
+    let waiting = execute(&mut db, queue.clone());
+    assert!(claim(&mut db).is_null());
+    assert_eq!(
+        get(&mut db, "run", waiting["id"].as_str().unwrap())["fields"]["waiting_reason"],
+        "outside_working_hours"
+    );
+    let invalid = json!({"op":"update","kind":"agent","id":"child","fields":{"working_hours":{"week":{"1":[]},"timezone":"Missing/Zone"}}});
+    assert!(db.execute("owner", invalid).is_err());
+    let mut week = json!({});
+    for day in 1..=7 {
+        week[day.to_string()] = json!([{"start":"00:00","end":"24:00"}]);
+    }
+    let open = json!({"timezone":"Asia/Shanghai","week":week});
+    execute(
+        &mut db,
+        json!({"op":"update","kind":"agent","id":"child","fields":{"working_hours":open}}),
+    );
+    let expected = execute(&mut db, queue);
+    let claimed = claim(&mut db);
+    assert_eq!(claimed["run"]["id"], expected["id"]);
+    assert_eq!(claimed["run"]["fields"]["config"]["working_hours"], open);
+    execute(
+        &mut db,
+        json!({"op":"update","kind":"agent","id":"child","fields":{"working_hours":null}}),
+    );
+    assert_eq!(
+        execute(&mut db, json!({"op":"agent.resolve","id":"child"}))["working_hours"],
+        closed
+    );
+    assert_eq!(
+        get(&mut db, "run", expected["id"].as_str().unwrap())["fields"]["config"]["working_hours"],
+        open
+    );
+}
+
+#[test]
 fn catalog_install_is_idempotent_and_document_tool_access_is_checked_against_live_grants() {
     let mut db = Store::memory().unwrap();
     let entries = execute(&mut db, json!({"op":"catalog.list"}));

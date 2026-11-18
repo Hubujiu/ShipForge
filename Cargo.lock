@@ -6021,7 +6021,7 @@ dependencies = [
 
 [[package]]
 name = "shipforge-cli"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "clap",
  "serde_json",
@@ -6031,7 +6031,7 @@ dependencies = [
 
 [[package]]
 name = "shipforge-client"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "base64 0.22.1",
  "directories",
@@ -6049,11 +6049,12 @@ dependencies = [
 
 [[package]]
 name = "shipforge-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
  "chrono-tz",
+ "ring",
  "rusqlite",
  "serde",
  "serde_json",
@@ -6064,22 +6065,26 @@ dependencies = [
 
 [[package]]
 name = "shipforge-desktop"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "chrono",
  "embed-resource",
  "gpui-kit",
+ "raw-window-handle",
  "resvg 0.45.1",
  "serde",
  "serde_json",
  "shipforge-client",
+ "shipforge-core",
+ "tempfile",
 ]
 
 [[package]]
 name = "shipforge-server"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "clap",
+ "ring",
  "rusqlite",
  "serde_json",
  "sha2 0.11.1",
@@ -6091,7 +6096,7 @@ dependencies = [
 
 [[package]]
 name = "shipforge-worker"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -6101,6 +6106,7 @@ dependencies = [
  "sha2 0.11.1",
  "shipforge-client",
  "tempfile",
+ "tiny_http",
  "ureq",
  "uuid",
 ]

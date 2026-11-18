@@ -59,6 +59,11 @@ Type: files; Name: "{app}\shipforge-install.ini"
 Name: "{userprograms}\ShipForge Workspace"; Filename: "{app}\shipforge-desktop.exe"; Parameters: "{code:DataArguments}"; WorkingDir: "{app}"; Check: not VerificationMode
 Name: "{userdesktop}\ShipForge Workspace"; Filename: "{app}\shipforge-desktop.exe"; Parameters: "{code:DataArguments}"; WorkingDir: "{app}"; Tasks: desktopicon; Check: not VerificationMode
 
+[Registry]
+Root: HKCU; Subkey: "Software\Classes\shipforge"; ValueType: string; ValueName: ""; ValueData: "URL:ShipForge"; Flags: uninsdeletekey; Check: not VerificationMode
+Root: HKCU; Subkey: "Software\Classes\shipforge"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""; Check: not VerificationMode
+Root: HKCU; Subkey: "Software\Classes\shipforge\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\shipforge-desktop.exe"" --open-invitation ""%1"""; Check: not VerificationMode
+
 [Run]
 Filename: "{app}\shipforge-desktop.exe"; Parameters: "{code:DataArguments}"; Description: "Launch ShipForge"; Flags: nowait postinstall skipifsilent runasoriginaluser; Check: NormalLaunch
 Filename: "{app}\shipforge-desktop.exe"; Parameters: "{code:RestartArguments}"; Flags: nowait runasoriginaluser; Check: RestartRequested

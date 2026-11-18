@@ -40,6 +40,24 @@ pub(crate) fn validate_task(
     }
     let task_type = required(f, "type")?.to_owned();
     let config = c.find("task_type", &task_type)?;
+    if config
+        .as_ref()
+        .is_some_and(|r| r.fields["enabled"] == false)
+        && old.is_none_or(|r| r.fields["type"] != task_type)
+    {
+        return Err(invalid("this task type is disabled in the space"));
+    }
+    if !f["estimate"].is_null() && old.is_none_or(|r| r.fields["estimate"] != f["estimate"]) {
+        if c.get("space", c.space)?.fields["estimates_enabled"] != true {
+            return Err(invalid("enable task estimates in the space first"));
+        }
+        if !f["estimate"]
+            .as_f64()
+            .is_some_and(|v| v.is_finite() && v >= 0.0)
+        {
+            return Err(invalid("estimate must be a non-negative number"));
+        }
+    }
     if config.is_none() && !matches!(task_type.as_str(), "task" | "requirement" | "bug") {
         return Err(invalid("unknown task type"));
     }
@@ -139,7 +157,9 @@ pub(crate) fn validate_task(
         if !matches!(k, "member" | "agent" | "crew") {
             return Err(invalid("unknown assignee kind"));
         }
-        if k != "member" || actor != "owner" {
+        if (k != "member" || actor != "owner")
+            && old.is_none_or(|r| r.fields["assignee"] != actor || r.fields["assignee_kind"] != k)
+        {
             c.readable(k, actor)?;
         }
     } else if !f["assignee"].is_null() {
@@ -363,9 +383,10 @@ pub(crate) fn cleanup(c: &Context<'_>, r: &Record) -> Result<()> {
             .map_err(storage)?;
             for task in c.records("task")? {
                 let mut f = task.fields.clone();
-                if f["assignee_kind"] == "member" && f["assignee"] == r.id {
-                    f["assignee"] = Value::Null;
+                if let Some(people) = f["assignees"].as_array_mut() {
+                    people.retain(|id| id != &r.id);
                 }
+                crate::task_commands::assignees::project(&mut f);
                 if f["owner"] == r.id {
                     f["owner"] = json!("owner");
                 }

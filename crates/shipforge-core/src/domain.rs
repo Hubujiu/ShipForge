@@ -47,15 +47,29 @@ pub(crate) fn write(c: &Context<'_>, q: &Value) -> Result<Value> {
     write_mode(c, q, true)
 }
 pub(crate) fn write_mode(c: &Context<'_>, q: &Value, notify: bool) -> Result<Value> {
-    write_inner(c, q, notify, None)
+    write_inner(c, q, notify, None, false)
+}
+pub(crate) fn write_import(c: &Context<'_>, q: &Value, notify: bool) -> Result<Value> {
+    write_inner(c, q, notify, None, true)
 }
 pub(crate) fn write_with_files(c: &Context<'_>, q: &Value, files: Value) -> Result<Value> {
-    write_inner(c, q, true, Some(files))
+    write_inner(c, q, true, Some(files), false)
 }
-fn write_inner(c: &Context<'_>, q: &Value, notify: bool, files: Option<Value>) -> Result<Value> {
+fn write_inner(
+    c: &Context<'_>,
+    q: &Value,
+    notify: bool,
+    files: Option<Value>,
+    from_source: bool,
+) -> Result<Value> {
     let op = required(q, "op")?;
     let kind = required(q, "kind")?;
     check_kind(kind)?;
+    if kind == "invitation" {
+        return Err(invalid(
+            "use an invitation operation to issue, copy or revoke a join link",
+        ));
+    }
     if matches!(kind, "space" | "organization") && op == "create" {
         return create_space(c, q);
     }
@@ -73,12 +87,26 @@ fn write_inner(c: &Context<'_>, q: &Value, notify: bool, files: Option<Value>) -
         let r = old.as_ref().ok_or_else(|| invalid("missing record"))?;
         validate_delete(c, r)?;
         worker::allow_delete(c, r)?;
+        if kind == "chat" {
+            crate::chat::before_delete(c, r)?;
+        }
         c.remove(r)?;
         return Ok(as_value(r.clone()));
     }
     let mut patch = fields_object(q.get("fields"))?;
+    if kind == "task" {
+        crate::task_commands::assignees::prepare(c, old.as_ref(), &mut patch, from_source)?;
+    }
+    if kind == "chat" && patch.contains_key("conversation") {
+        return Err(invalid(
+            "conversation controls are managed by chat operations",
+        ));
+    }
     if kind == "task" && patch.contains_key("following") {
         return Err(invalid("use follow to change your own following status"));
+    }
+    if kind == "task" && patch.contains_key("im_threads") {
+        return Err(invalid("use im.bind to manage external topics"));
     }
     if patch.contains_key("attachments") {
         return Err(invalid("use attachment.upload to attach files"));
@@ -164,7 +192,7 @@ fn write_inner(c: &Context<'_>, q: &Value, notify: bool, files: Option<Value>) -
         }
     }
     let row = if let Some(previous) = &old {
-        c.update(previous, &row.title, row.fields)?
+        c.update_mode(previous, &row.title, row.fields, notify)?
     } else {
         c.insert(&row)?;
         row
@@ -172,6 +200,12 @@ fn write_inner(c: &Context<'_>, q: &Value, notify: bool, files: Option<Value>) -
     if notify {
         crate::actions::after(c, old.as_ref(), &row)?;
         worker::changed(c, old.as_ref(), &row)?;
+        if old.is_none() && kind == "comment" {
+            crate::im::changed(c, None, &row)?;
+        }
+        if old.is_none() && kind == "message" {
+            crate::chat::notify(c, &row)?;
+        }
     }
     Ok(as_value(row))
 }
@@ -208,6 +242,19 @@ fn create_space(c: &Context<'_>, q: &Value) -> Result<Value> {
         f["visibility"] = json!("private");
     }
     validate_space(&f)?;
+    let start_types = f
+        .as_object_mut()
+        .expect("space fields")
+        .remove("task_types");
+    let work = f["work_type"].as_str().map(str::to_owned);
+    if start_types.is_some() && work.is_none() {
+        return Err(invalid(
+            "select a work type before choosing starting task types",
+        ));
+    }
+    if let Some(ref work) = work {
+        f["agent_type_default"] = json!(if work == "software" { "code" } else { "office" });
+    }
     let row = dest.create("space", Some(&id), title, f)?;
     dest.create(
         "member",
@@ -216,6 +263,9 @@ fn create_space(c: &Context<'_>, q: &Value) -> Result<Value> {
         json!({"actor":c.actor,"role":if c.actor=="owner"{"owner"}else{"admin"},"creator":c.actor}),
     )?;
     crate::defaults::seed(&dest)?;
+    if let Some(work) = work {
+        crate::defaults::starting_task_types(&dest, &work, start_types.as_ref())?;
+    }
     if is_org {
         return Ok(as_value(dest.create(
             "organization",
@@ -237,9 +287,14 @@ fn validate_space(f: &Value) -> Result<()> {
     }) {
         return Err(invalid("space key must be 1–12 ASCII letters or digits"));
     }
-    for k in ["triage_enabled", "triage_priority_required"] {
+    for k in [
+        "triage_enabled",
+        "triage_priority_required",
+        "estimates_enabled",
+        "allow_multiple_assignees",
+    ] {
         if f.get(k).is_some_and(|v| !v.is_boolean()) {
-            return Err(invalid("triage settings must be boolean"));
+            return Err(invalid("space feature settings must be boolean"));
         }
     }
     if let Some(v) = f.get("triage_sources") {
@@ -286,6 +341,21 @@ fn validate(c: &Context<'_>, old: Option<&Record>, row: &mut Record) -> Result<(
     }
     match row.kind.as_str() {
         "task" => validate_task(c, old, &row.id, f)?,
+        "agent" => {
+            if old.is_none() && f["agent_type"].is_null() {
+                let space = c.get("space", c.space)?;
+                f["agent_type"] = json!(
+                    space.fields["agent_type_default"]
+                        .as_str()
+                        .unwrap_or("code")
+                );
+            }
+            if !f["agent_type"].is_null()
+                && !matches!(f["agent_type"].as_str(), Some("code" | "office"))
+            {
+                return Err(invalid("agent_type must be code or office"));
+            }
+        }
         "space" => {
             if let Some(prior) = old
                 && f["organization"] != prior.fields["organization"]
@@ -456,8 +526,12 @@ fn validate(c: &Context<'_>, old: Option<&Record>, row: &mut Record) -> Result<(
             validate_mentions(c, f)?;
         }
         "message" => {
-            let _: Record =
+            let room =
                 ref_record(c, f, "chat", "chat")?.ok_or_else(|| invalid("message needs a chat"))?;
+            if old.is_some_and(|r| r.fields["chat"] != f["chat"]) {
+                return Err(invalid("a message cannot change its conversation"));
+            }
+            crate::chat::validate_mentions(c, &room, f)?;
             validate_body(f, &row.title)?;
         }
         "artifact" => {
@@ -512,6 +586,9 @@ fn validate(c: &Context<'_>, old: Option<&Record>, row: &mut Record) -> Result<(
         if f["visibility"] == "private" {
             f["owner"] = f["creator"].clone();
         }
+    }
+    if row.kind == "chat" {
+        crate::chat::validate(old, row)?;
     }
     Ok(())
 }

@@ -48,4 +48,10 @@
 | F24 CLI、账号与部署 | 官方提供 CLI、个人访问令牌、账号管理和私有部署说明。Windows 安装目录带有 CLI 可执行文件，界面呈现本机常驻服务；服务端部署细节采用独立设计。[帮助目录的 CLI 章节](https://help.hifox.com/docs/welcome) · [账号管理](https://help.hifox.com/docs/other/account-management) · [私有部署](https://hifox.com/solutions/private-deployment/) | 在自托管测试环境用限定权限的身份调用 CLI，执行与 GPUI 等价的业务操作。撤销权限后请求被拒，更新客户端时项目数据可正常重新打开。 |
 | F25 可视化 Workflow | 首页将可视化工作流标为 Coming Soon。当前规则式自动化已有帮助和界面；可视化节点、连线和发布语义仍待产品确认。[官网预告](https://hifox.com/) · [现行自动化](https://hifox.com/features/automations/) | 进入后续探索清单。首版规则配置以可运行、可暂停、可追踪为验收条件。 |
 
-各能力的桌面入口、界面状态和取证范围见[实机界面索引](interfaces.md)。服务端数据一致性、机器调度和落地顺序见[Rust + GPUI 架构](architecture.md)。
+## 首次使用
+
+| 编号与能力 | HiFox 中可以做什么 | ShipForge 应能通过的验收 |
+| --- | --- | --- |
+| F27 首次进入与新手指引 | 设置组织和默认空间，展开侧栏四个快捷步骤，打开六组共 36 项的完整指引，查看当前积分和名次。[快速上手](https://help.hifox.com/docs/quickstart) | 首次初始化可继续，旧库升级保留数据。业务操作成功后计分，重复提交和阅读说明时分数保持稳定。两个成员的进度各自保存。[逐项条件](onboarding.md) |
+
+各能力的桌面入口、界面状态和取证范围见[实机界面索引](interfaces.md)。页面数量仅对应那一批截图。独立功能、前置条件和联调范围见[行为覆盖清单](parity-inventory.md)。服务端数据一致性、机器调度和落地顺序见[Rust + GPUI 架构](architecture.md)。

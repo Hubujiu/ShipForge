@@ -48,6 +48,16 @@ impl Workbench {
                 .child(headline(item.title.clone(), 14.).truncate())
                 .child(div().flex_1())
                 .child(chip(status, PALE, color))
+                .when_some(plan["estimate"].as_f64(), |line, estimate| {
+                    line.child(text(
+                        format!(
+                            "工作量 {}/{estimate}",
+                            plan["completed_estimate"].as_f64().unwrap_or_default()
+                        ),
+                        11.,
+                        MUTED,
+                    ))
+                })
                 .when_some(capacity, |line, n| line.child(text(n, 11., MUTED)))
                 .child(text(format!("完成 {completed}/{total}"), 11., INK));
             let dates = col()

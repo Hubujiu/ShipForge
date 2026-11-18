@@ -40,6 +40,8 @@ pub fn value_text(v: &Value) -> String {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub enum Page {
+    GettingStarted,
+    Tags,
     Tasks,
     Mine,
     Triage,
@@ -83,6 +85,20 @@ impl Page {
     pub fn info(self) -> PageInfo {
         use Page::*;
         let (label, icon, kind, noun, empty) = match self {
+            GettingStarted => (
+                "开始使用",
+                "compass",
+                "space",
+                "设置向导",
+                "开始你的第一项工作。",
+            ),
+            Tags => (
+                "任务标签",
+                "tag",
+                "tag",
+                "标签",
+                "创建标签，按主题和来源整理任务。",
+            ),
             Tasks => (
                 "任务",
                 "list-checks",
@@ -302,15 +318,16 @@ impl Page {
             ),
         };
         PageInfo {
-            label,
+            label: crate::locale::label(label),
             icon,
             kind,
-            noun,
-            empty,
+            noun: crate::locale::label(noun),
+            empty: crate::locale::label(empty),
         }
     }
     pub fn from_kind(kind: &str) -> Option<Self> {
         const PAGES: &[Page] = &[
+            Page::Tags,
             Page::Tasks,
             Page::Iterations,
             Page::Projects,
@@ -348,6 +365,7 @@ impl Page {
         !matches!(
             self,
             Self::Market
+                | Self::GettingStarted
                 | Self::Artifacts
                 | Self::Inbox
                 | Self::Machines
@@ -391,9 +409,9 @@ pub fn label_value(key: &str, v: &str) -> String {
             return STATUSES
                 .iter()
                 .find(|s| s.0 == v)
-                .map(|s| s.1.to_owned())
+                .map(|s| crate::locale::label(s.1).to_owned())
                 .unwrap_or_else(|| {
-                    match v {
+                    crate::locale::label(match v {
                         "scheduled" => "已计划",
                         "active" => "进行中",
                         "closed" => "已结束",
@@ -403,7 +421,7 @@ pub fn label_value(key: &str, v: &str) -> String {
                         "success" | "succeeded" => "成功",
                         "cancelled" => "已取消",
                         _ => v,
-                    }
+                    })
                     .to_string()
                 });
         }
@@ -412,7 +430,7 @@ pub fn label_value(key: &str, v: &str) -> String {
     choices
         .iter()
         .find(|(k, _)| *k == v)
-        .map(|(_, s)| (*s).to_owned())
+        .map(|(id, s)| crate::locale::choice(key, id, s).to_owned())
         .unwrap_or_else(|| v.to_owned())
 }
 pub fn summary(record: &Record) -> String {

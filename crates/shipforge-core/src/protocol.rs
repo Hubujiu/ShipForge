@@ -34,6 +34,21 @@ pub(crate) const KINDS: &[&str] = &[
     "note",
 ];
 const WRITES: &[&str] = &[
+    "invitation.issue",
+    "invitation.copy",
+    "invitation.revoke",
+    "invitation.accept",
+    "chat.manage",
+    "chat.preferences",
+    "chat.share.create",
+    "chat.share.revoke",
+    "onboarding.display",
+    "onboarding.setup",
+    "preferences.update",
+    "task.move",
+    "task.assign",
+    "task.conversation",
+    "task.command",
     "create",
     "update",
     "delete",
@@ -45,9 +60,22 @@ const WRITES: &[&str] = &[
     "artifact.save",
     "import",
     "provider.ingest",
+    "im.bind",
+    "im.reply",
+    "im.unbind",
+    "im.claim",
+    "im.ack",
+    "im.retry",
     "attachment.upload",
 ];
 const READS: &[&str] = &[
+    "invitation.list",
+    "chat.info",
+    "chat.invitations",
+    "chat.share.read",
+    "onboarding.catalog",
+    "onboarding.get",
+    "preferences.get",
     "schema",
     "whoami",
     "list",
@@ -66,6 +94,8 @@ const READS: &[&str] = &[
     "export",
     "import.preview",
     "provider.preview",
+    "im.outbox",
+    "im.threads",
     "attachment.download",
 ];
 pub(crate) fn operation_names() -> Vec<&'static str> {
@@ -105,6 +135,18 @@ pub fn schema() -> Value {
            {"if":{"properties":{"op":{"const":"attachment.download"}}},"then":{"required":["kind","id","attachment_id"],"properties":{"kind":{"enum":["document","artifact","message","task"]}}}}
         ]
     });
+    schema["properties"]["sidebar_visible"] = json!({"type":"boolean"});
+    schema["properties"]["sidebar_expanded"] = json!({"type":"boolean"});
+    schema["properties"]["work_type"] = json!({"type":"string","minLength":1,"maxLength":80});
+    schema["properties"]["task_types"] = json!({"type":"array","minItems":1,"uniqueItems":true,"items":{"enum":["requirement","bug","task","story"]}});
+    schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"onboarding.setup"}}},"then":{"required":["organization_name","organization_slug","work_type","task_types"],"properties":{"organization_name":{"type":"string","minLength":1,"maxLength":100},"organization_slug":{"type":"string","pattern":"^[a-z0-9]+(-[a-z0-9]+)*$","maxLength":63}}}}));
+    schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"onboarding.display"}}},"then":{"anyOf":[{"required":["sidebar_visible"]},{"required":["sidebar_expanded"]}]}}));
     worker::extend_schema(&mut schema);
+    crate::invitations::extend_schema(&mut schema);
+    crate::chat::extend_schema(&mut schema);
+    crate::im::extend_schema(&mut schema);
+    crate::preferences::extend_schema(&mut schema);
+    crate::task_commands::assignees::schema(&mut schema);
+    schema["allOf"].as_array_mut().unwrap().extend([json!({"if":{"properties":{"op":{"const":"task.move"}}},"then":{"required":["id","target"],"properties":{"target":{"type":"string","minLength":1}}}}),json!({"if":{"properties":{"op":{"enum":["task.conversation","task.command"]}}},"then":{"required":["id"]}})]);
     schema
 }

@@ -13,6 +13,7 @@ pub enum Format {
     Body,
     Secret,
     Number,
+    Decimal,
     Bool,
     Csv,
     Json,
@@ -53,24 +54,57 @@ const TRIGGERS: &[(&str, &str)] = &[
 ];
 #[derive(Clone)]
 pub enum Mode {
+    OpenChatShare,
+    Invite {
+        email: bool,
+    },
+    JoinInvite,
+    SetupOrganization,
+    SetupSpace {
+        organization: String,
+        slug: String,
+    },
+    MissingMachine,
+    GuideTarget {
+        step: &'static str,
+        kind: &'static str,
+    },
+    MoveTask,
+    FindInView,
     Create(String),
     Edit(Record),
     Filter,
     Connect,
     Comment(Record),
+    ThreadReply {
+        task: String,
+        target: Value,
+        request_id: String,
+    },
     Message(Record),
     IterationEnd(Record),
     Upload(Option<Record>),
     Download(Record, Value),
-    Machine { stop: bool },
-    Workflow { op: &'static str, record: Record },
+    Machine {
+        stop: bool,
+    },
+    Workflow {
+        op: &'static str,
+        record: Record,
+    },
     ResolveDraft(Value),
-    Confirm { label: String, command: Value },
+    Confirm {
+        label: String,
+        command: Value,
+    },
     Export,
     Import,
     Token,
     Search,
-    Output { heading: String, content: String },
+    Output {
+        heading: String,
+        content: String,
+    },
 }
 impl Mode {
     pub fn automation(&self) -> bool {
@@ -81,6 +115,16 @@ impl Mode {
     pub fn heading(&self) -> String {
         use Mode::*;
         match self {
+            OpenChatShare => "打开已分享的对话".into(),
+            SetupOrganization => "创建你的组织".into(),
+            Invite { email: true } => "通过邮箱邀请成员".into(),
+            Invite { email: false } => "创建组织邀请链接".into(),
+            JoinInvite => "接受组织邀请".into(),
+            SetupSpace { .. } => "初始化默认空间".into(),
+            MissingMachine => "没有可用的机器".into(),
+            GuideTarget { kind, .. } => crate::locale::select_title(noun(kind)),
+            MoveTask => "将任务移动到空间".into(),
+            FindInView => "在当前视图查找".into(),
             Machine { stop } => if *stop {
                 "停止本机工作机"
             } else {
@@ -90,11 +134,17 @@ impl Mode {
             Upload(_) => "上传附件".into(),
             Download(..) => "下载附件".into(),
             Workflow { op, .. } => workflow_name(op).into(),
-            Create(k) => format!("新建{}", noun(k)),
-            Edit(r) => format!("编辑{}", noun(&r.kind)),
+            Create(k) => crate::locale::new_title(noun(k)),
+            Edit(r) => crate::locale::edit_title(noun(&r.kind)),
             Filter => "筛选任务".into(),
             Connect => "连接团队服务".into(),
             Comment(_) => "添加评论".into(),
+            ThreadReply { target, .. } => format!(
+                "{} · {} / {}",
+                crate::locale::label("回复到 Slack 话题"),
+                target["thread"]["channel"].as_str().unwrap_or(""),
+                target["thread"]["thread"].as_str().unwrap_or("")
+            ),
             Message(_) => "发送消息".into(),
             IterationEnd(_) => "结束迭代".into(),
             ResolveDraft(_) => "处理同步冲突".into(),
@@ -108,6 +158,15 @@ impl Mode {
     }
     pub fn submit_label(&self) -> &'static str {
         match self {
+            Self::OpenChatShare => "打开",
+            Self::SetupOrganization => "继续",
+            Self::Invite { .. } => "生成邀请链接",
+            Self::JoinInvite => "接受邀请",
+            Self::SetupSpace { .. } => "进入工作区",
+            Self::MissingMachine => "连接机器",
+            Self::GuideTarget { .. } => "继续",
+            Self::MoveTask => "移动",
+            Self::FindInView => "查找",
             Self::Machine { stop } => {
                 if *stop {
                     "停止"
@@ -121,7 +180,7 @@ impl Mode {
             Self::Create(_) => "创建",
             Self::Filter => "应用筛选",
             Self::Connect => "连接",
-            Self::Comment(_) | Self::Message(_) => "发送",
+            Self::Comment(_) | Self::Message(_) | Self::ThreadReply { .. } => "发送",
             Self::Search => "搜索",
             Self::Token => "签发令牌",
             Self::ResolveDraft(_) => "更新草稿",
@@ -140,6 +199,7 @@ pub fn noun(kind: &str) -> &'static str {
         .unwrap_or(match kind {
             "relation_type" => "关联类型",
             "tag" => "标签",
+            "invitation" => "成员邀请",
             "artifact" => "产物",
             _ => "记录",
         })
@@ -172,12 +232,14 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 Choice(crate::catalog::PRIORITIES),
                 "none",
             ),
-            item("assignee", "处理人", Ref("$handlers"), ""),
+            item("assignees", "人员处理人", Many("member"), ""),
+            item("executor", "执行者（Agent 或小队）", Ref("$executors"), ""),
             item("owner", "负责人", Ref("member"), ""),
             item("iteration", "迭代", Ref("iteration"), ""),
             item("project", "专项", Ref("project"), ""),
             item("due_date", "截止日期（YYYY-MM-DD）", Text, ""),
             item("labels", "标签（用逗号分隔）", Csv, ""),
+            item("estimate", "预估工作量", Decimal, ""),
             item("parent", "父任务", Ref("task"), ""),
             item("custom", "自定义字段值（JSON 对象）", Json, "{}"),
         ],
@@ -232,6 +294,8 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 "private",
             ),
             item("triage_enabled", "空间分拣台", Bool, "false"),
+            item("allow_multiple_assignees", "允许多个处理人", Bool, "false"),
+            item("estimates_enabled", "任务估时", Bool, "false"),
             item(
                 "triage_sources",
                 "需要分拣的来源",
@@ -254,6 +318,13 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
         "document" => vec![title, item("body", "正文", Body, ""), visibility],
         "chat" => vec![
             title,
+            item(
+                "chat_type",
+                "对话类型",
+                Choice(&[("conversation", "普通对话"), ("group", "群聊")]),
+                "conversation",
+            ),
+            body,
             item("agent", "参与 Agent", Ref("agent"), ""),
             item("visibility", "可见范围", Choice(VIS), "private"),
         ],
@@ -275,6 +346,12 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
         "agent" => vec![
             title,
             body,
+            item(
+                "agent_type",
+                "Agent 类型",
+                Choice(&[("code", "代码开发"), ("office", "日常办公")]),
+                "code",
+            ),
             item("parent_id", "继承其他 Agent", Ref("agent"), ""),
             item("instructions", "职责与指令", Body, ""),
             item("runtime", "Runtime 名称", Text, "local-tool"),
@@ -336,7 +413,7 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 "provider",
                 "平台",
                 Choice(&[
-                    ("github", "GitHub Issues"),
+                    ("github", "GitHub"),
                     ("jira", "Jira"),
                     ("gitlab", "GitLab"),
                     ("linear", "Linear"),
@@ -359,13 +436,30 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 "",
             ),
             item("project_id", "GitLab 项目 ID", Text, ""),
+            item(
+                "repository_host",
+                "GitLab 主机（默认 gitlab.com）",
+                Text,
+                "",
+            ),
+            item("link_tasks", "按任务编号关联提交和合并请求", Bool, "false"),
+            item(
+                "review_rule_id",
+                "新建或重开合并请求时运行的规则（可选）",
+                Ref("automation"),
+                "",
+            ),
             item("project_key", "Jira 项目标识", Text, ""),
             item("workspace_id", "Slack 工作区 ID", Text, ""),
             item("channel_id", "Slack 频道 ID", Text, ""),
+            item("app_id", "Slack 应用 ID", Text, ""),
+            item("bot_id", "Slack 机器人 ID", Text, ""),
+            item("outbound", "将任务活动回写 Slack 线程", Bool, "false"),
             item("chat_id", "飞书或 Telegram 会话 ID", Text, ""),
             item("enabled", "启用", Bool, "true"),
             body,
             item("mapping", "字段映射（JSON）", Json, "{}"),
+            item("assignee_map", "外部账号到空间成员映射（JSON）", Json, "{}"),
         ],
         "field" => vec![
             title,
@@ -388,6 +482,7 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
         "status" => vec![title, item("category", "状态类别", Choice(STATUS), "todo")],
         "task_type" => vec![
             title,
+            item("enabled", "启用任务类型", Bool, "true"),
             item("statuses", "状态工作流", Many("$statuses"), ""),
             item("required_fields", "必填字段", Many("field"), ""),
         ],
@@ -407,6 +502,9 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
 }
 pub fn workflow_name(op: &str) -> &'static str {
     match op {
+        "chat.share.create" => "分享已选消息",
+        "chat.manage" => "管理对话成员",
+        "chat.agents" => "管理群内 Agent",
         "provider.preview" => "预览平台事件",
         "provider.ingest" => "接收平台事件",
         "tool.authorize" => "验证 Agent 工具权限",
@@ -421,6 +519,78 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
     use Format::*;
     use Mode::*;
     match mode {
+        OpenChatShare => vec![item("share", "分享链接或分享码", Secret, "")],
+        Invite { email } => {
+            let mut entries = Vec::new();
+            if *email {
+                entries.push(item("email", "受邀成员邮箱", Text, ""));
+            }
+            let roles: &'static [(&str, &str)] = if *email {
+                &[("member", "成员"), ("guest", "访客"), ("admin", "管理员")]
+            } else {
+                &[("member", "成员"), ("guest", "访客")]
+            };
+            entries.extend([
+                item("role", "组织角色", Choice(roles), "member"),
+                item("spaces", "同时加入空间", Many("$invite_spaces"), ""),
+            ]);
+            entries
+        }
+        JoinInvite => vec![item("link", "邀请链接", Secret, "")],
+        SetupOrganization => vec![
+            item("organization_name", "组织名称", Text, ""),
+            item("organization_slug", "组织地址标识", Text, ""),
+        ],
+        SetupSpace { .. } => vec![
+            item(
+                "work_type",
+                "工作类型",
+                Choice(&[
+                    ("software", "软件研发"),
+                    ("project", "项目管理"),
+                    ("other", "其他工作"),
+                ]),
+                "software",
+            ),
+            item(
+                "task_types",
+                "起始任务类型",
+                Many("$setup_types"),
+                "requirement, bug",
+            ),
+        ],
+        MissingMachine => vec![],
+        GuideTarget { kind, .. } => vec![item("target", "选择对象", Ref(kind), "")],
+        MoveTask => vec![
+            item("task", "任务", Ref("task"), ""),
+            item("target", "目标空间", Ref("$other_spaces"), ""),
+        ],
+        FindInView => vec![item("query", "搜索标题或任务编号", Text, "")],
+        Create(k) if k == "space" => {
+            let mut fields = record_specs(k);
+            fields.splice(
+                2..2,
+                [
+                    item(
+                        "work_type",
+                        "工作类型",
+                        Choice(&[
+                            ("software", "软件研发"),
+                            ("project", "项目管理"),
+                            ("other", "其他工作"),
+                        ]),
+                        "software",
+                    ),
+                    item(
+                        "task_types",
+                        "起始任务类型",
+                        Many("$setup_types"),
+                        "requirement, bug",
+                    ),
+                ],
+            );
+            fields
+        }
         Create(k) => record_specs(k),
         Edit(r) => record_specs(&r.kind),
         Machine { stop } => {
@@ -443,7 +613,56 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             s
         }
         Download(..) => vec![item("path", "保存到新文件", Text, "")],
-        Workflow { op, .. } => match *op {
+        Workflow { op, record } => match *op {
+            "chat.share.create" => vec![
+                item(
+                    "message_ids",
+                    "已发送的消息与已完成的回复",
+                    Many("$chat_messages"),
+                    "",
+                ),
+                item(
+                    "scope",
+                    "谁可以查看",
+                    Choice(&[("organization", "本组织成员"), ("link", "获得链接的任何人")]),
+                    "organization",
+                ),
+            ],
+            "chat.manage" => {
+                let info = record
+                    .fields
+                    .get("conversation")
+                    .cloned()
+                    .unwrap_or_default();
+                let choices: &'static [(&str, &str)] = if info["group"] == true {
+                    &[
+                        ("add", "添加成员"),
+                        ("remove", "移出成员"),
+                        ("transfer", "转让群主"),
+                    ]
+                } else if info["is_owner"] == true {
+                    &[
+                        ("invite", "邀请参与"),
+                        ("revoke", "撤回授权"),
+                        ("transfer", "转让对话"),
+                    ]
+                } else {
+                    &[("invite", "邀请参与")]
+                };
+                vec![
+                    item("action", "操作", Choice(choices), choices[0].0),
+                    item("target", "成员", Ref("member"), ""),
+                ]
+            }
+            "chat.agents" => vec![
+                item(
+                    "action",
+                    "操作",
+                    Choice(&[("add", "添加 Agent"), ("remove", "移出 Agent")]),
+                    "add",
+                ),
+                item("target", "Agent", Ref("agent"), ""),
+            ],
             "provider.preview" | "provider.ingest" => vec![
                 item("payload", "平台原始事件（JSON 对象）", Json, "{}"),
                 item("event_id", "GitLab 或 Jira 上游投递 ID", Text, ""),
@@ -472,7 +691,17 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             item("filter_priority", "优先级", Ref("$priorities"), ""),
             item("filter_assignee", "处理人", Ref("$handlers"), ""),
         ],
-        Comment(_) | Message(_) => vec![item("body", "内容", Body, "")],
+        Comment(_) | ThreadReply { .. } => vec![item("body", "内容", Body, "")],
+        Message(room) => {
+            let mut fields = vec![
+                item("body", "内容", Body, ""),
+                item("mentions", "提及成员", Many("member"), ""),
+            ];
+            if room.field("chat_type") == "group" {
+                fields.push(item("mention_all", "提及所有人", Bool, "false"));
+            }
+            fields
+        }
         IterationEnd(_) => vec![item(
             "target",
             "未完成任务转入（留空退回待规划）",
@@ -535,7 +764,7 @@ impl Editor {
             },
             _ => Control::Text(Field::new(
                 &value,
-                spec.label,
+                crate::locale::label(spec.label),
                 matches!(spec.format, Format::Body | Format::Json),
                 spec.format == Format::Secret,
                 window,
@@ -573,6 +802,13 @@ impl Editor {
                         .map_err(|e| format!("{} JSON 无效：{e}", self.spec.label))?
                 }
             }
+            Decimal if t.is_empty() => Value::Null,
+            Decimal => t
+                .parse::<f64>()
+                .ok()
+                .and_then(serde_json::Number::from_f64)
+                .map(Value::Number)
+                .ok_or_else(|| format!("{}需要有效数字", self.spec.label))?,
             Number => {
                 if t.is_empty() {
                     Value::Null
@@ -784,6 +1020,20 @@ impl Form {
         Ok(fields)
     }
 }
+pub fn connector_field_visible(key: &str, provider: &str) -> bool {
+    match key {
+        "link_tasks" | "repository" | "review_rule_id" => matches!(provider, "github" | "gitlab"),
+        "repository_host" | "project_id" => provider == "gitlab",
+        "project_key" => provider == "jira",
+        "workspace_id" | "channel_id" | "app_id" | "bot_id" | "outbound" => provider == "slack",
+        "chat_id" => matches!(
+            provider,
+            "telegram" | "feishu" | "lark" | "teams" | "dingtalk"
+        ),
+        _ => true,
+    }
+}
+
 pub fn trigger_field_visible(key: &str, kind: &str, frequency: &str) -> bool {
     match key {
         "status" => kind == "status",
@@ -797,6 +1047,9 @@ pub fn trigger_field_visible(key: &str, kind: &str, frequency: &str) -> bool {
 }
 pub fn initial_record(r: &Record) -> Map<String, Value> {
     let mut f = r.fields.clone();
+    if r.kind == "task" {
+        crate::assignees::initial(r, &mut f);
+    }
     f.insert("title".into(), json!(r.title));
     if let Some(filters) = r.fields.get("filter").and_then(Value::as_object) {
         for (k, v) in filters {
@@ -808,7 +1061,6 @@ pub fn initial_record(r: &Record) -> Map<String, Value> {
 pub fn compile_record(
     kind: &str,
     mut fields: Map<String, Value>,
-    assignee_kind: Option<&str>,
     creating: bool,
 ) -> Result<(String, Map<String, Value>), String> {
     let title = fields
@@ -818,18 +1070,29 @@ pub fn compile_record(
     if title.trim().is_empty() {
         return Err("请填写名称或标题。".into());
     }
+    if kind == "connector" {
+        let provider = fields
+            .get("provider")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+            .to_owned();
+        fields.retain(|key, value| {
+            connector_field_visible(key, &provider) && !(creating && value.as_str() == Some(""))
+        });
+        if !matches!(provider.as_str(), "github" | "gitlab") {
+            fields.insert("link_tasks".into(), json!(false));
+        }
+        if provider != "slack" {
+            fields.insert("outbound".into(), json!(false));
+        }
+    }
     for key in ["due_date", "start_date", "end_date"] {
         if fields.get(key).and_then(Value::as_str) == Some("") {
             fields.insert(key.into(), Value::Null);
         }
     }
     if kind == "task" {
-        if fields.get("assignee").and_then(Value::as_str).is_some() {
-            fields.insert(
-                "assignee_kind".into(),
-                json!(assignee_kind.unwrap_or("member")),
-            );
-        }
+        crate::assignees::compile(&mut fields)?;
         if fields.get("owner").is_none_or(Value::is_null) {
             fields.remove("owner");
         }

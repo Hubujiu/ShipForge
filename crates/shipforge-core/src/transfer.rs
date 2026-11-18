@@ -291,6 +291,7 @@ fn apply(c: &Context<'_>, input: &[Value]) -> Result<Value> {
                 }
             }
             if kind == "task" {
+                crate::task_commands::source_members::imported(c, f)?;
                 if let Some(actor) = f["owner"].as_str()
                     && actor != "owner"
                     && c.find("member", actor)?.is_none()
@@ -321,8 +322,11 @@ fn apply(c: &Context<'_>, input: &[Value]) -> Result<Value> {
             }
             c.db.execute_batch("SAVEPOINT import_row")
                 .map_err(storage)?;
-            match crate::domain::write_mode(c, &request, false) {
+            match crate::domain::write_import(c, &request, false) {
                 Ok(_) => {
+                    if kind == "task" {
+                        crate::onboarding::imported_tasks(c)?;
+                    }
                     c.db.execute_batch("RELEASE import_row").map_err(storage)?;
                     if request["op"] == "update" {
                         updated += 1;
