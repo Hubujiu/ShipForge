@@ -19,6 +19,8 @@ def digest(path):
 
 
 def verify_manuals(payload):
+    # A Windows runner can expose TEMP through an 8.3 alias. Compare canonical paths on both sides.
+    payload = payload.resolve(strict=True)
     required = (
         "README.md", "LICENSE", "docs/windows.md", "docs/cli.md", "docs/protocol.schema.json",
         "skills/shipforge/SKILL.md", "licenses/LUCIDE-LICENSE.txt",
@@ -32,9 +34,8 @@ def verify_manuals(payload):
             if url.scheme or url.netloc or not url.path:
                 continue
             dest = (manual.parent / unquote(url.path)).resolve()
-            assert dest.is_relative_to(payload) and dest.is_file(), (
-                f"{manual.relative_to(payload)} references missing packaged file {target}"
-            )
+            assert dest.is_relative_to(payload), f"{manual.relative_to(payload)} links outside the package: {target}"
+            assert dest.is_file(), f"{manual.relative_to(payload)} references missing packaged file {target}"
 
 
 def verify(dist, version):
