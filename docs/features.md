@@ -6,9 +6,9 @@
 
 | 编号与能力 | HiFox 中可以做什么 | ShipForge 应能通过的验收 |
 | --- | --- | --- |
-| F01 组织、成员与空间 | 成员先加入组织，再依空间角色获得权限。组织角色与空间角色分别生效。任务、迭代和专项有各自的空间归属。实机有组织切换、成员目录、空间导航和设置。[成员](https://help.hifox.com/docs/space/members) · [空间](https://help.hifox.com/docs/space/spaces) | 两名成员以不同角色打开同一空间，管理入口、可见内容及服务端写入权限一致。移出私有空间后，搜索也应停止显示其内容。 |
+| F01 组织、成员与空间 | 成员先加入组织，再依空间角色获得权限。组织角色与空间角色分别生效。任务、迭代和专项有各自的空间归属。实机有组织切换、成员目录、邀请入口、空间导航和设置。[成员](https://help.hifox.com/docs/space/members) · [空间](https://help.hifox.com/docs/space/spaces) | 两名成员以不同角色打开同一空间，管理入口、可见内容及服务端写入权限一致。移出私有空间后，搜索也应停止显示其内容。 |
 | F02 任务、负责人和处理人 | 空间任务共有稳定编号、描述、类型、状态、优先级，以及可选日期、标签、迭代和专项。负责人承担验收，当前处理人可以是同事、Agent 或小队。看板卡片与详情都可指派。实机可见新建入口和右侧详情。[任务系统](https://hifox.com/features/tasks/) · [任务帮助](https://help.hifox.com/docs/space/tasks) | 创建任务、换处理人、更新描述后，从编号、列表、看板和 CLI 打开同一条记录，负责人保留。 |
-| F03 类型、字段和状态 | 需求、缺陷等类型可有各自的字段与工作流；具体状态归属稳定的状态类别。实机的状态设置显示排序、默认项及用量。标签可跨任务复用，并参与检索。[任务类型](https://help.hifox.com/docs/task/task-types) · [任务状态](https://help.hifox.com/docs/task/task-statuses) · [标签](https://help.hifox.com/docs/task/task-labels) | 同空间两种任务可有不同必填字段和状态。重命名某个状态后，既有任务和按类别筛选的视图仍可定位。 |
+| F03 类型、字段和状态 | 需求、缺陷等类型可有各自的字段与工作流；具体状态归属稳定的状态类别。实机的状态设置显示排序、默认项及用量，另有自定义字段管理页。标签可跨任务复用，并参与检索。[任务类型](https://help.hifox.com/docs/task/task-types) · [任务状态](https://help.hifox.com/docs/task/task-statuses) · [标签](https://help.hifox.com/docs/task/task-labels) | 同空间两种任务可有不同必填字段和状态。重命名某个状态后，既有任务和按类别筛选的视图仍可定位。 |
 | F04 子任务、依赖与重复项 | 父子、阻塞、相关、重复表达不同关系；在详情内可以追踪另一侧的任务。专项用于对工作按目标归组。[任务关联](https://help.hifox.com/docs/task/task-relations) · [任务帮助](https://help.hifox.com/docs/space/tasks) | 从父任务找到子任务，从受阻任务找到阻塞方；重复关系显示归并目标，删除关系后两个详情同时更新。 |
 | F05 我的任务、布局、检索与仪表盘 | 实机的个人任务页有“指派给我的”和“我创建的”，支持页内查找和筛选。个人仪表盘显示完成情况、状态和优先级分布、逾期及近期到期风险。空间页有任务类型切换、看板分列和显示选项。官方还列出列表、表格及可配置分组。[视图](https://help.hifox.com/docs/space/views) · [项目管理](https://hifox.com/features/project-management/) | 同一筛选在看板、列表和表格得到同一批任务；改处理人后个人清单更新，打开后退保留原筛选和位置。 |
 | F06 保存视图 | 命名视图保存条件、分组、排序与布局，可供个人或空间使用。实机无已有视图时提供创建入口。[视图](https://help.hifox.com/docs/space/views) | 保存“高优先级且未完成”的共享视图，另一成员可打开；任务完成后下次查询立即移出。 |
@@ -22,7 +22,7 @@
 | --- | --- | --- |
 | F10 评论、回复与关注 | 讨论挂在任务上，支持回复、提及和关注。新信息可以回到既有执行上下文；关注者按个人设置接收动态。[评论和回复](https://help.hifox.com/docs/agent-and-computer/comments-and-replies) · [关注任务](https://help.hifox.com/docs/task/follow-tasks) | 被提及成员能从提醒回到原任务与评论。取消关注后保留已有讨论，直接提及仍按通知规则处理。 |
 | F11 收件箱 | 通知按事项聚合，可筛重要程度、稍后提醒、标记已读和清理。实机有三个时间分区及重要性筛选；规则运行也可通知所选接收人。[收件箱](https://help.hifox.com/docs/agent-and-computer/inbox) · [自动化](https://help.hifox.com/docs/space/automations) | 同一任务的两次变更聚为一行，打开定位到原对象。一名用户延后提醒后，另一人的提醒和任务状态保持原值。 |
-| F12 对话与产物 | 可在任务外与 Agent 对话，查看消息、运行进展和产物，可把产物保存到文档库。实机有独立对话导航和会话空态。[与 Agent 对话](https://help.hifox.com/docs/agent-and-computer/chat-with-agent) · [文档库](https://help.hifox.com/docs/space/docs) | 新会话可再次打开；从一条消息追到其运行和产物，再从个人文档库打开已保存版本。 |
+| F12 对话与产物 | 可在任务外与 Agent 对话，查看消息、运行进展和产物，可把产物保存到文档库。实机有独立对话导航、会话空态和个人小助手输入区。[与 Agent 对话](https://help.hifox.com/docs/agent-and-computer/chat-with-agent) · [文档库](https://help.hifox.com/docs/space/docs) | 新会话可再次打开；从一条消息追到其运行和产物，再从个人文档库打开已保存版本。 |
 | F13 文档库 | 安装版实际打开了个人与团队目录、上传和新建入口。帮助页还描述正文搜索、历史版本、恢复和应用内引用。部分产品页页脚仍将文档列为预告，版本恢复本次仅有文档证据。[文档库](https://help.hifox.com/docs/space/docs) · [产品页](https://hifox.com/features/tasks/) | 个人草稿仅本人可见，团队文档按权限检索；恢复历史版本后仍可查看恢复前的版本，并能从任务链接定位文档。 |
 | F14 桌面导航、搜索与跨端 | 实机有组织切换、后退/前进、全局搜索、首页、对话、成员和设置。官网还描述用手机查看进展、回复与派发任务；本次实机覆盖 Windows。[产品首页](https://hifox.com/) | 桌面后退回到原空间及筛选；同一对象用权限范围内的标识可在另一客户端定位。移动端列为后续独立交付。 |
 
@@ -35,7 +35,7 @@
 | F17 技能、市场与连接器 | 技能可绑定给 Agent，沉淀团队的执行方法。实机市场提供技能与 Agent 模板两类内容、搜索和分类；空间技能页另有连接器标签。[技能](https://help.hifox.com/docs/agent-and-computer/skills) · [Agent 配置](https://hifox.com/features/agents/) | 从模板建立的 Agent 可独立配置；能追溯某次执行采用的技能版本，卸载的技能从后续指派的选择器移除。 |
 | F18 机器、Runtime 与工作时间 | 可接入自有机器、已有编程工具与订阅额度。用户机器或共享机器接收工作，管理可见范围和运行环境。实机的机器详情分别展示本地服务和已发现 Runtime 的状态。官方还列出可执行工作时段及机器不可用时排队。[自带工具与机器](https://hifox.com/) · [机器](https://help.hifox.com/docs/agent-and-computer/computers) · [工作时间](https://help.hifox.com/docs/agent-and-computer/working-hours) | 离线、未发现所需 Runtime、时段外或容量已满时展示具体等待原因；机器重连后，仅符合条件的任务继续。 |
 | F19 仓库与工作目录 | 配置可以绑定仓库、临时目录或指定目录。Git worktree 可隔离并发任务，直接使用现有目录时串行，多目录与隔离模式的限制不同。[工作目录](https://help.hifox.com/docs/agent-and-computer/working-directory) · [连接代码库](https://help.hifox.com/docs/agent-and-computer/repositories) | 同一仓库的两个隔离运行拥有独立目录；对同一指定目录的两个直接运行按序开始，结束后可找到对应交付引用。 |
-| F20 指派、执行与回传 | 待规划任务提前指派会等待，移入可执行状态后才派发。机器启动已配置的外部工具，讨论、进度、人工问题、结果和产物回到任务。官方列有按次覆盖模型。[任务执行](https://help.hifox.com/docs/agent-and-computer/agent-task-execution) | 先在待规划指派，再移入待办，仅出现一次有效运行；人工回复后能接续上下文，取消与完成在历史里可区分。 |
+| F20 指派、执行与回传 | 待规划任务提前指派会等待，移入可执行状态后才派发。机器启动已配置的外部工具，讨论、进度、人工问题、结果和产物回到任务。官方列有按次覆盖模型，实机另有每个 Agent 的运行历史标签。[任务执行](https://help.hifox.com/docs/agent-and-computer/agent-task-execution) | 先在待规划指派，再移入待办，仅出现一次有效运行；人工回复后能接续上下文，取消与完成在历史里可区分。 |
 | F26 Agent 工具、知识库与 MCP | 实机 Agent 设置有工具、知识库与 MCP 分区，展开后可添加连接。空间技能页另有连接器标签。具体提供商动作和数据范围需逐一验证。[Agent 配置](https://help.hifox.com/docs/agent-and-computer/agents) | 两个 Agent 只看到分别获准装配的工具；运行记录能说明实际使用的连接，撤销后不能再发起新调用。 |
 
 ## 自动化、集成与部署
