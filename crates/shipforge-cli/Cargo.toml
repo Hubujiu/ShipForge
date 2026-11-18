@@ -1,0 +1,15 @@
+[package]
+name = "shipforge-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "shipforge"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+serde_json.workspace = true
+shipforge-client.workspace = true
+shipforge-core.workspace = true

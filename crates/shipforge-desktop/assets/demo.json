@@ -1,0 +1,60 @@
+[
+  {
+    "op": "create",
+    "space": "default",
+    "kind": "task",
+    "title": "设计新成员引导流程",
+    "fields": {
+      "status": "todo",
+      "type": "requirement",
+      "priority": "medium",
+      "description": "梳理加入空间后的第一项工作，补充验收条件。"
+    }
+  },
+  {
+    "op": "create",
+    "space": "default",
+    "kind": "task",
+    "title": "同步桌面端任务筛选条件",
+    "fields": {
+      "status": "in_progress",
+      "type": "task",
+      "priority": "high",
+      "description": "切换列表和看板时保留当前筛选。"
+    }
+  },
+  {
+    "op": "create",
+    "space": "default",
+    "kind": "task",
+    "title": "修复窄窗口的标题换行",
+    "fields": {
+      "status": "todo",
+      "type": "bug",
+      "priority": "high",
+      "description": "缩小窗口时，标题应保持可读。"
+    }
+  },
+  {
+    "op": "create",
+    "space": "default",
+    "kind": "task",
+    "title": "整理本周发布说明",
+    "fields": {
+      "status": "done",
+      "type": "task",
+      "priority": "low",
+      "description": "汇总本次迭代已交付的变更。"
+    }
+  },
+  {
+    "op": "create",
+    "space": "default",
+    "kind": "document",
+    "title": "工作空间使用指南",
+    "fields": {
+      "visibility": "space",
+      "body": "在任务看板中创建事项。选择卡片可填写描述、调整状态和关联迭代。"
+    }
+  }
+]

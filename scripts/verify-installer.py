@@ -1,0 +1,70 @@
+"""Install/reinstall the real per-user setup in an isolated Unicode directory."""
+from __future__ import annotations
+
+import argparse
+import configparser
+from contextlib import closing
+import hashlib
+import os
+from pathlib import Path
+import sqlite3
+import subprocess
+import sys
+import tempfile
+import tomllib
+
+
+def digest(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("directory", type=Path)
+    parser.add_argument("--expected-version")
+    args = parser.parse_args()
+    assert os.name == "nt", "Installer verification requires Windows"
+    repo = Path(__file__).resolve().parents[1]
+    version = args.expected_version or tomllib.loads((repo / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]["package"]["version"]
+    name = f"shipforge-{version}-windows-x64"
+    setup = args.directory.resolve() / f"{name}-setup.exe"
+    manifest = Path(str(setup) + ".sha256").read_text(encoding="utf-8").split()
+    assert manifest == [digest(setup), setup.name]
+    payload = args.directory.resolve() / name
+    assert (payload / "shipforge.exe").is_file()
+    with tempfile.TemporaryDirectory(prefix="shipforge-install-") as temporary:
+        base = Path(temporary).resolve()
+        assert base.parent == Path(tempfile.gettempdir()).resolve()
+        install = base / "自选 程序目录" / "ShipForge"
+        data = base / "保留的 项目数据"
+        data.mkdir()
+        database = data / "workspace.sqlite3"
+        with closing(sqlite3.connect(database)) as connection:
+            connection.execute("CREATE TABLE preserved (content TEXT)")
+            connection.execute("INSERT INTO preserved VALUES ('project/task/annotation sentinel')")
+            connection.commit()
+        before = digest(database)
+        for attempt in range(2):
+            subprocess.run(
+                [str(setup), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/SP-", "/NORESTART", "/NOICONS", "/NOCLOSEAPPLICATIONS", "/VERIFYINSTALL=1", f"/DIR={install}", f"/SHIPFORGEDATA={data}", f"/LOG={base / f'install-{attempt}.log'}"],
+                check=True, timeout=120, env=os.environ | {"SHIPFORGE_DATA_DIR": str(data)},
+                creationflags=subprocess.CREATE_NO_WINDOW,
+            )
+            assert digest(database) == before, "Installer opened or changed project data"
+            for path in payload.rglob("*"):
+                if path.is_file():
+                    assert digest(install / path.relative_to(payload)) == digest(path), path
+            marker = configparser.ConfigParser()
+            marker.read(install / "shipforge-install.ini", encoding="utf-16")
+            assert marker["Installation"]["format"] == "1"
+            assert marker["Installation"]["data_dir"] == str(data)
+            if attempt:
+                assert (install / "user-notes.txt").read_text(encoding="utf-8") == "keep"
+            (install / "user-notes.txt").write_text("keep", encoding="utf-8")
+        subprocess.run([sys.executable, str(repo / "scripts/verify-release.py"), str(install), "--expected-version", version], check=True)
+        assert digest(database) == before
+    print(f"Verified {setup.name}: custom Unicode directory, reinstall, payload hashes and untouched data")
+
+
+if __name__ == "__main__":
+    main()

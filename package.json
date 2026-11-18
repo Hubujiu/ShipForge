@@ -1,0 +1,8 @@
+{
+  "name": "shipforge-workbench-checks",
+  "private": true,
+  "scripts": {
+    "lint": "node scripts/lint-native-ui.mjs",
+    "test:ui-lint": "node --test scripts/tests/native-ui.test.mjs"
+  }
+}

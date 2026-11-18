@@ -1,0 +1,341 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "list",
+              "get",
+              "create",
+              "update",
+              "delete"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "kind"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "get",
+              "update",
+              "delete",
+              "view.run",
+              "iteration.preview",
+              "iteration.close",
+              "triage",
+              "follow",
+              "document.history",
+              "document.restore",
+              "artifact.save",
+              "notification.act",
+              "task.relations",
+              "project.progress"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "create"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "title"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "provider.preview",
+              "provider.ingest"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "provider": {
+            "enum": [
+              "gitlab",
+              "jira",
+              "feishu",
+              "lark",
+              "slack",
+              "telegram"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "provider",
+          "payload"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "access.issue"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "actor",
+          "scope"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "access.revoke"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "sync.enqueue"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "request"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "sync.resolve"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    }
+  ],
+  "properties": {
+    "actor": {
+      "type": "string"
+    },
+    "after": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "allow_cached": {
+      "type": "boolean"
+    },
+    "event_id": {
+      "maxLength": 256,
+      "minLength": 1,
+      "type": "string"
+    },
+    "expected_rev": {
+      "minimum": 1,
+      "type": "integer"
+    },
+    "fields": {
+      "type": "object"
+    },
+    "filter": {
+      "type": "object"
+    },
+    "id": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "kind": {
+      "enum": [
+        "space",
+        "organization",
+        "member",
+        "task",
+        "task_type",
+        "status",
+        "field",
+        "tag",
+        "relation",
+        "relation_type",
+        "view",
+        "iteration",
+        "project",
+        "comment",
+        "notification",
+        "chat",
+        "message",
+        "document",
+        "artifact",
+        "agent",
+        "crew",
+        "skill",
+        "machine",
+        "run",
+        "automation",
+        "connector",
+        "tool",
+        "settings",
+        "invitation",
+        "note"
+      ],
+      "type": "string"
+    },
+    "limit": {
+      "maximum": 5000,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "offset": {
+      "minimum": 0,
+      "type": "integer"
+    },
+    "op": {
+      "enum": [
+        "schema",
+        "whoami",
+        "list",
+        "get",
+        "search",
+        "space.list",
+        "organization.list",
+        "events",
+        "view.run",
+        "dashboard",
+        "iteration.preview",
+        "task.relations",
+        "project.progress",
+        "document.history",
+        "export",
+        "import.preview",
+        "provider.preview",
+        "create",
+        "update",
+        "delete",
+        "iteration.close",
+        "triage",
+        "follow",
+        "notification.act",
+        "document.restore",
+        "artifact.save",
+        "import",
+        "provider.ingest",
+        "agent.resolve",
+        "catalog.list",
+        "catalog.install",
+        "tool.authorize",
+        "machine.register",
+        "machine.heartbeat",
+        "machine.disable",
+        "machine.enable",
+        "run.enqueue",
+        "run.claim",
+        "run.heartbeat",
+        "run.report",
+        "run.cancel",
+        "run.retry",
+        "run.reply",
+        "run.tool",
+        "automation.fire",
+        "automation.tick",
+        "connector.ingest",
+        "connector.export",
+        "access.whoami",
+        "access.issue",
+        "access.list",
+        "access.revoke",
+        "sync.status",
+        "sync.pending",
+        "sync.enqueue",
+        "sync.flush",
+        "sync.resolve"
+      ],
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "provider": {
+      "type": "string"
+    },
+    "query": {
+      "type": "string"
+    },
+    "queue_if_offline": {
+      "type": "boolean"
+    },
+    "request_id": {
+      "maxLength": 160,
+      "minLength": 1,
+      "type": "string"
+    },
+    "scope": {
+      "enum": [
+        "read",
+        "write",
+        "worker",
+        "hook"
+      ]
+    },
+    "space": {
+      "default": "default",
+      "type": "string"
+    },
+    "target": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "title": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "version": {
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  "required": [
+    "op"
+  ],
+  "title": "ShipForge workspace request",
+  "type": "object"
+}

@@ -1,0 +1,22 @@
+[
+  {
+    "provider":"gitlab","delivery":"gitlab-delivery-a","expected":["gitlab:47:7","Fix desktop zoom","Scaling on a second display",false],
+    "payload":{"object_kind":"issue","project":{"id":47,"path_with_namespace":"example/desktop"},"object_attributes":{"iid":7,"title":"Fix desktop zoom","description":"Scaling on a second display","state":"opened","action":"open","updated_at":"2026-01-09 13:00:00 UTC","confidential":false}}
+  },
+  {
+    "provider":"jira","delivery":"jira-delivery-a","expected":["jira:10021","Save offline drafts","Save drafts.\nRestore on reconnect.",false],
+    "payload":{"timestamp":1767963600000,"webhookEvent":"jira:issue_created","issue":{"id":"10021","key":"SHIP-12","fields":{"summary":"Save offline drafts","description":{"type":"doc","version":1,"content":[{"type":"paragraph","content":[{"type":"text","text":"Save drafts."}]},{"type":"paragraph","content":[{"type":"text","text":"Restore on reconnect."}]}]},"project":{"key":"SHIP"},"updated":"2026-01-09T13:00:00.000+0000","status":{"statusCategory":{"key":"new"}}}}}
+  },
+  {
+    "provider":"slack","expected":["slack:T1:C3:1767963600.000123","Review draft","Review draft\nCheck examples.",false],
+    "payload":{"type":"event_callback","team_id":"T1","event_id":"Ev100","event":{"type":"message","user":"U2","channel":"C3","text":"Review draft\nCheck examples.","ts":"1767963600.000123"}}
+  },
+  {
+    "provider":"telegram","expected":["telegram:-123:17","Test notifications","Test notifications",false],
+    "payload":{"update_id":901,"message":{"message_id":17,"from":{"id":22,"is_bot":false},"date":1767963600,"chat":{"id":-123,"type":"group"},"text":"Test notifications"}}
+  },
+  {
+    "provider":"feishu","expected":["feishu:oc_example:om_example","恢复文档历史","恢复文档历史",false],
+    "payload":{"schema":"2.0","header":{"event_type":"im.message.receive_v1","event_id":"abc123"},"event":{"sender":{"sender_type":"user"},"message":{"message_id":"om_example","chat_id":"oc_example","create_time":"1767963600000","message_type":"text","content":"{\"text\":\"恢复文档历史\"}"}}}
+  }
+]

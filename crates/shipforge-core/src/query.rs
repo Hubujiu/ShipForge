@@ -1,0 +1,477 @@
+use super::*;
+use crate::domain::check_kind;
+use crate::tasks::resolve_project;
+use chrono::{Days, NaiveDate};
+use std::cmp::Ordering;
+use std::collections::BTreeMap;
+
+pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
+    match op {
+        "organization.list" => organizations(c),
+        "space.list" => {
+            let mut spaces = Vec::new();
+            for space in c.all_spaces()? {
+                let dest = Context {
+                    db: c.db,
+                    actor: c.actor,
+                    space: &space.id,
+                };
+                if dest.role().is_ok() {
+                    spaces.push(space);
+                }
+            }
+            Ok(json!(spaces))
+        }
+        "get" => {
+            let kind = required(q, "kind")?;
+            check_kind(kind)?;
+            let id = required(q, "id")?;
+            match c.readable(kind, id) {
+                Ok(r) => Ok(as_value(r)),
+                Err(e) if kind == "task" && e.starts_with("not_found:") => {
+                    let mut tasks = visible_records(c, "task")?;
+                    tasks.retain(|r| r.fields["number"] == id);
+                    tasks.into_iter().next().map(as_value).ok_or(e)
+                }
+                Err(e) => Err(e),
+            }
+        }
+        "list" => {
+            let kind = required(q, "kind")?;
+            check_kind(kind)?;
+            if kind == "organization" {
+                return organizations(c);
+            }
+            let mut records = matching(c, kind, q)?;
+            if matches!(
+                kind,
+                "status" | "task_type" | "relation_type" | "field" | "tag"
+            ) {
+                let items = visible_records(
+                    c,
+                    if kind == "relation_type" {
+                        "relation"
+                    } else {
+                        "task"
+                    },
+                )?;
+                for row in &mut records {
+                    let count = items
+                        .iter()
+                        .filter(|v| match kind {
+                            "status" => v.fields["status"] == row.id,
+                            "task_type" | "relation_type" => v.fields["type"] == row.id,
+                            "field" => v.fields["custom"]
+                                .get(&row.id)
+                                .is_some_and(|v| !v.is_null()),
+                            _ => v.fields["labels"]
+                                .as_array()
+                                .is_some_and(|ls| ls.iter().any(|label| label == &row.id)),
+                        })
+                        .count();
+                    row.fields["usage"] = json!(count);
+                }
+            }
+            Ok(json!(records))
+        }
+        "search" => {
+            let text = required(q, "query")?.trim().to_lowercase();
+            let kinds = if let Some(k) = q["kind"].as_str() {
+                check_kind(k)?;
+                vec![k]
+            } else {
+                vec![
+                    "task",
+                    "view",
+                    "iteration",
+                    "project",
+                    "document",
+                    "note",
+                    "chat",
+                    "message",
+                    "comment",
+                    "member",
+                    "agent",
+                    "crew",
+                    "skill",
+                    "automation",
+                    "machine",
+                    "artifact",
+                ]
+            };
+            let mut matches = Vec::new();
+            for kind in kinds {
+                for r in visible_records(c, kind)? {
+                    if search_matches(&r, &text) {
+                        matches.push(r);
+                    }
+                }
+            }
+            matches.sort_by(|a, b| {
+                b.updated_at
+                    .cmp(&a.updated_at)
+                    .then_with(|| a.kind.cmp(&b.kind))
+                    .then_with(|| a.id.cmp(&b.id))
+            });
+            Ok(json!(paginate(matches, q)?))
+        }
+        "events" => events(c, q),
+        "view.run" => {
+            let view = c.readable("view", required(q, "id")?)?;
+            let mut options = view.fields;
+            for key in ["limit", "offset"] {
+                if let Some(v) = q.get(key) {
+                    options[key] = v.clone();
+                }
+            }
+            Ok(json!(matching(c, "task", &options)?))
+        }
+        "dashboard" => dashboard(c, q),
+        "iteration.preview" => {
+            let it = c.readable("iteration", required(q, "id")?)?;
+            Ok(json!(unfinished(c, &it.id)?))
+        }
+        "task.relations" => related(c, required(q, "id")?),
+        "project.progress" => project_progress(c, required(q, "id")?),
+        "document.history" => {
+            let doc = c.readable("document", required(q, "id")?)?;
+            let mut sql=c.db.prepare("SELECT rev,title,fields,actor,at FROM versions WHERE space=?1 AND id=?2 ORDER BY rev DESC").map_err(storage)?;
+            let rows = sql
+                .query_map(params![c.space, doc.id], |r| {
+                    Ok((
+                        r.get::<_, i64>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, String>(2)?,
+                        r.get::<_, String>(3)?,
+                        r.get::<_, i64>(4)?,
+                    ))
+                })
+                .map_err(storage)?;
+            let mut history = Vec::new();
+            for row in rows {
+                let (rev, title, raw, actor, at) = row.map_err(storage)?;
+                let fields: Value = serde_json::from_str(&raw).map_err(storage)?;
+                let snapshot = Record {
+                    fields: fields.clone(),
+                    ..doc.clone()
+                };
+                if c.visible(&snapshot)? {
+                    history.push(json!({"version":rev,"rev":rev,"title":title,"fields":fields,"actor":actor,"at":at}));
+                }
+            }
+            Ok(json!(history))
+        }
+        "export" => crate::transfer::export(c),
+        "import.preview" => crate::transfer::import(c, q, true),
+        _ => Err(invalid("unknown query")),
+    }
+}
+pub(crate) fn visible_records(c: &Context<'_>, kind: &str) -> Result<Vec<Record>> {
+    let mut rows = Vec::new();
+    for mut row in c.records(kind)? {
+        if c.visible(&row)? {
+            if kind == "notification"
+                && row.fields["state"] == "snoozed"
+                && row.fields["until"].as_i64().is_some_and(|t| t <= now())
+            {
+                row.fields["state"] = json!("inbox");
+            }
+            rows.push(row);
+        }
+    }
+    Ok(rows)
+}
+fn search_matches(r: &Record, text: &str) -> bool {
+    r.title.to_lowercase().contains(text)
+        || r.id.to_lowercase().contains(text)
+        || ["body", "description", "number", "summary"]
+            .iter()
+            .any(|k| {
+                r.fields[k]
+                    .as_str()
+                    .is_some_and(|s| s.to_lowercase().contains(text))
+            })
+        || r.fields["labels"].as_array().is_some_and(|a| {
+            a.iter()
+                .filter_map(Value::as_str)
+                .any(|s| s.to_lowercase().contains(text))
+        })
+}
+fn filter_eq(actual: &Value, wanted: &Value, actor: &str) -> bool {
+    if let Some(values) = wanted.as_array() {
+        return values.iter().any(|w| filter_eq(actual, w, actor));
+    }
+    if let Some(values) = actual.as_array() {
+        return values.iter().any(|v| filter_eq(v, wanted, actor));
+    }
+    if wanted == "@me" {
+        return actual.as_str() == Some(actor);
+    }
+    actual == wanted
+}
+fn satisfies(c: &Context<'_>, r: &Record, filter: Option<&Value>) -> Result<bool> {
+    let Some(f) = filter else { return Ok(true) };
+    let filters = f
+        .as_object()
+        .ok_or_else(|| invalid("filter must be an object"))?;
+    for (key, wanted) in filters {
+        let negate = key.ends_with("_not");
+        let key = key.strip_suffix("_not").unwrap_or(key);
+        let value = match key {
+            "status_category" if r.kind == "task" => json!(c.status_category(r)?),
+            "title" => json!(r.title),
+            "id" => json!(r.id),
+            "kind" => json!(r.kind),
+            _ => r.fields[key].clone(),
+        };
+        if filter_eq(&value, wanted, c.actor) == negate {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+fn filtered(c: &Context<'_>, kind: &str, q: &Value) -> Result<Vec<Record>> {
+    let text = q["query"]
+        .as_str()
+        .unwrap_or_default()
+        .trim()
+        .to_lowercase();
+    let mut rows = Vec::new();
+    for r in visible_records(c, kind)? {
+        if (text.is_empty() || search_matches(&r, &text)) && satisfies(c, &r, q.get("filter"))? {
+            rows.push(r);
+        }
+    }
+    Ok(rows)
+}
+fn matching(c: &Context<'_>, kind: &str, q: &Value) -> Result<Vec<Record>> {
+    let mut rows = filtered(c, kind, q)?;
+    let sort = q["sort"].as_str().unwrap_or(
+        if matches!(kind, "status" | "task_type" | "relation_type") {
+            "order"
+        } else {
+            "-updated_at"
+        },
+    );
+    let key = sort.trim_start_matches('-');
+    let desc = sort.starts_with('-') || q["direction"] == "desc";
+    rows.sort_by(|a, b| {
+        let order = match key {
+            "updated_at" => a.updated_at.cmp(&b.updated_at),
+            "created_at" => a.created_at.cmp(&b.created_at),
+            "title" => a.title.cmp(&b.title),
+            "id" => a.id.cmp(&b.id),
+            "priority" => priority(&a.fields["priority"]).cmp(&priority(&b.fields["priority"])),
+            _ if a.fields[key].is_number() || b.fields[key].is_number() => a.fields[key]
+                .as_f64()
+                .partial_cmp(&b.fields[key].as_f64())
+                .unwrap_or(Ordering::Equal),
+            _ => a.fields[key]
+                .as_str()
+                .partial_cmp(&b.fields[key].as_str())
+                .unwrap_or(Ordering::Equal),
+        };
+        (if desc { order.reverse() } else { order }).then_with(|| a.id.cmp(&b.id))
+    });
+    paginate(rows, q)
+}
+fn priority(v: &Value) -> u8 {
+    match v.as_str() {
+        Some("urgent") => 0,
+        Some("high") => 1,
+        Some("medium") => 2,
+        Some("low") => 3,
+        _ => 4,
+    }
+}
+fn count(q: &Value, key: &str, default: usize) -> Result<usize> {
+    q.get(key).map_or(Ok(default), |v| {
+        v.as_u64()
+            .and_then(|x| usize::try_from(x).ok())
+            .ok_or_else(|| invalid(&format!("{key} must be a nonnegative integer")))
+    })
+}
+fn paginate<T>(rows: Vec<T>, q: &Value) -> Result<Vec<T>> {
+    let offset = count(q, "offset", 0)?;
+    let limit = count(q, "limit", 500)?;
+    if !(1..=5000).contains(&limit) {
+        return Err(invalid("limit must be 1–5000"));
+    }
+    Ok(rows.into_iter().skip(offset).take(limit).collect())
+}
+pub(crate) fn unfinished(c: &Context<'_>, id: &str) -> Result<Vec<Record>> {
+    let mut pending = Vec::new();
+    for task in visible_records(c, "task")? {
+        if task.fields["iteration"] == id
+            && !matches!(c.status_category(&task)?.as_str(), "done" | "cancelled")
+        {
+            pending.push(task);
+        }
+    }
+    Ok(pending)
+}
+fn dashboard(c: &Context<'_>, q: &Value) -> Result<Value> {
+    let list = filtered(c, "task", q)?;
+    let today = q["today"]
+        .as_str()
+        .map(|s| {
+            NaiveDate::parse_from_str(s, "%Y-%m-%d")
+                .map_err(|_| invalid("today must use YYYY-MM-DD"))
+        })
+        .transpose()?
+        .unwrap_or_else(|| chrono::Utc::now().date_naive());
+    let week = today
+        .checked_add_days(Days::new(7))
+        .unwrap_or(NaiveDate::MAX);
+    let (mut completed, mut overdue, mut due_soon, mut unassigned) = (0, 0, 0, 0);
+    let mut statuses: BTreeMap<String, usize> = BTreeMap::new();
+    let mut priorities: BTreeMap<String, usize> = BTreeMap::new();
+    for r in &list {
+        let category = c.status_category(r)?;
+        *statuses
+            .entry(r.fields["status"].as_str().unwrap_or("todo").into())
+            .or_default() += 1;
+        *priorities
+            .entry(r.fields["priority"].as_str().unwrap_or("none").into())
+            .or_default() += 1;
+        if !r.fields["assignee"].is_string() {
+            unassigned += 1;
+        }
+        if category == "done" {
+            completed += 1;
+        }
+        if !matches!(category.as_str(), "done" | "cancelled")
+            && let Some(date) = r.fields["due_date"]
+                .as_str()
+                .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
+        {
+            if date < today {
+                overdue += 1;
+            } else if date <= week {
+                due_soon += 1;
+            }
+        }
+    }
+    Ok(
+        json!({"total":list.len(),"completed":completed,"overdue":overdue,"due_soon":due_soon,"unassigned":unassigned,"by_status":statuses,"by_priority":priorities}),
+    )
+}
+fn related(c: &Context<'_>, id: &str) -> Result<Value> {
+    let task = c.readable("task", id)?;
+    let mut output = Vec::new();
+    if let Some(parent) = task.fields["parent"].as_str()
+        && let Ok(p) = c.readable("task", parent)
+    {
+        output.push(json!({"type":"parent","direction":"out","task":p}));
+    }
+    for child in visible_records(c, "task")? {
+        if child.fields["parent"] == id {
+            output.push(json!({"type":"parent","direction":"in","task":child}));
+        }
+    }
+    for rel in visible_records(c, "relation")? {
+        let edge = if rel.fields["from"] == id {
+            Some(("out", "to"))
+        } else if rel.fields["to"] == id {
+            Some(("in", "from"))
+        } else {
+            None
+        };
+        if let Some((direction, key)) = edge
+            && let Some(other) = rel.fields[key].as_str()
+            && let Ok(r) = c.readable("task", other)
+        {
+            output.push(
+                json!({"relation":rel.id,"type":rel.fields["type"],"direction":direction,"task":r}),
+            );
+        }
+    }
+    Ok(json!(output))
+}
+fn project_progress(c: &Context<'_>, id: &str) -> Result<Value> {
+    let project = resolve_project(c, id)?;
+    let mut tasks = Vec::new();
+    let mut done = 0;
+    for space in c.all_spaces()? {
+        if space.fields["organization"].as_str().unwrap_or("default")
+            != project.fields["organization"].as_str().unwrap_or("default")
+        {
+            continue;
+        }
+        if space.id != project.space
+            && !project.fields["spaces"]
+                .as_array()
+                .is_some_and(|s| s.iter().any(|v| v == &space.id))
+        {
+            continue;
+        }
+        let scope = Context {
+            db: c.db,
+            actor: c.actor,
+            space: &space.id,
+        };
+        if scope.role().is_err() {
+            continue;
+        }
+        for task in visible_records(&scope, "task")? {
+            if task.fields["project"] == id {
+                if scope.status_category(&task)? == "done" {
+                    done += 1;
+                }
+                tasks.push(task);
+            }
+        }
+    }
+    Ok(json!({"project":project,"total":tasks.len(),"completed":done,"tasks":tasks}))
+}
+fn events(c: &Context<'_>, q: &Value) -> Result<Value> {
+    let after = count(q, "after", 0)?;
+    let limit = count(q, "limit", 500)?;
+    if !(1..=5000).contains(&limit) {
+        return Err(invalid("limit must be 1–5000"));
+    }
+    let mut sql=c.db.prepare("SELECT seq,action,snapshot FROM event_log WHERE space=?1 AND seq>?2 ORDER BY seq LIMIT ?3").map_err(storage)?;
+    let rows = sql
+        .query_map(params![c.space, after as i64, limit as i64], |r| {
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })
+        .map_err(storage)?;
+    let mut cursor = after as i64;
+    let mut output = Vec::new();
+    for row in rows {
+        let (seq, action, snapshot) = row.map_err(storage)?;
+        cursor = seq;
+        let prior: Record = serde_json::from_str(&snapshot).map_err(storage)?;
+        if !c.visible(&prior)? {
+            continue;
+        }
+        if let Some(current) = c.find(&prior.kind, &prior.id)?
+            && !c.visible(&current)?
+        {
+            continue;
+        }
+        output.push(json!({"seq":seq,"space":c.space,"kind":prior.kind,"id":prior.id,"rev":prior.rev,"action":action,"at":prior.updated_at}));
+    }
+    Ok(json!({"cursor":cursor,"events":output}))
+}
+
+fn organizations(c: &Context<'_>) -> Result<Value> {
+    let mut result = Vec::new();
+    for space in c.all_spaces()? {
+        let anchor = Context {
+            db: c.db,
+            actor: c.actor,
+            space: &space.id,
+        };
+        if anchor.role().is_ok()
+            && let Some(org) = anchor.find("organization", &space.id)?
+        {
+            result.push(org);
+        }
+    }
+    Ok(json!(result))
+}

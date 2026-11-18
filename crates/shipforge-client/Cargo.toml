@@ -1,0 +1,20 @@
+[package]
+name = "shipforge-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+directories.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+shipforge-core.workspace = true
+tempfile.workspace = true
+ureq.workspace = true
+url.workspace = true
+uuid.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
