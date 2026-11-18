@@ -7,6 +7,7 @@ pub(crate) fn validate_task(
     old: Option<&Record>,
     id: &str,
     f: &mut Value,
+    historical: bool,
 ) -> Result<()> {
     if old.is_none() {
         if f["type"].is_null() {
@@ -90,7 +91,11 @@ pub(crate) fn validate_task(
         c.category_for(required(f, "status")?)?.as_str(),
         "done" | "cancelled"
     );
-    if old.is_none() && inbox && source_allowed && type_allowed && (guest || external && !terminal)
+    if old.is_none()
+        && inbox
+        && source_allowed
+        && type_allowed
+        && (guest || external && !historical && !terminal)
     {
         let candidate = match allowed.filter(|list| !list.is_empty()) {
             None => Some("triage".into()),
@@ -489,9 +494,10 @@ pub(crate) fn cleanup(c: &Context<'_>, r: &Record) -> Result<()> {
                     "statuses"
                 };
                 if c.records("task_type")?.iter().any(|t| {
-                    t.fields[attr]
-                        .as_array()
-                        .is_some_and(|ls| ls.iter().any(|x| x == &r.id))
+                    r.kind == "field" && crate::task_fields::references(t, &r.id)
+                        || t.fields[attr]
+                            .as_array()
+                            .is_some_and(|ls| ls.iter().any(|x| x == &r.id))
                 }) {
                     return Err(conflict("record is referenced by a task type"));
                 }

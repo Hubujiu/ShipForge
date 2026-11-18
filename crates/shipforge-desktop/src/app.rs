@@ -5,12 +5,18 @@ use crate::{
     motion::Motion,
 };
 use gpui_kit::{prelude::*, *};
+#[path = "account_ui.rs"]
+mod account_ui;
+#[path = "chat_actions.rs"]
+pub(crate) mod chat_actions;
 #[path = "onboarding.rs"]
 pub(crate) mod onboarding;
 #[path = "personal.rs"]
 pub(crate) mod personal;
 #[path = "space_ui.rs"]
 pub(crate) mod space_ui;
+#[path = "workspace_ui.rs"]
+pub(crate) mod workspace_ui;
 use serde_json::{Map, Value, json};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -47,6 +53,8 @@ impl Default for Location {
 }
 #[derive(Clone)]
 pub enum UiAction {
+    Work(workspace_ui::Action),
+    Chat(chat_actions::Action),
     Space(space_ui::Action),
     CopyInvitation(String),
     Guide(onboarding::Action),
@@ -97,8 +105,15 @@ pub enum UiAction {
     PendingDrafts,
     Grant,
     Tokens,
+    Accounts,
+    SwitchAccount(String),
+    PersonalTokens,
+    NewPersonalToken(bool),
 }
 enum After {
+    Work(workspace_ui::Response),
+    OrganizedChat,
+    OpenChat,
     SpacePreview(Record),
     SpaceMembership,
     ChatShareCreated,
@@ -125,6 +140,10 @@ enum After {
     Preview(PathBuf),
     Connected,
     Tokens,
+    AccessIdentity,
+    Accounts,
+    PersonalTokens,
+    PersonalTokenIssued,
 }
 struct Pending {
     after: After,
@@ -132,6 +151,7 @@ struct Pending {
     write: bool,
 }
 pub struct Workbench {
+    pub work: workspace_ui::State,
     pub guide: onboarding::Guide,
     pub personal: crate::personal::Personal,
     pub loc: Location,
@@ -152,11 +172,17 @@ pub struct Workbench {
     pub loading: bool,
     pub error: Option<String>,
     pub notice: Option<(String, Instant)>,
+    pub chat_undo: Option<(String, String, String)>,
     pub versions: Vec<Value>,
     pub view_tasks: Vec<Record>,
     pub metrics: Value,
     pub drawer_tab: String,
     pub tokens: Vec<Value>,
+    pub access_identity: Value,
+    pub account_rows: Vec<Value>,
+    pub active_profile: Option<String>,
+    saved_place: Value,
+    session_started: bool,
     pub drafts: Vec<Value>,
     reading: bool,
     history: Vec<Location>,
@@ -180,6 +206,7 @@ impl Workbench {
         let root_focus = cx.focus_handle();
         root_focus.focus(window, cx);
         let app = Self {
+            work: workspace_ui::State::default(),
             guide: onboarding::Guide::default(),
             personal: crate::personal::Personal::default(),
             directory: dir.clone(),
@@ -201,11 +228,17 @@ impl Workbench {
             loading: true,
             error: None,
             notice: None,
+            chat_undo: None,
             versions: vec![],
             view_tasks: vec![],
             metrics: Value::Null,
             drawer_tab: String::new(),
             tokens: vec![],
+            access_identity: Value::Null,
+            account_rows: vec![],
+            active_profile: None,
+            saved_place: Value::Null,
+            session_started: false,
             drafts: vec![],
             reading: false,
             pos: 0,
@@ -293,6 +326,7 @@ impl Workbench {
         !matches!(self.role.as_str(), "viewer" | "read") && !self.current_archived()
     }
     pub fn notify_text(&mut self, s: impl Into<String>) {
+        self.chat_undo = None;
         let message = s.into();
         self.notice = Some((crate::locale::label(&message).to_owned(), Instant::now()));
     }
@@ -332,9 +366,10 @@ impl Workbench {
         if foreground {
             self.loading = true;
         }
-        let mut kinds = vec![self.loc.page.info().kind, "space", "member"];
+        let mut kinds = vec![self.loc.page.info().kind, "space", "member", "chat_sidebar"];
         if self.loc.page.is_tasks() || self.loc.view.is_some() {
             kinds.extend([
+                "view",
                 "tag",
                 "task",
                 "task_type",
@@ -365,6 +400,7 @@ impl Workbench {
         if let Some(item) = &self.loc.selected {
             match item.kind.as_str() {
                 "task" => kinds.extend([
+                    "chat",
                     "task",
                     "comment",
                     "relation",
@@ -378,7 +414,7 @@ impl Workbench {
                     "field",
                     "task_type",
                 ]),
-                "chat" => kinds.extend(["message", "run", "artifact", "agent"]),
+                "chat" => kinds.extend(["message", "run", "artifact", "agent", "task"]),
                 "agent" => kinds.extend(["run", "skill", "tool", "machine", "agent"]),
                 "automation" => kinds.extend(["run", "agent", "crew"]),
                 "project" | "iteration" => kinds.push("task"),
@@ -419,6 +455,12 @@ impl Workbench {
         kinds.sort_unstable();
         kinds.dedup();
         let _ = self.backend.sender.send(Request::Read {
+            chat: self
+                .loc
+                .selected
+                .as_ref()
+                .filter(|r| r.kind == "chat")
+                .map(|r| r.id.clone()),
             generation: self.generation,
             space: self.loc.space.clone(),
             kinds: kinds.into_iter().map(str::to_owned).collect(),
@@ -477,13 +519,16 @@ impl Workbench {
         if let Some(view) = &self.loc.view {
             let id = view.id.clone();
             self.send(
-                json!({"op":"view.run","space":self.loc.space,"id":id}),
+                json!({"op":"view.run","space":self.loc.space,"id":id,"changes":self.view_changes()}),
                 After::View(id),
                 false,
             );
         }
     }
     fn who(&mut self) {
+        if self.mode == "team" {
+            self.send(json!({"op":"access.whoami"}), After::AccessIdentity, false);
+        }
         self.send(
             json!({"op":"whoami","space":self.loc.space}),
             After::Who,
@@ -491,20 +536,27 @@ impl Workbench {
         );
     }
     fn tick(&mut self, w: &mut Window, cx: &mut Context<Self>) {
+        self.view_preview(cx);
         crate::appearance::apply(&self.personal.options, w, cx, false);
         let mut changed = false;
         while let Ok(event) = self.backend.results.try_recv() {
             changed = true;
             match event {
                 Event::Ready(result) => match result {
-                    Ok(mode) => {
+                    Ok((mode, session)) => {
+                        self.restore_session(&session);
                         self.guide = onboarding::Guide::default();
                         self.mode = mode;
+                        self.access_identity = Value::Null;
+                        self.tokens.clear();
                         self.personal = crate::personal::Personal::default();
                         self.send(json!({"op":"preferences.get"}), After::Personal, false);
                         self.error = None;
                         self.who();
                         self.read(true);
+                        if self.loc.section == "accounts" {
+                            self.send(json!({"op":"profiles.list"}), After::Accounts, false);
+                        }
                     }
                     Err(e) => {
                         if self.smoke {
@@ -531,6 +583,22 @@ impl Workbench {
                         self.rows.remove(k);
                     }
                     self.rows.extend(data);
+                    self.sync_bound_fields(w, cx);
+                    if self.chat_undo.as_ref().is_some_and(|(s, id, _)| {
+                        s == &self.loc.space
+                            && self.list("chat_sidebar").iter().any(|room| &room.id == id)
+                    }) {
+                        self.chat_undo = None;
+                        self.notice = None;
+                    }
+                    if let Some(view) = &self.loc.view
+                        && let Some(catalog) = self.rows.get("view")
+                    {
+                        self.loc.view = catalog.iter().find(|v| v.id == view.id).cloned();
+                        if self.loc.view.is_none() {
+                            self.view_tasks.clear();
+                        }
+                    }
                     if let Some(old) = &self.loc.selected
                         && let Some(rows) = self.rows.get(&old.kind)
                     {
@@ -586,6 +654,14 @@ impl Workbench {
                                         crate::locale::label("个人设置未同步")
                                     ));
                                 }
+                                After::Connected if self.loc.section == "accounts" => {
+                                    self.error = Some(error);
+                                    self.send(
+                                        json!({"op":"profiles.list"}),
+                                        After::Accounts,
+                                        false,
+                                    );
+                                }
                                 After::Who => {
                                     self.role.clear();
                                 }
@@ -607,13 +683,16 @@ impl Workbench {
                 }
             }
         }
+        if !self.loading && !self.busy && !self.reading {
+            self.remember_place();
+        }
         if !self.loading && !self.busy && !self.reading && Instant::now() >= self.poll_at {
             self.read(false);
         }
         if self
             .form
             .as_ref()
-            .is_some_and(|f| matches!(f.mode, Mode::Search))
+            .is_some_and(|f| matches!(f.mode, Mode::Search | Mode::BindChat(_)))
             && Instant::now() >= self.search_at
         {
             self.search_at = Instant::now() + Duration::from_millis(300);
@@ -640,6 +719,7 @@ impl Workbench {
             .is_some_and(|(_, at)| at.elapsed() > Duration::from_secs(5))
         {
             self.notice = None;
+            self.chat_undo = None;
             changed = true;
         }
         if changed {
@@ -648,15 +728,20 @@ impl Workbench {
     }
     fn current_search(&self, q: &str, cx: &App) -> bool {
         self.form.as_ref().is_some_and(|f| {
-            matches!(f.mode, Mode::Search) && f.entries.first().is_some_and(|e| e.raw(cx) == q)
+            matches!(f.mode, Mode::Search | Mode::BindChat(_))
+                && f.entries.first().is_some_and(|e| e.raw(cx) == q)
         })
     }
     fn search(&mut self, q: String) {
-        self.send(
-            json!({"op":"search","space":self.loc.space,"query":q}),
-            After::Search(q),
-            false,
-        );
+        let mut request = json!({"op":"search","space":self.loc.space,"query":q});
+        if self
+            .form
+            .as_ref()
+            .is_some_and(|f| matches!(f.mode, Mode::BindChat(_)))
+        {
+            request["kind"] = json!("task");
+        }
+        self.send(request, After::Search(q), false);
     }
     fn reply(&mut self, after: After, value: Value, w: &mut Window, cx: &mut Context<Self>) {
         if value.get("queued").and_then(Value::as_bool) == Some(true) {
@@ -665,6 +750,14 @@ impl Workbench {
             return;
         }
         match after {
+            After::Work(r) => self.work_reply(r, value, w, cx),
+            After::OrganizedChat => self.chat_organized(&value, w, cx),
+            After::OpenChat => {
+                self.close_form(w, cx);
+                if let Ok(room) = serde_json::from_value(value) {
+                    self.open(room, true);
+                }
+            }
             After::SpacePreview(mut space) => {
                 space.rev = value["rev"].as_i64().unwrap_or(space.rev);
                 self.open_form(
@@ -707,6 +800,14 @@ impl Workbench {
                 }
             }
             After::Saved(kind) => {
+                if kind == "view"
+                    && let Ok(view) = serde_json::from_value::<Record>(value.clone())
+                {
+                    self.close_form(w, cx);
+                    self.act(UiAction::OpenView(view), w, cx);
+                    self.notify_text("已保存视图");
+                    return;
+                }
                 let open_assignment = self.personal.options.open_after_assignment
                     && kind == "task"
                     && matches!(
@@ -757,6 +858,13 @@ impl Workbench {
                 if self.loc.page == Page::Settings && self.loc.section == "tokens" {
                     self.send(json!({"op":"access.list"}), After::Tokens, false);
                 }
+                if self.loc.page == Page::Settings && self.loc.section == "personal_tokens" {
+                    self.send(
+                        json!({"op":"access.personal.list"}),
+                        After::PersonalTokens,
+                        false,
+                    );
+                }
             }
             After::Machine => {
                 self.close_form(w, cx);
@@ -789,6 +897,7 @@ impl Workbench {
                 if self.mode != "demo"
                     && !self.smoke
                     && self.form.is_none()
+                    && self.loc.section != "accounts"
                     && self.guide.offer_setup()
                 {
                     self.open_form(Mode::SetupOrganization, w, cx);
@@ -917,6 +1026,37 @@ impl Workbench {
                 self.tokens = value.as_array().cloned().unwrap_or_default();
                 self.loc.section = "tokens".into();
             }
+            After::AccessIdentity => self.access_identity = value,
+            After::Accounts => {
+                self.account_rows = value["accounts"].as_array().cloned().unwrap_or_default();
+                self.loc.section = "accounts".into();
+            }
+            After::PersonalTokens => {
+                self.tokens = value.as_array().cloned().unwrap_or_default();
+                self.loc.section = "personal_tokens".into();
+            }
+            After::PersonalTokenIssued => {
+                if let Some(token) = value["token"].as_str() {
+                    self.open_form(
+                        Mode::Output {
+                            heading: crate::locale::label("复制个人令牌并妥善保存").into(),
+                            content: token.to_owned(),
+                        },
+                        w,
+                        cx,
+                    );
+                } else {
+                    self.close_form(w, cx);
+                    self.notify_text("此令牌已签发，完整值仅在创建时显示一次。");
+                }
+                if self.loc.page == Page::Settings {
+                    self.send(
+                        json!({"op":"access.personal.list"}),
+                        After::PersonalTokens,
+                        false,
+                    );
+                }
+            }
         }
     }
     fn reset_detail(&mut self) {
@@ -1044,7 +1184,25 @@ impl Workbench {
                     value.insert("task".into(), json!(task.id));
                 }
             }
-            Mode::Edit(r) => value = initial_record(r),
+            Mode::Edit(r) => {
+                value = initial_record(r);
+                if r.kind == "task"
+                    && let Some(bindings) = self
+                        .find("task_type", r.field("type"))
+                        .and_then(|ty| ty.fields.get("field_bindings"))
+                        .and_then(Value::as_array)
+                    && let Some(custom) = value.get_mut("custom").and_then(Value::as_object_mut)
+                {
+                    custom.retain(|k, _| {
+                        bindings
+                            .iter()
+                            .any(|b| b["field"] == *k && b["enabled"] != false)
+                    });
+                }
+            }
+            Mode::Work(workspace_ui::WorkForm::SaveAs(view)) => {
+                value.insert("title".into(), json!(format!("{} 副本", view.title)));
+            }
             Mode::BulkTags => {
                 if let Some(task) = self.loc.selected.as_ref().filter(|r| r.kind == "task") {
                     value.insert("tasks".into(), json!([task.id]));
@@ -1111,6 +1269,7 @@ impl Workbench {
         let mut form = Form::new(mode, &value, w, cx);
         if is_task {
             self.configure_assignees(&mut form, &value);
+            self.task_field_editors(&mut form, w, cx);
         }
         if is_task && !show_estimate {
             form.entries.retain(|e| e.spec.key != "estimate");
@@ -1149,6 +1308,8 @@ impl Workbench {
             return;
         }
         match action {
+            Work(a) => self.work_action(a, w, cx),
+            Chat(action) => self.chat_action(action, w, cx),
             Space(action) => self.space_action(action, w, cx),
             CopyInvitation(id) => self.send(
                 json!({"op":"invitation.copy","space":self.loc.space,"id":id}),
@@ -1165,6 +1326,17 @@ impl Workbench {
             Go(p) => self.navigate_space_page(p),
             Open(r) => self.open(r, false),
             OpenSearch(r) => {
+                if r.kind == "comment" {
+                    self.work_action(
+                        workspace_ui::Action::Locate {
+                            task: r.field("task").into(),
+                            comment: r.id,
+                        },
+                        w,
+                        cx,
+                    );
+                    return;
+                }
                 self.close_form(w, cx);
                 self.open(r, true);
             }
@@ -1187,6 +1359,7 @@ impl Workbench {
                 self.read(true);
             }
             TaskType(t) => {
+                self.loc.view = None;
                 self.loc.task_type = t;
                 self.revision += 1;
                 self.read(false);
@@ -1212,12 +1385,30 @@ impl Workbench {
                 self.revision += 1;
                 self.read(false);
             }
-            SaveView => self.open_form(Mode::Create("view".into()), w, cx),
+            SaveView => self.open_form(
+                self.loc
+                    .view
+                    .clone()
+                    .map(|v| Mode::Work(workspace_ui::WorkForm::SaveAs(v)))
+                    .unwrap_or(Mode::Create("view".into())),
+                w,
+                cx,
+            ),
             Search => self.open_form(Mode::Search, w, cx),
 
             SelectSpace(r) => self.switch_space(r),
             OpenView(v) => {
+                self.close_form(w, cx);
+                if self.loc.space != v.space {
+                    self.loc.space = v.space.clone();
+                    self.rows.clear();
+                    self.role.clear();
+                    self.who();
+                }
                 self.navigate(Page::Tasks);
+                self.loc.task_type.clear();
+                self.loc.filter.clear();
+                self.loc.selected = None;
                 self.loc.layout = v.field("layout").to_owned();
                 self.loc.view = Some(v);
                 self.view_tasks.clear();
@@ -1261,6 +1452,13 @@ impl Workbench {
                 }
             }
             Choose(i, v) => {
+                let type_changed = self.form.as_ref().is_some_and(|f| {
+                    (matches!(&f.mode,Mode::Edit(r) if r.kind=="task")
+                        || matches!(&f.mode,Mode::Create(k) if k=="task"))
+                        && f.entries
+                            .get(i)
+                            .is_some_and(|e| e.spec.key == "type" && e.raw(cx) != v)
+                });
                 let setup_defaults = self
                     .form
                     .as_ref()
@@ -1299,6 +1497,10 @@ impl Workbench {
                     && let Control::Pick { value, .. } = &mut entry.control
                 {
                     *value = crate::forms::Selection::Many(defaults);
+                }
+                if type_changed && let Some(mut form) = self.form.take() {
+                    self.task_field_editors(&mut form, w, cx);
+                    self.form = Some(form);
                 }
             }
 
@@ -1428,6 +1630,29 @@ cx);
             ),
 
             Grant => self.open_form(Mode::Token, w, cx),
+            Accounts => {
+                self.remember_place();
+                self.navigate(Page::Settings);
+                self.loc.section = "accounts".into();
+                self.send(json!({"op":"profiles.list"}), After::Accounts, false);
+            }
+            SwitchAccount(id) => {
+                self.remember_place();
+                self.send(json!({"op":"profiles.use","id":id}), After::Connected, true);
+            }
+            PersonalTokens => self.send(
+                json!({"op":"access.personal.list"}),
+                After::PersonalTokens,
+                false,
+            ),
+            NewPersonalToken(machine_setup) => self.open_form(
+                Mode::PersonalToken {
+                    machine_setup,
+                    request_id: uuid::Uuid::new_v4().to_string(),
+                },
+                w,
+                cx,
+            ),
             Tokens => self.send(
                 json!({
                 "op":"access.list",
@@ -1506,6 +1731,10 @@ cx);
                 .to_string()
         };
         match mode {
+            Mode::BindChat(_) => {
+                self.search(val("query"));
+            }
+            Mode::ChatRow(_) => self.close_form(w, cx),
             Mode::DeactivateSpace {
                 space,
                 unfinished,
@@ -1565,6 +1794,7 @@ cx);
                 self.close_form(w, cx);
                 self.guide_action(onboarding::Action::Start("connect_machine"), w, cx);
             }
+            Mode::Work(f) => self.work_submit(f, values, w, cx)?,
             Mode::BulkTags => {
                 let mut cmd = Value::Object(values);
                 cmd["op"] = json!("tag.apply");
@@ -1611,6 +1841,11 @@ cx);
                     None
                 };
                 let (title, mut fields) = compile_record(k, values, old.is_none())?;
+                if k == "view"
+                    && let Some(view) = old
+                {
+                    workspace_ui::retain_other_filters(view, &mut fields);
+                }
                 if k == "task"
                     && old.is_some_and(|r| {
                         r.fields.get("iteration").unwrap_or(&Value::Null)
@@ -1670,6 +1905,9 @@ cx);
                         cmd["space"] = json!(org);
                     }
                 }
+                if self.field_change(k, old, &cmd) {
+                    return Ok(());
+                }
                 self.send(cmd, After::Saved(k.clone()), true);
             }
 
@@ -1688,6 +1926,10 @@ cx);
                 let body = val("body");
                 if body.is_empty() {
                     return Err("请输入内容。".into());
+                }
+                if matches!(mode, Mode::Message(_)) && chat_actions::agent_room(r) {
+                    self.send(json!({"op":"chat.send","space":self.loc.space,"id":r.id,"body":body,"request_id":uuid::Uuid::new_v4().to_string()}),After::Notice("消息已排队".into()),true);
+                    return Ok(());
                 }
                 let (kind, key) = if matches!(mode, Mode::Comment(_)) {
                     ("comment", "task")
@@ -1723,16 +1965,22 @@ cx);
                 self.read(false);
             }
 
-            Mode::Connect => {
-                let (url, token) = (val("url"), val("token"));
+            Mode::Connect | Mode::Reauthenticate { .. } => {
+                let (url, account) = match mode {
+                    Mode::Reauthenticate { url, account } => (url, Some(account)),
+                    _ => (val("url"), None),
+                };
+                let token = val("token");
                 if url.is_empty() || token.is_empty() {
                     return Err("请输入服务地址和令牌。".into());
                 }
                 let ticket = self.register(After::Connected, true);
-                let _ = self
-                    .backend
-                    .sender
-                    .send(Request::Connect { url, token, ticket });
+                let _ = self.backend.sender.send(Request::Connect {
+                    url,
+                    token,
+                    account,
+                    ticket,
+                });
             }
 
             Mode::Confirm { command, .. } => {
@@ -1905,7 +2153,23 @@ cx);
 
                 let inspect = matches!(
                     op,
-                    "tool.authorize" | "connector.export" | "provider.preview"
+                    "tool.authorize"
+                        | "connector.export"
+                        | "provider.preview"
+                        | "zoho.projects"
+                        | "zoho.preview"
+                        | "imports.commit"
+                        | "imports.history"
+                        | "imports.rollback"
+                        | "bugly.rotate"
+                        | "bugly.revoke"
+                        | "bugly.outbox"
+                        | "bugly.deliver"
+                        | "bugly.credentials"
+                        | "zoho.credential"
+                        | "tapd.credential"
+                        | "tapd.preview"
+                        | "tapd.projects"
                 );
                 let after = if op == "chat.share.create" {
                     After::ChatShareCreated
@@ -1934,6 +2198,16 @@ cx);
                 );
             }
 
+            Mode::PersonalToken {
+                machine_setup,
+                request_id,
+            } => {
+                if val("label").trim().is_empty() {
+                    return Err(crate::locale::label("请输入令牌的用途名称。").into());
+                }
+                self.send(json!({"op":"access.personal.issue","label":val("label"),"lifetime":val("lifetime"),
+                    "source":if machine_setup{"machine_setup"}else{"personal"},"request_id":request_id}),After::PersonalTokenIssued,true);
+            }
             Mode::Token => {
                 if val("actor").is_empty() {
                     return Err("请选择成员。".into());
@@ -2050,6 +2324,12 @@ cx);
             .iter()
             .map(|(v, l)| (v.to_string(), crate::locale::label(l).to_owned()))
             .collect(),
+            "$types" if !self.list("task_type").is_empty() => self
+                .list("task_type")
+                .iter()
+                .filter(|r| r.fields.get("enabled") != Some(&json!(false)))
+                .map(|r| (r.id.clone(), r.title.clone()))
+                .collect(),
             "$types" => {
                 let mut v: Vec<_> = crate::catalog::TYPES
                     .iter()
@@ -2224,6 +2504,9 @@ fn overlay_options(defaults: &mut Vec<(String, String)>, records: Vec<(String, S
 }
 
 #[cfg(all(test, windows))]
+#[path = "chat_ui_test.rs"]
+mod chat_ui_test;
+#[cfg(all(test, windows))]
 #[path = "onboarding_ui.rs"]
 pub(crate) mod onboarding_ui;
 #[cfg(all(test, windows))]
@@ -2232,3 +2515,6 @@ mod space_ui_test;
 #[cfg(all(test, windows))]
 #[path = "tag_ui.rs"]
 mod tag_ui;
+#[cfg(all(test, windows))]
+#[path = "workspace_ui_test.rs"]
+mod workspace_ui_test;

@@ -21,6 +21,8 @@ CREATE TABLE IF NOT EXISTS versions(space TEXT NOT NULL,id TEXT NOT NULL,rev INT
 CREATE TABLE IF NOT EXISTS sequences(space TEXT PRIMARY KEY,n INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS space_defaults(space TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS personal_preferences(actor TEXT PRIMARY KEY, rev INTEGER NOT NULL, settings TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS discussion_calls(space TEXT NOT NULL,run TEXT NOT NULL,call_id TEXT NOT NULL,payload BLOB NOT NULL,comment TEXT NOT NULL,PRIMARY KEY(space,run,call_id));
+CREATE TABLE IF NOT EXISTS discussion_authors(space TEXT NOT NULL,comment TEXT NOT NULL,agent TEXT NOT NULL,PRIMARY KEY(space,comment));
 CREATE TABLE IF NOT EXISTS task_conversations(space TEXT NOT NULL, actor TEXT NOT NULL, task TEXT NOT NULL, kind TEXT NOT NULL, handler TEXT NOT NULL, chat TEXT NOT NULL, PRIMARY KEY(space,actor,task,kind,handler));
 CREATE TABLE IF NOT EXISTS attachments(space TEXT NOT NULL,id TEXT NOT NULL,content BLOB NOT NULL,PRIMARY KEY(space,id));
 CREATE TABLE IF NOT EXISTS followers(space TEXT NOT NULL,task TEXT NOT NULL,actor TEXT NOT NULL,PRIMARY KEY(space,task,actor));
@@ -43,6 +45,7 @@ pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
         .map_err(storage)?;
     tx.execute_batch(V1).map_err(storage)?;
     crate::spaces::init(&tx)?;
+    crate::saved_views::init(&tx)?;
     tx.pragma_update(None, "application_id", APP_ID)
         .map_err(storage)?;
     tx.pragma_update(None, "user_version", 1).map_err(storage)?;
@@ -60,6 +63,7 @@ pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
     }
     crate::im::init(&tx)?;
     crate::vcs::init(&tx)?;
+    crate::vendors::init(&tx)?;
     let c = Context {
         db: &tx,
         actor: "owner",
@@ -214,6 +218,9 @@ impl Context<'_> {
         let data = row.fields.to_string();
         self.db.execute("INSERT INTO records(space,kind,id,title,fields,rev,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![row.space,row.kind,row.id,row.title,data,row.rev,row.created_at,row.updated_at]).map_err(store_constraint)?;
         self.event(row, "create")?;
+        if row.kind == "message" {
+            crate::chat::new_message(self, row)?;
+        }
         crate::onboarding::observe(self, row, None)
     }
     pub(crate) fn update(&self, old: &Record, title: &str, fields: Value) -> Result<Record> {
@@ -250,12 +257,22 @@ impl Context<'_> {
         }
         self.event(&row, "update")?;
         crate::onboarding::observe(self, &row, Some(old))?;
+        crate::vendors::changed(self, old, &row)?;
         if notify || row.fields["visibility"] == "private" || row.kind == "connector" {
             crate::im::changed(self, Some(old), &row)?;
         }
         Ok(row)
     }
     pub(crate) fn remove(&self, old: &Record) -> Result<()> {
+        if old.kind == "comment" {
+            self.db
+                .execute(
+                    "DELETE FROM discussion_authors WHERE space=? AND comment=?",
+                    params![self.space, old.id],
+                )
+                .map_err(storage)?;
+        }
+        crate::vendors::removing(self, old)?;
         if old.kind != "member" {
             crate::spaces::ensure_active(self)?;
         }

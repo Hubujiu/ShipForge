@@ -158,6 +158,15 @@ impl Workbench {
                 current == Page::Settings,
             ))
             .child(div().flex_1())
+            .when(self.mode != "demo", |r| {
+                r.child(item(
+                    "rail-accounts",
+                    "账号列表",
+                    "users",
+                    UiAction::Accounts,
+                    self.loc.section == "accounts",
+                ))
+            })
             .child(item(
                 "rail-collapse",
                 "切换侧栏",
@@ -283,6 +292,7 @@ impl Workbench {
         } else {
             list = list
                 .child(self.nav_group("个人工作", &[Inbox, Mine, Assistant, Market], cx))
+                .child(self.chat_sidebar_group(cx))
                 .child(
                     row()
                         .h(px(31.))
@@ -410,11 +420,21 @@ impl Workbench {
         cx: &mut Context<Self>,
     ) -> Div {
         let raw = e.raw(cx);
-        let id = e.trigger.map_or_else(
-            || format!("modal-{}", e.spec.key),
-            |t| format!("trigger-{t}-{}", e.spec.key),
-        );
-        let label = crate::locale::label(e.spec.label);
+        let id = e
+            .bound
+            .as_ref()
+            .map(|b| format!("custom-field-{}", b.id))
+            .unwrap_or_else(|| {
+                e.trigger.map_or_else(
+                    || format!("modal-{}", e.spec.key),
+                    |t| format!("trigger-{t}-{}", e.spec.key),
+                )
+            });
+        let label = e
+            .bound
+            .as_ref()
+            .map(|b| b.label.as_str())
+            .unwrap_or_else(|| crate::locale::label(e.spec.label));
         let mut field = col().w_full().gap(px(4.)).child(text(label, 12., MUTED));
         match e.control {
             Control::Text(ref input) => {
@@ -422,6 +442,17 @@ impl Workbench {
             }
             Control::Pick { value, focus } => {
                 let (mut options, allow_empty, multi) = match e.spec.format {
+                    Format::Choice(_) if e.bound.is_some() => (
+                        e.bound
+                            .as_ref()
+                            .unwrap()
+                            .options
+                            .iter()
+                            .map(|s| (s.clone(), s.clone()))
+                            .collect(),
+                        true,
+                        false,
+                    ),
                     Format::Ref(k) => (self.options(k), true, false),
                     Format::Many(k) => (self.options(k), true, true),
                     Format::Bool => (
@@ -429,7 +460,7 @@ impl Workbench {
                             ("true".into(), crate::locale::label("启用").into()),
                             ("false".into(), crate::locale::label("关闭").into()),
                         ],
-                        false,
+                        e.bound.is_some(),
                         false,
                     ),
                     Format::Choice(v) => (
@@ -644,6 +675,16 @@ impl Workbench {
         if let Mode::Confirm { .. } = &mode {
             body = body.child(text("请确认本次操作。", 14., MUTED));
         }
+        if let Mode::Work(crate::app::workspace_ui::WorkForm::Confirm { names, .. }) = &mode {
+            body = body.child(text(
+                format!("确认后将清除这些字段的旧值：{names}"),
+                14.,
+                INK,
+            ));
+        }
+        if let Mode::Work(crate::app::workspace_ui::WorkForm::Views) = &mode {
+            body = body.child(self.all_saved_views(cx));
+        }
         if let Mode::DeactivateSpace {
             space, unfinished, ..
         } = &mode
@@ -791,44 +832,26 @@ impl Workbench {
                 body = body.child(self.editor_row(i, e, open_pick, &mode, w, cx));
             }
         }
-        if (matches!(&mode,Mode::Create(k) if k=="view")
-            || matches!(&mode,Mode::Edit(r) if r.kind=="view"))
-            && let Some(values) = self.form.as_ref().and_then(|f| f.values(cx).ok())
+        if matches!(&mode,Mode::Create(k) if k=="view")
+            || matches!(&mode,Mode::Edit(r) if r.kind=="view")
         {
-            let q = values
-                .get("query")
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .to_lowercase();
-            let preview: Vec<_> = self
-                .list("task")
-                .iter()
-                .filter(|t| {
-                    q.is_empty()
-                        || t.title.to_lowercase().contains(&q)
-                        || t.field("description").to_lowercase().contains(&q)
-                })
-                .filter(|t| {
-                    ["type", "status", "priority", "assignee", "project"]
-                        .iter()
-                        .all(|k| {
-                            values
-                                .get(&format!("filter_{k}"))
-                                .and_then(Value::as_str)
-                                .is_none_or(|v| v.is_empty() || v == t.field(k))
-                        })
-                })
-                .collect();
+            let preview = &self.work.preview;
             let mut panel = col()
                 .p(px(10.))
                 .rounded(px(6.))
                 .bg(rgb(PALE))
                 .gap(px(3.))
-                .child(headline(format!("预览 · {} 项任务", preview.len()), 13.));
+                .child(headline(
+                    format!("预览 · {} 项任务", self.work.preview_total),
+                    13.,
+                ));
             for t in preview.iter().take(5) {
                 panel = panel.child(text(format!("{}   {}", t.code(), t.title), 12., MUTED));
             }
             body = body.child(panel);
+        }
+        if let Mode::ChatRow(room) = &mode {
+            body = body.child(self.chat_row_actions(room, cx));
         }
         if matches!(mode, Mode::Search) {
             body = body.child(
@@ -856,26 +879,36 @@ impl Workbench {
                         )
                     }),
             );
-            for (i, r) in results.iter().take(150).enumerate() {
+        }
+        if matches!(mode, Mode::Search | Mode::BindChat(_)) {
+            for (i, r) in results
+                .iter()
+                .filter(|r| !matches!(mode, Mode::BindChat(_)) || r.kind == "task")
+                .take(150)
+                .enumerate()
+            {
+                let action = if let Mode::BindChat(room) = &mode {
+                    UiAction::Chat(crate::app::chat_actions::Action::Bind {
+                        room: room.clone(),
+                        task: r.id.clone(),
+                    })
+                } else {
+                    UiAction::OpenSearch(r.clone())
+                };
                 body = body.child(
-                    self.button(
-                        format!("search-{i}"),
-                        r.title.clone(),
-                        UiAction::OpenSearch(r.clone()),
-                        cx,
-                    )
-                    .w_full()
-                    .justify_start()
-                    .gap(px(8.))
-                    .child(icon(
-                        Page::from_kind(&r.kind)
-                            .map(|p| p.info().icon)
-                            .unwrap_or("file-text"),
-                        15.,
-                    ))
-                    .child(text(r.title.clone(), 13., INK))
-                    .child(div().flex_1())
-                    .child(text(crate::forms::noun(&r.kind), 11., DIM)),
+                    self.button(format!("search-{i}"), r.title.clone(), action, cx)
+                        .w_full()
+                        .justify_start()
+                        .gap(px(8.))
+                        .child(icon(
+                            Page::from_kind(&r.kind)
+                                .map(|p| p.info().icon)
+                                .unwrap_or("file-text"),
+                            15.,
+                        ))
+                        .child(text(r.title.clone(), 13., INK))
+                        .child(div().flex_1())
+                        .child(text(crate::forms::noun(&r.kind), 11., DIM)),
                 );
             }
             if results.is_empty() {
@@ -1077,7 +1110,24 @@ impl Render for Workbench {
                     .gap(px(8.))
                     .bg(rgb(INK))
                     .child(icon("check", 13.).text_color(white()))
-                    .child(text(message.clone(), 13., 0xffffff)),
+                    .child(text(message.clone(), 13., 0xffffff))
+                    .when(
+                        self.chat_undo
+                            .as_ref()
+                            .is_some_and(|(space, _, _)| space == &self.loc.space),
+                        |b| {
+                            b.child(
+                                self.button(
+                                    "undo-hide-chat",
+                                    crate::locale::undo_chat_hide().to_owned(),
+                                    UiAction::Chat(crate::app::chat_actions::Action::Undo),
+                                    cx,
+                                )
+                                .bg(white())
+                                .child(crate::locale::undo_chat_hide()),
+                            )
+                        },
+                    ),
             );
         }
         root

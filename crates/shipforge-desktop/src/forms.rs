@@ -36,7 +36,12 @@ pub struct Spec {
     pub format: Format,
     pub default: &'static str,
 }
-fn item(key: &'static str, label: &'static str, format: Format, default: &'static str) -> Spec {
+pub(crate) fn item(
+    key: &'static str,
+    label: &'static str,
+    format: Format,
+    default: &'static str,
+) -> Spec {
     Spec {
         key,
         label,
@@ -62,6 +67,9 @@ const TRIGGERS: &[(&str, &str)] = &[
 ];
 #[derive(Clone)]
 pub enum Mode {
+    Work(crate::app::workspace_ui::WorkForm),
+    BindChat(Record),
+    ChatRow(Record),
     DeactivateSpace {
         space: Record,
         unfinished: u64,
@@ -91,6 +99,10 @@ pub enum Mode {
     Edit(Record),
     Filter,
     Connect,
+    Reauthenticate {
+        account: String,
+        url: String,
+    },
     Comment(Record),
     ThreadReply {
         task: String,
@@ -116,6 +128,10 @@ pub enum Mode {
     Export,
     Import,
     Token,
+    PersonalToken {
+        machine_setup: bool,
+        request_id: String,
+    },
     Search,
     Output {
         heading: String,
@@ -131,6 +147,9 @@ impl Mode {
     pub fn heading(&self) -> String {
         use Mode::*;
         match self {
+            Work(f) => f.title(),
+            BindChat(_) => "绑定到已有任务".into(),
+            ChatRow(room) => room.title.clone(),
             DeactivateSpace { .. } => "停用空间".into(),
             OpenChatShare => "打开已分享的对话".into(),
             SetupOrganization => "创建你的组织".into(),
@@ -158,6 +177,7 @@ impl Mode {
             FindLabels => "查找标签".into(),
             MergeTags => "合并标签".into(),
             Connect => "连接团队服务".into(),
+            Reauthenticate { .. } => "重新登录账号".into(),
             Comment(_) => "添加评论".into(),
             ThreadReply { target, .. } => format!(
                 "{} · {} / {}",
@@ -172,12 +192,16 @@ impl Mode {
             Export => "导出空间".into(),
             Import => "导入空间".into(),
             Token => "创建访问令牌".into(),
+            PersonalToken { .. } => "创建个人访问令牌".into(),
             Search => "搜索工作空间".into(),
             Output { heading, .. } => heading.clone(),
         }
     }
     pub fn submit_label(&self) -> &'static str {
         match self {
+            Self::Work(f) => f.submit_label(),
+            Self::BindChat(_) => "查找",
+            Self::ChatRow(_) => "关闭",
             Self::DeactivateSpace { .. } => "停用空间",
             Self::OpenChatShare => "打开",
             Self::SetupOrganization => "继续",
@@ -203,10 +227,11 @@ impl Mode {
             Self::BulkTags => "应用到所选任务",
             Self::FindLabels => "查找",
             Self::MergeTags => "合并至目标标签",
-            Self::Connect => "连接",
+            Self::Connect | Self::Reauthenticate { .. } => "连接",
             Self::Comment(_) | Self::Message(_) | Self::ThreadReply { .. } => "发送",
             Self::Search => "搜索",
             Self::Token => "签发令牌",
+            Self::PersonalToken { .. } => "创建令牌",
             Self::ResolveDraft(_) => "更新草稿",
             Self::Export => "导出",
             Self::Import => "预检",
@@ -460,6 +485,9 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 Choice(&[
                     ("github", "GitHub"),
                     ("jira", "Jira"),
+                    ("bugly", "腾讯 Bugly"),
+                    ("tapd", "TAPD"),
+                    ("zoho", "Zoho BugTracker"),
                     ("gitlab", "GitLab"),
                     ("linear", "Linear"),
                     ("asana", "Asana"),
@@ -495,6 +523,24 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 "",
             ),
             item("project_key", "Jira 项目标识", Text, ""),
+            item("portal_id", "Zoho 门户 ID", Text, ""),
+            item(
+                "tapd_auth",
+                "TAPD 凭据类型",
+                Choice(&[("personal", "个人访问令牌"), ("company", "公司 API 账号")]),
+                "personal",
+            ),
+            item("company_id", "TAPD 公司 ID（公司账号使用）", Text, ""),
+            item("tapd_workspace", "TAPD 项目 ID", Text, ""),
+            item("zoho_project", "Zoho 项目 ID（可先发现项目）", Text, ""),
+            item("product_id", "Bugly 产品 ID", Text, ""),
+            item(
+                "default_task_type",
+                "Bugly 默认任务类型",
+                Ref("task_type"),
+                "",
+            ),
+            item("bugly_outbound", "启用 Bugly 状态回写", Bool, "false"),
             item("workspace_id", "Slack 工作区 ID", Text, ""),
             item("channel_id", "Slack 频道 ID", Text, ""),
             item("app_id", "Slack 应用 ID", Text, ""),
@@ -556,6 +602,9 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             item("enabled", "启用任务类型", Bool, "true"),
             item("statuses", "状态工作流", Many("$statuses"), ""),
             item("required_fields", "必填字段", Many("field"), ""),
+            item("use_bindings", "限制此类型可用字段", Bool, "false"),
+            item("bound_ids", "绑定字段（按选择顺序）", Many("field"), ""),
+            item("disabled_ids", "暂时隐藏的绑定", Many("field"), ""),
         ],
         "relation_type" => vec![
             title,
@@ -578,6 +627,20 @@ pub fn workflow_name(op: &str) -> &'static str {
         "chat.manage" => "管理对话成员",
         "chat.agents" => "管理群内 Agent",
         "provider.preview" => "预览平台事件",
+        "zoho.projects" => "发现 Zoho 项目",
+        "zoho.credential" => "保存或更新 Zoho 凭据",
+        "tapd.credential" => "配置 TAPD 凭据",
+        "tapd.projects" => "发现 TAPD 项目",
+        "tapd.preview" => "预览 TAPD 导入与更新",
+        "bugly.credentials" => "配置 Bugly 回写凭据",
+        "zoho.preview" => "预览 Zoho 导入",
+        "imports.commit" => "确认导入批次",
+        "imports.history" => "查看导入历史",
+        "imports.rollback" => "撤销导入批次",
+        "bugly.rotate" => "生成或轮换提单地址",
+        "bugly.revoke" => "断开 Bugly 提单",
+        "bugly.outbox" => "查看状态回写记录",
+        "bugly.deliver" => "投递待发状态",
         "provider.ingest" => "接收平台事件",
         "tool.authorize" => "验证 Agent 工具权限",
         "run.reply" => "回复工作机",
@@ -591,6 +654,9 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
     use Format::*;
     use Mode::*;
     match mode {
+        Work(f) => f.specs(),
+        BindChat(_) => vec![item("query", "搜索任务标题或编号", Text, "")],
+        ChatRow(_) => vec![],
         DeactivateSpace { unfinished, .. } if *unfinished > 0 => vec![
             item(
                 "unfinished",
@@ -818,6 +884,37 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
                 item("payload", "平台原始事件（JSON 对象）", Json, "{}"),
                 item("event_id", "GitLab 或 Jira 上游投递 ID", Text, ""),
             ],
+            "zoho.preview" => vec![item("full", "重新检查全部缺陷", Bool, "false")],
+            "tapd.preview" => vec![item(
+                "import_mode",
+                "导入方式",
+                Choice(&[
+                    ("history", "补导历史，跳过已有条目"),
+                    ("changes", "检查增量变更"),
+                    ("refresh", "重新检查全部条目"),
+                ]),
+                "history",
+            )],
+            "tapd.credential" if record.field("tapd_auth") == "company" => vec![
+                item("api_user", "TAPD API 账号", Text, ""),
+                item("api_password", "TAPD API 密码", Secret, ""),
+                item("clear", "移除本机凭据", Bool, "false"),
+            ],
+            "tapd.credential" => vec![
+                item("access_token", "TAPD 个人访问令牌", Secret, ""),
+                item("clear", "移除本机凭据", Bool, "false"),
+            ],
+            "zoho.credential" => vec![
+                item("access_token", "Zoho 访问令牌", Secret, ""),
+                item("clear", "移除本机凭据", Bool, "false"),
+            ],
+            "bugly.credentials" => vec![
+                item("api_id", "Bugly 公司 API ID", Text, ""),
+                item("api_key", "Bugly 公司 API Key", Secret, ""),
+                item("product_key", "Bugly ProductKey", Secret, ""),
+                item("clear", "移除本机凭据", Bool, "false"),
+            ],
+            "imports.commit" | "imports.rollback" => vec![item("batch", "导入批次 ID", Text, "")],
             "run.reply" => vec![item("text", "回复内容", Body, "")],
             "tool.authorize" => vec![item("agent", "Agent", Ref("agent"), "")],
             "connector.ingest" => vec![
@@ -836,6 +933,7 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             item("url", "服务地址", Text, ""),
             item("token", "访问令牌", Secret, ""),
         ],
+        Reauthenticate { .. } => vec![item("token", "访问令牌", Secret, "")],
         Filter => vec![
             item("filter_labels", "同时含有标签", Many("tag"), ""),
             item("query", "标题或编号", Text, ""),
@@ -867,6 +965,20 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             "",
         )],
         Export | Import => vec![item("path", "JSON 文件完整路径", Text, "")],
+        PersonalToken { .. } => vec![
+            item("label", "用途名称", Text, ""),
+            item(
+                "lifetime",
+                "有效期",
+                Choice(&[
+                    ("30d", "30 天"),
+                    ("90d", "90 天"),
+                    ("1y", "1 年"),
+                    ("never", "永不过期"),
+                ]),
+                "30d",
+            ),
+        ],
         Token => vec![
             item("actor", "成员账号", Ref("member"), ""),
             item(
@@ -914,9 +1026,10 @@ pub struct Editor {
     pub spec: Spec,
     pub control: Control,
     pub trigger: Option<u64>,
+    pub bound: Option<crate::app::workspace_ui::BoundInput>,
 }
 impl Editor {
-    fn new(
+    pub(crate) fn new(
         spec: Spec,
         initial: &Map<String, Value>,
         trigger: Option<u64>,
@@ -970,6 +1083,7 @@ impl Editor {
             spec,
             control,
             trigger,
+            bound: None,
         }
     }
     pub fn raw(&self, cx: &App) -> String {
@@ -991,7 +1105,7 @@ impl Editor {
             Control::Pick { focus, .. } => focus.clone(),
         }
     }
-    fn parsed(&self, cx: &App) -> Result<Value, String> {
+    pub(crate) fn parsed(&self, cx: &App) -> Result<Value, String> {
         use Format::*;
         if let Control::Pick {
             value: Selection::Many(values),
@@ -1002,6 +1116,9 @@ impl Editor {
         }
         let raw = self.raw(cx);
         let t = raw.trim();
+        if self.bound.is_some() && t.is_empty() {
+            return Ok(Value::Null);
+        }
         Ok(match self.spec.format {
             Json => {
                 if t.is_empty() {
@@ -1053,6 +1170,8 @@ pub struct TriggerDraft {
     original: Map<String, Value>,
 }
 pub struct Form {
+    pub task_draft: Map<String, Value>,
+    pub bound_task: bool,
     pub triggers: Vec<TriggerDraft>,
     next_trigger: u64,
     pub mode: Mode,
@@ -1079,6 +1198,12 @@ impl Form {
             .collect();
         let automation = mode.automation();
         let mut this = Self {
+            task_draft: initial
+                .get("custom")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default(),
+            bound_task: false,
             mode,
             entries,
             triggers: vec![],
@@ -1160,9 +1285,18 @@ impl Form {
         let mut fields = self
             .entries
             .iter()
-            .filter(|e| e.trigger.is_none())
+            .filter(|e| e.trigger.is_none() && e.bound.is_none())
             .map(|e| Ok((e.spec.key.to_owned(), e.parsed(cx)?)))
             .collect::<Result<Map<_, _>, String>>()?;
+        if self.bound_task {
+            let mut custom = Map::new();
+            for e in &self.entries {
+                if let Some(b) = &e.bound {
+                    custom.insert(b.id.clone(), e.parsed(cx)?);
+                }
+            }
+            fields.insert("custom".into(), Value::Object(custom));
+        }
         if self.mode.automation() {
             let mut triggers = Vec::new();
             for t in &self.triggers {
@@ -1237,6 +1371,9 @@ pub fn connector_field_visible(key: &str, provider: &str) -> bool {
         "link_tasks" | "repository" | "review_rule_id" => matches!(provider, "github" | "gitlab"),
         "repository_host" | "project_id" => provider == "gitlab",
         "project_key" => provider == "jira",
+        "portal_id" | "zoho_project" => provider == "zoho",
+        "company_id" | "tapd_auth" | "tapd_workspace" => provider == "tapd",
+        "product_id" | "default_task_type" | "bugly_outbound" => provider == "bugly",
         "workspace_id" | "channel_id" | "app_id" | "bot_id" | "outbound" | "slack_assignment" => {
             provider == "slack"
         }
@@ -1261,6 +1398,29 @@ pub fn trigger_field_visible(key: &str, kind: &str, frequency: &str) -> bool {
 }
 pub fn initial_record(r: &Record) -> Map<String, Value> {
     let mut f = r.fields.clone();
+    if r.kind == "task_type"
+        && let Some(bindings) = r.fields.get("field_bindings").and_then(Value::as_array)
+    {
+        f.insert("use_bindings".into(), json!(true));
+        for (key, flag) in [
+            ("bound_ids", "all"),
+            ("disabled_ids", "disabled"),
+            ("required_fields", "required"),
+        ] {
+            f.insert(
+                key.into(),
+                json!(
+                    bindings
+                        .iter()
+                        .filter(|b| flag == "all"
+                            || flag == "disabled" && b["enabled"] == false
+                            || flag == "required" && b["required"] == true)
+                        .map(|b| &b["field"])
+                        .collect::<Vec<_>>()
+                ),
+            );
+        }
+    }
     if r.kind == "task" {
         crate::assignees::initial(r, &mut f);
     }
@@ -1283,6 +1443,27 @@ pub fn compile_record(
         .unwrap_or_default();
     if title.trim().is_empty() {
         return Err("请填写名称或标题。".into());
+    }
+    if kind == "task_type" {
+        let explicit = fields.remove("use_bindings") == Some(json!(true));
+        let bound = fields
+            .remove("bound_ids")
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default();
+        let hidden = fields
+            .remove("disabled_ids")
+            .and_then(|v| v.as_array().cloned())
+            .unwrap_or_default();
+        if explicit {
+            let required = fields
+                .remove("required_fields")
+                .and_then(|v| v.as_array().cloned())
+                .unwrap_or_default();
+            if hidden.iter().chain(&required).any(|id| !bound.contains(id)) {
+                return Err("必填和隐藏字段须先加入绑定字段。".into());
+            }
+            fields.insert("field_bindings".into(),json!(bound.iter().map(|id|json!({"field":id,"enabled":!hidden.contains(id),"required":required.contains(id)})).collect::<Vec<_>>()));
+        }
     }
     if kind == "connector" {
         let provider = fields

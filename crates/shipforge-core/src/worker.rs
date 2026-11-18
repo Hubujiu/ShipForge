@@ -27,6 +27,7 @@ pub(crate) const OPS: &[&str] = &[
     "run.retry",
     "run.reply",
     "run.tool",
+    "run.discussion",
     "automation.fire",
     "automation.tick",
     "connector.ingest",
@@ -100,7 +101,7 @@ pub(crate) fn extend_schema(schema: &mut Value) {
             &["machine_id", "machine_key"],
         ),
         (
-            &["run.heartbeat", "run.report", "run.tool"],
+            &["run.heartbeat", "run.report", "run.tool", "run.discussion"],
             &["machine_id", "machine_key", "id", "lease"],
         ),
         (&["run.tool"], &["tool_id", "call_id"]),
@@ -207,6 +208,13 @@ pub(crate) fn dispatch(c: &Context<'_>, q: &Value) -> Option<Result<Value>> {
                 encoded(c.update(&record, &record.title, f)?)
             }
             "run.tool" => authorize_run_tool(c, q),
+            "run.discussion" => {
+                let (run, expires, last) = lease_row(c, q)?;
+                if expires <= now() || last.is_some() || run.fields["status"] != "running" {
+                    return Err(crate::forbidden("an active run lease is required"));
+                }
+                crate::discussions::run(c, q, &run)
+            }
             "run.enqueue" => manual_enqueue(c, q),
             "run.claim" => claim(c, q),
             "run.heartbeat" => heartbeat(c, q),
@@ -425,7 +433,7 @@ fn snapshot(c: &Context<'_>, handler: &str, kind: &str) -> Result<Value> {
     Ok(data)
 }
 
-fn enqueue(
+pub(crate) fn enqueue(
     c: &Context<'_>,
     origin: &str,
     handler: &str,
@@ -482,10 +490,7 @@ fn enqueue(
         "outside_working_hours"
     } else if local.is_empty() {
         "no_machine"
-    } else if !local.iter().any(|m| m.fields["last_seen"]
-        .as_i64()
-        .is_some_and(|t| t > at - 90_000))
-    {
+    } else if !local.iter().any(|m| machine_is_online_at(&m.fields, at)) {
         "machine_offline"
     } else if !local.iter().any(|m| m.fields["runtimes"]
         .as_array()
@@ -707,6 +712,12 @@ fn authenticate(c: &Context<'_>, q: &Value) -> Result<Record> {
     }
     Ok(r)
 }
+pub(crate) fn machine_is_online_at(fields: &Value, at: i64) -> bool {
+    fields["disabled"] != true
+        && fields["last_seen"]
+            .as_i64()
+            .is_some_and(|seen| seen > at - 90_000)
+}
 fn register(c: &Context<'_>, q: &Value) -> Result<Value> {
     let id = req(q, "machine_id")?;
     let key = req(q, "machine_key")?;
@@ -802,6 +813,19 @@ fn current_reason(
     at: i64,
 ) -> Option<&'static str> {
     let cfg = &run.fields["config"];
+    if run.fields["chat_id"].is_string()
+        && run.fields["parent_id"].is_null()
+        && runs.iter().any(|other| {
+            other.id != run.id
+                && other.fields["chat_id"] == run.fields["chat_id"]
+                && matches!(
+                    other.fields["status"].as_str(),
+                    Some("running" | "cancelling" | "waiting_children")
+                )
+        })
+    {
+        return Some("conversation_busy");
+    }
     if machine.fields["shared"] != true && machine.fields["owner"] != run.fields["requested_by"] {
         return Some("machine_visibility");
     }
@@ -847,7 +871,13 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
     let previous = c.records("run")?;
     expire(c, &previous, at)?;
     let mut runs = c.records("run")?;
-    runs.sort_by_key(|r| (r.created_at, r.id.clone()));
+    runs.sort_by_key(|r| {
+        (
+            r.created_at,
+            r.fields["chat_order"].as_i64().unwrap_or(0),
+            r.id.clone(),
+        )
+    });
     let capacity = machine.fields["capacity"].as_u64().unwrap_or(1);
     if runs
         .iter()
@@ -867,6 +897,7 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
         let mut f = run.fields.clone();
         if let Some(reason) = current_reason(run, &machine, &runs, at) {
             if (reason == "outside_working_hours"
+                || reason == "conversation_busy"
                 || reason == "agent_capacity"
                 || f["config"]["machine_id"] == machine.id)
                 && f["waiting_reason"] != reason
@@ -876,13 +907,40 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
             }
             continue;
         }
+        let context = if run.fields["chat_id"].is_string() {
+            match crate::chat::content_context(c, run) {
+                Ok(value) => value,
+                Err(error)
+                    if error.starts_with("forbidden:") || error.starts_with("not_found:") =>
+                {
+                    f["status"] = json!("cancelled");
+                    f["finished_at"] = json!(at);
+                    f["result"] = json!("Conversation access changed");
+                    c.update(run, &run.title, f)?;
+                    continue;
+                }
+                Err(e) => return Err(e),
+            }
+        } else {
+            Value::Null
+        };
+        if context["private"] == true {
+            if c.actor != f["requested_by"].as_str().unwrap_or_default() {
+                continue;
+            }
+            f["visibility"] = json!("private");
+            f["owner"] = f["requested_by"].clone();
+        }
         let lease = token();
         f["status"] = json!("running");
         f["attempt"] = json!(f["attempt"].as_u64().unwrap_or(0) + 1);
         f["machine_id"] = json!(machine.id);
         f["started_at"] = json!(at);
         f["waiting_reason"] = Value::Null;
-        let current = c.update(run, &run.title, f)?;
+        let mut current = c.update(run, &run.title, f)?;
+        if !context.is_null() {
+            current.fields["chat_context"] = context;
+        }
         c.db.execute("INSERT INTO sf_run_leases(space,run,machine,lease_hash,expires,response_hash) VALUES(?,?,?,?,?,NULL) ON CONFLICT(space,run) DO UPDATE SET machine=excluded.machine,lease_hash=excluded.lease_hash,expires=excluded.expires,response_hash=NULL",
             params![c.space,run.id,machine.id,digest(&lease),at+LEASE_MS]).map_err(db_error)?;
         return Ok(json!({"run":current,"lease":lease,"expires_at":at+LEASE_MS}));
@@ -980,6 +1038,9 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
     let (run, expires, last) = lease_row(c, q)?;
     let at = now();
     let mut fingerprint = vec![&q["status"], &q["result"], &q["artifacts"], &q["delegates"]];
+    if run.fields["chat_conversion"] == true {
+        fingerprint.push(&q["task_draft"]);
+    }
     if let Some(progress) = q.get("progress").filter(|v| !v.is_null()) {
         fingerprint.push(progress);
     }
@@ -998,6 +1059,14 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
     {
         return Err("stale lease".into());
     }
+    let private_result;
+    let q = if crate::chat::claim_still_visible(c, &run)? {
+        q
+    } else {
+        private_result =
+            json!({"status":"cancelled","result":"Conversation access changed","artifacts":[]});
+        &private_result
+    };
     let outcome = req(q, "status")?;
     if !matches!(outcome, "done" | "failed" | "cancelled" | "waiting") {
         return Err("unknown run outcome".into());
@@ -1065,6 +1134,7 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
         f["children"] = json!(children);
         f["status"] = json!("waiting_children");
     }
+    crate::chat::apply_conversion(c, &run, q, &mut f)?;
     if matches!(f["status"].as_str(), Some("done" | "failed" | "cancelled")) {
         f["finished_at"] = json!(at);
     }

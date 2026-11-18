@@ -29,7 +29,9 @@ def verify_manuals(payload):
     for name in required:
         assert (payload / name).is_file(), f"Missing packaged file: {name}"
     for manual in payload.rglob("*.md"):
-        for target in re.findall(r"\]\(([^)]+)\)", manual.read_text(encoding="utf-8")):
+        content=manual.read_text(encoding="utf-8")
+        links=re.findall(r"\]\(([^)]+)\)",content)+re.findall(r"^\[[^\]]+\]:[ \t]+(\S+)",content,re.MULTILINE)
+        for target in links:
             url = urlsplit(target.strip("<>"))
             if url.scheme or url.netloc or not url.path:
                 continue

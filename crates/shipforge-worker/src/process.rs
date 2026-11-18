@@ -414,6 +414,6 @@ fn execute_round(
     }
     let artifacts = bounded_artifacts(&parsed["artifacts"], canonical)?;
     Ok(
-        json!({"status":status,"result":result,"artifacts":artifacts,"delegates":parsed["delegates"],"tool_calls":parsed["tool_calls"]}),
+        json!({"status":status,"result":result,"artifacts":artifacts,"delegates":parsed["delegates"],"tool_calls":parsed["tool_calls"],"task_draft":parsed["task_draft"]}),
     )
 }

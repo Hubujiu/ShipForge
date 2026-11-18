@@ -1,9 +1,16 @@
 mod shares;
+mod sidebar;
+mod workflows;
 use crate::{Context, Record, Result, conflict, forbidden, invalid, required, storage};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 pub(crate) use shares::read as read_share;
 pub use shares::share_text;
+pub(crate) use sidebar::new_message;
+pub(crate) use workflows::{
+    apply_conversion, check_binding, check_inherited, claim_still_visible, content_context,
+    may_share_inherited,
+};
 
 pub(crate) fn init(db: &Connection) -> Result<()> {
     db.execute_batch("
@@ -13,6 +20,8 @@ pub(crate) fn init(db: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS chat_agents(space TEXT,chat TEXT,agent TEXT,PRIMARY KEY(space,chat,agent));
         CREATE TABLE IF NOT EXISTS chat_user_settings(space TEXT,chat TEXT,actor TEXT,muted INTEGER NOT NULL DEFAULT 0,ignore_all INTEGER NOT NULL DEFAULT 0,clear_seq INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(space,chat,actor));
     ").map_err(storage)?;
+    sidebar::init(db)?;
+    workflows::init(db)?;
     shares::init(db)
 }
 
@@ -119,6 +128,7 @@ pub(crate) fn before_delete(c: &Context<'_>, room: &Record) -> Result<()> {
         "chat_agents",
         "chat_user_settings",
         "chat_management",
+        "chat_sidebar",
     ] {
         c.db.execute(
             &format!("DELETE FROM {table} WHERE space=? AND chat=?"),
@@ -130,7 +140,7 @@ pub(crate) fn before_delete(c: &Context<'_>, room: &Record) -> Result<()> {
 }
 
 pub(crate) fn forget_grants(c: &Context<'_>, actor: &str) -> Result<()> {
-    for table in ["chat_people", "chat_user_settings"] {
+    for table in ["chat_people", "chat_user_settings", "chat_sidebar"] {
         c.db.execute(&format!("DELETE FROM {table} WHERE actor=?1 AND (space=?2 OR space IN (SELECT space FROM records WHERE kind='space' AND id=space AND json_extract(fields,'$.organization')=?2))"),params![actor,c.space]).map_err(storage)?;
     }
     Ok(())
@@ -238,6 +248,9 @@ fn task_visible(c: &Context<'_>, room: &Record) -> bool {
 }
 
 pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
+    if op == "chat.sidebar" {
+        return sidebar::list(c);
+    }
     if op == "chat.invitations" {
         return invitations(c);
     }
@@ -273,7 +286,13 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
         crate::domain::check_rev(q, &room)?;
     }
     match op {
+        "chat.organize" => sidebar::organize(c, &room, q),
+        "chat.fork" => workflows::fork(c, &room, q),
+        "chat.bind_task" => workflows::bind(c, &room, q),
+        "chat.convert" => workflows::convert(c, &room, q),
+        "chat.send" => workflows::send(c, &room, q),
         "chat.info" => info(c, &room),
+        "chat.history" => Ok(json!(workflows::ordered(c, &room)?)),
         "chat.share.create" => shares::create(c, &room, q),
         "chat.share.revoke" => shares::revoke(c, &room, required(q, "share")?),
         "chat.preferences" => {
@@ -504,6 +523,7 @@ pub(crate) fn notify(c: &Context<'_>, message: &Record) -> Result<()> {
 }
 
 pub(crate) fn extend_schema(schema: &mut Value) {
+    workflows::schema(schema);
     let rules = schema["allOf"].as_array_mut().expect("schema rules");
     rules.push(json!({"if":{"properties":{"op":{"enum":["chat.info","chat.manage","chat.preferences"]}}},"then":{"required":["id"]}}));
     rules.push(json!({"if":{"properties":{"op":{"const":"chat.manage"}}},"then":{

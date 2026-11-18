@@ -4,6 +4,7 @@ mod actions;
 mod attachments;
 mod chat;
 mod defaults;
+mod discussions;
 mod domain;
 mod im;
 mod invitations;
@@ -11,16 +12,20 @@ mod iterations;
 mod jira;
 pub mod onboarding;
 mod persistence;
+pub mod personal_tokens;
 pub mod preferences;
 mod protocol;
 mod providers;
 mod query;
+mod saved_views;
 mod spaces;
 mod tags;
 mod task_commands;
+mod task_fields;
 mod tasks;
 mod transfer;
 mod vcs;
+mod vendors;
 mod worker;
 
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -30,6 +35,11 @@ use std::path::Path;
 
 pub use chat::share_text;
 pub use protocol::{is_read_only, schema};
+pub use vendors::bugly_authorization;
+pub fn machine_is_online(fields: &Value) -> bool {
+    worker::machine_is_online_at(fields, now())
+}
+pub use saved_views::view_link_parts;
 
 pub type Result<T> = std::result::Result<T, String>;
 
@@ -167,6 +177,7 @@ impl Store {
                 | "preferences.update"
                 | "invitation.accept"
                 | "chat.share.read"
+                | "view.open"
                 | "jira.read"
                 | "jira.write"
         ) {
@@ -180,6 +191,8 @@ impl Store {
             && !worker::OPS.contains(&op)
             && op != "provider.ingest"
             && op != "jira.write"
+            && !op.starts_with("imports.")
+            && !op.starts_with("bugly.")
             && !op.starts_with("im.")
             && !op.starts_with("invitation.");
         let key = if cache {
@@ -225,8 +238,19 @@ impl Store {
                 spaces::execute(&c, &request, op)
             }
             "jira.read" | "jira.write" => jira::execute(&c, &request, read),
+            op if op.starts_with("imports.") || op.starts_with("bugly.") => {
+                vendors::execute(&c, &request, op)
+            }
             op if op.starts_with("invitation.") => invitations::execute(&c, op, &request),
             "schema" => Ok(schema()),
+            "task.type.preview" => task_fields::preview_switch(&c, &request),
+            "task_type.bindings.preview" => task_fields::preview_bindings(&c, &request),
+            "comment.thread" => discussions::thread(&c, &request),
+            "comment.resolve" | "comment.reopen" => {
+                discussions::mark(&c, &request, None, op == "comment.resolve")
+            }
+            "view.catalog" | "view.organize" | "view.preview" | "view.share" | "view.open"
+            | "view.save_as" => saved_views::execute(&c, op, &request),
             "iteration.settings"
             | "iteration.configure"
             | "iteration.start"

@@ -425,7 +425,8 @@
             "enum": [
               "run.heartbeat",
               "run.report",
-              "run.tool"
+              "run.tool",
+              "run.discussion"
             ]
           }
         }
@@ -582,6 +583,85 @@
             ]
           }
         }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "imports.binding",
+              "imports.history",
+              "bugly.rotate",
+              "bugly.revoke",
+              "bugly.outbox",
+              "bugly.claim",
+              "bugly.binding"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "imports.stage"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "project",
+          "issues",
+          "binding_rev",
+          "checkpoint"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "imports.commit",
+              "imports.rollback"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "batch"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "bugly.settle"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "delivery",
+          "lease",
+          "success"
+        ]
       }
     },
     {
@@ -852,6 +932,154 @@
           "owner": {
             "minLength": 1,
             "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "chat.organize",
+              "chat.history",
+              "chat.fork",
+              "chat.bind_task",
+              "chat.convert",
+              "chat.send"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "chat.organize"
+          }
+        }
+      },
+      "then": {
+        "if": {
+          "properties": {
+            "action": {
+              "const": "undo"
+            }
+          }
+        },
+        "properties": {
+          "action": {
+            "enum": [
+              "pin",
+              "unpin",
+              "hide",
+              "undo"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ],
+        "then": {
+          "required": [
+            "undo_token"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "chat.fork"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "message": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "message"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "chat.bind_task"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "task": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "chat.send"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "body"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "run.report"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "task_draft": {
+            "properties": {
+              "description": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "title",
+              "description"
+            ],
+            "type": [
+              "object",
+              "null"
+            ]
           }
         }
       }
@@ -1662,6 +1890,314 @@
       "if": {
         "properties": {
           "op": {
+            "const": "task.type.preview"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "custom": {
+            "type": "object"
+          },
+          "status": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "target"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "task_type.bindings.preview"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "field_bindings"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "task_type"
+          },
+          "op": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "properties": {
+              "field_bindings": {
+                "items": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "enabled": {
+                      "default": true,
+                      "type": "boolean"
+                    },
+                    "field": {
+                      "minLength": 1,
+                      "type": "string"
+                    },
+                    "required": {
+                      "default": false,
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "field"
+                  ],
+                  "type": "object"
+                },
+                "type": "array"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "comment.thread",
+              "comment.resolve",
+              "comment.reopen"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "task_id",
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "run.discussion"
+          }
+        }
+      },
+      "then": {
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "action": {
+                  "enum": [
+                    "comment",
+                    "reply"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "body",
+                "call_id"
+              ]
+            }
+          },
+          {
+            "if": {
+              "properties": {
+                "action": {
+                  "enum": [
+                    "reply",
+                    "resolve",
+                    "reopen"
+                  ]
+                }
+              }
+            },
+            "then": {
+              "required": [
+                "comment_id"
+              ]
+            }
+          }
+        ],
+        "properties": {
+          "action": {
+            "enum": [
+              "comment",
+              "reply",
+              "resolve",
+              "reopen"
+            ]
+          },
+          "body": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "comment_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "view.share"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "view.open"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "link": {
+            "pattern": "^shipforge://view/",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "view.save_as"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "changes": {
+            "type": "object"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "space"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "view.organize"
+          }
+        }
+      },
+      "then": {
+        "anyOf": [
+          {
+            "required": [
+              "pinned"
+            ]
+          },
+          {
+            "required": [
+              "before"
+            ]
+          },
+          {
+            "required": [
+              "after_view"
+            ]
+          }
+        ],
+        "not": {
+          "required": [
+            "before",
+            "after_view"
+          ]
+        },
+        "properties": {
+          "after_view": {
+            "type": "string"
+          },
+          "before": {
+            "type": "string"
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "view.run",
+              "view.preview",
+              "view.open"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "changes": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "const": "task.move"
           }
         }
@@ -1729,6 +2265,77 @@
       "if": {
         "properties": {
           "op": {
+            "const": "access.personal.issue"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "label"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "access.personal.revoke"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "profiles.use"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "profiles.forget"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "profiles.remember"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "location"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "const": "sync.enqueue"
           }
         }
@@ -1751,6 +2358,164 @@
         "required": [
           "id"
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "zoho.projects"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "zoho.preview"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bugly.deliver"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "zoho.credential"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bugly.credentials"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "tapd.projects"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "tapd.preview"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "tapd.credential"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "access.personal.issue"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "actor"
+              ]
+            },
+            {
+              "required": [
+                "scope"
+              ]
+            }
+          ]
+        },
+        "properties": {
+          "label": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "lifetime": {
+            "enum": [
+              "30d",
+              "90d",
+              "1y",
+              "never"
+            ]
+          },
+          "source": {
+            "enum": [
+              "personal",
+              "machine_setup"
+            ]
+          }
+        }
       }
     }
   ],
@@ -1780,6 +2545,13 @@
     "attachment_id": {
       "type": "string"
     },
+    "batch": {
+      "type": "string"
+    },
+    "binding_rev": {
+      "minimum": 1,
+      "type": "integer"
+    },
     "call_id": {
       "maxLength": 4096,
       "minLength": 1,
@@ -1794,6 +2566,14 @@
       "maxLength": 4096,
       "minLength": 1,
       "type": "string"
+    },
+    "confirm_remove": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "type": "array",
+      "uniqueItems": true
     },
     "content_base64": {
       "contentEncoding": "base64",
@@ -1836,10 +2616,38 @@
       "minimum": 1,
       "type": "integer"
     },
+    "expected_type_rev": {
+      "minimum": 1,
+      "type": "integer"
+    },
     "external_id": {
       "maxLength": 4096,
       "minLength": 1,
       "type": "string"
+    },
+    "field_bindings": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "enabled": {
+            "default": true,
+            "type": "boolean"
+          },
+          "field": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "required": {
+            "default": false,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "type": "object"
+      },
+      "type": "array"
     },
     "fields": {
       "type": "object"
@@ -1866,6 +2674,14 @@
     "id": {
       "minLength": 1,
       "type": "string"
+    },
+    "impact_token": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "issues": {
+      "maxItems": 5000,
+      "type": "array"
     },
     "kind": {
       "enum": [
@@ -1934,11 +2750,17 @@
     },
     "op": {
       "enum": [
+        "imports.binding",
+        "imports.history",
+        "bugly.outbox",
+        "bugly.binding",
         "space.deactivate.preview",
         "space.navigation",
         "jira.read",
         "invitation.list",
         "chat.info",
+        "chat.sidebar",
+        "chat.history",
         "chat.invitations",
         "chat.share.read",
         "onboarding.catalog",
@@ -1953,6 +2775,13 @@
         "organization.list",
         "events",
         "view.run",
+        "task.type.preview",
+        "task_type.bindings.preview",
+        "comment.thread",
+        "view.catalog",
+        "view.preview",
+        "view.share",
+        "view.open",
         "dashboard",
         "iteration.preview",
         "iteration.timeline",
@@ -1967,6 +2796,13 @@
         "im.outbox",
         "im.threads",
         "attachment.download",
+        "imports.stage",
+        "imports.commit",
+        "imports.rollback",
+        "bugly.rotate",
+        "bugly.revoke",
+        "bugly.claim",
+        "bugly.settle",
         "space.join",
         "space.leave",
         "space.deactivate",
@@ -1980,12 +2816,21 @@
         "invitation.revoke",
         "invitation.accept",
         "chat.manage",
+        "chat.organize",
+        "chat.fork",
+        "chat.bind_task",
+        "chat.convert",
+        "chat.send",
         "chat.preferences",
         "chat.share.create",
         "chat.share.revoke",
         "onboarding.display",
         "onboarding.setup",
         "preferences.update",
+        "comment.resolve",
+        "comment.reopen",
+        "view.organize",
+        "view.save_as",
         "task.move",
         "task.assign",
         "task.conversation",
@@ -2026,6 +2871,7 @@
         "run.retry",
         "run.reply",
         "run.tool",
+        "run.discussion",
         "automation.fire",
         "automation.tick",
         "connector.ingest",
@@ -2034,11 +2880,26 @@
         "access.issue",
         "access.list",
         "access.revoke",
+        "access.personal.issue",
+        "access.personal.list",
+        "access.personal.revoke",
+        "profiles.list",
+        "profiles.use",
+        "profiles.forget",
+        "profiles.remember",
         "sync.status",
         "sync.pending",
         "sync.enqueue",
         "sync.flush",
-        "sync.resolve"
+        "sync.resolve",
+        "zoho.projects",
+        "zoho.preview",
+        "bugly.deliver",
+        "zoho.credential",
+        "bugly.credentials",
+        "tapd.projects",
+        "tapd.preview",
+        "tapd.credential"
       ],
       "type": "string"
     },
@@ -2209,6 +3070,9 @@
     "version": {
       "minimum": 1,
       "type": "integer"
+    },
+    "with_total": {
+      "type": "boolean"
     },
     "work_type": {
       "maxLength": 80,

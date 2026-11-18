@@ -36,6 +36,13 @@ pub(crate) const KINDS: &[&str] = &[
     "note",
 ];
 const WRITES: &[&str] = &[
+    "imports.stage",
+    "imports.commit",
+    "imports.rollback",
+    "bugly.rotate",
+    "bugly.revoke",
+    "bugly.claim",
+    "bugly.settle",
     "space.join",
     "space.leave",
     "space.deactivate",
@@ -49,12 +56,21 @@ const WRITES: &[&str] = &[
     "invitation.revoke",
     "invitation.accept",
     "chat.manage",
+    "chat.organize",
+    "chat.fork",
+    "chat.bind_task",
+    "chat.convert",
+    "chat.send",
     "chat.preferences",
     "chat.share.create",
     "chat.share.revoke",
     "onboarding.display",
     "onboarding.setup",
     "preferences.update",
+    "comment.resolve",
+    "comment.reopen",
+    "view.organize",
+    "view.save_as",
     "task.move",
     "task.assign",
     "task.conversation",
@@ -81,11 +97,17 @@ const WRITES: &[&str] = &[
     "attachment.upload",
 ];
 const READS: &[&str] = &[
+    "imports.binding",
+    "imports.history",
+    "bugly.outbox",
+    "bugly.binding",
     "space.deactivate.preview",
     "space.navigation",
     "jira.read",
     "invitation.list",
     "chat.info",
+    "chat.sidebar",
+    "chat.history",
     "chat.invitations",
     "chat.share.read",
     "onboarding.catalog",
@@ -100,6 +122,13 @@ const READS: &[&str] = &[
     "organization.list",
     "events",
     "view.run",
+    "task.type.preview",
+    "task_type.bindings.preview",
+    "comment.thread",
+    "view.catalog",
+    "view.preview",
+    "view.share",
+    "view.open",
     "dashboard",
     "iteration.preview",
     "iteration.timeline",
@@ -159,6 +188,7 @@ pub fn schema() -> Value {
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"onboarding.setup"}}},"then":{"required":["organization_name","organization_slug","work_type","task_types"],"properties":{"organization_name":{"type":"string","minLength":1,"maxLength":100},"organization_slug":{"type":"string","pattern":"^[a-z0-9]+(-[a-z0-9]+)*$","maxLength":63}}}}));
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"onboarding.display"}}},"then":{"anyOf":[{"required":["sidebar_visible"]},{"required":["sidebar_expanded"]}]}}));
     worker::extend_schema(&mut schema);
+    crate::vendors::schema(&mut schema);
     crate::jira::schema(&mut schema);
     crate::invitations::extend_schema(&mut schema);
     crate::iterations::extend_schema(&mut schema);
@@ -172,6 +202,7 @@ pub fn schema() -> Value {
         json!({"if":{"properties":{"op":{"const":"tag.apply"}}},"then":{"required":["tasks","action"],"properties":{"tasks":{"type":"array","minItems":1,"maxItems":1000,"uniqueItems":true,"items":{"type":"string"}},"action":{"enum":["add","remove","replace","clear_group"]},"labels":{"type":"array","items":{"type":"string"}}},"if":{"properties":{"action":{"const":"clear_group"}}},"then":{"required":["group"]},"else":{"required":["labels"]}}})
     ]);
     crate::task_commands::assignees::schema(&mut schema);
+    crate::task_fields::schema(&mut schema);
     schema["allOf"].as_array_mut().unwrap().extend([json!({"if":{"properties":{"op":{"const":"task.move"}}},"then":{"required":["id","target"],"properties":{"target":{"type":"string","minLength":1}}}}),json!({"if":{"properties":{"op":{"enum":["task.conversation","task.command"]}}},"then":{"required":["id"]}})]);
     schema
 }

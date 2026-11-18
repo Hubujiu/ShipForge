@@ -1,44 +1,22 @@
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::io::Write;
-use std::path::Path;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct Connection {
     pub url: String,
-    token: Vec<u8>,
+    pub(crate) token: Vec<u8>,
 }
 
 impl Connection {
-    pub fn read(directory: &Path) -> Result<Option<(String, String)>, String> {
-        let path = directory.join("connection.json");
-        let bytes = match fs::read(path) {
-            Ok(bytes) => bytes,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-            Err(e) => return Err(format!("storage: {e}")),
-        };
-        let saved: Self = serde_json::from_slice(&bytes)
-            .map_err(|e| format!("storage: invalid connection file: {e}"))?;
-        let token = String::from_utf8(unseal(&saved.token)?)
-            .map_err(|_| "storage: invalid saved credential".to_string())?;
-        Ok(Some((saved.url, token)))
+    pub fn secret(&self) -> Result<String, String> {
+        String::from_utf8(unseal(&self.token)?)
+            .map_err(|_| "storage: invalid saved credential".into())
     }
 
-    pub fn save(directory: &Path, url: &str, token: &str) -> Result<(), String> {
-        fs::create_dir_all(directory).map_err(|e| format!("storage: {e}"))?;
-        let saved = Self {
+    pub fn new(url: &str, token: &str) -> Result<Self, String> {
+        Ok(Self {
             url: url.to_owned(),
             token: seal(token.as_bytes())?,
-        };
-        let mut file =
-            tempfile::NamedTempFile::new_in(directory).map_err(|e| format!("storage: {e}"))?;
-        let bytes = serde_json::to_vec(&saved).map_err(|e| format!("storage: {e}"))?;
-        file.write_all(&bytes)
-            .and_then(|()| file.as_file().sync_all())
-            .map_err(|e| format!("storage: {e}"))?;
-        file.persist(directory.join("connection.json"))
-            .map_err(|e| format!("storage: {e}"))?;
-        Ok(())
+        })
     }
 }
 

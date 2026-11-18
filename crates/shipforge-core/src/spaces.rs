@@ -48,6 +48,7 @@ pub(crate) fn guarded(op: &str) -> bool {
         "space.restore"
             | "space.deactivate"
             | "space.pin"
+            | "chat.organize"
             | "preferences.update"
             | "onboarding.display"
             | "invitation.accept"

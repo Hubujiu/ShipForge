@@ -137,9 +137,15 @@ def verify(bin_dir):
     import_module("verify-slack").verify(bin_dir, start, stop)
     import_module("verify-vcs").verify(bin_dir, start, stop)
     import_module("verify-chat").verify(bin_dir, start, stop)
+    import_module("verify-chat-workflows").verify(bin_dir)
+    import_module("verify-work-collaboration").verify(bin_dir)
     import_module("verify-iterations").verify(bin_dir, start, stop)
     import_module("verify-invitations").verify(bin_dir, start, stop, connect)
     import_module("verify-jira").verify(bin_dir, start, stop)
+    import_module("verify-vendor-imports").verify(bin_dir, start, stop)
+    import_module("verify-tapd").verify(bin_dir, start, stop)
+    import_module("verify-personal-tokens").verify(bin_dir, start, stop, connect)
+    import_module("verify-accounts").verify(bin_dir, start, stop, connect)
 
 
 if __name__=="__main__":

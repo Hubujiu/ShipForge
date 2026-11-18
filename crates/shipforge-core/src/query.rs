@@ -135,13 +135,7 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
         "events" => events(c, q),
         "view.run" => {
             let view = c.readable("view", required(q, "id")?)?;
-            let mut options = view.fields;
-            for key in ["limit", "offset"] {
-                if let Some(v) = q.get(key) {
-                    options[key] = v.clone();
-                }
-            }
-            Ok(json!(matching(c, "task", &options)?))
+            crate::saved_views::query(c, &view.fields, q)
         }
         "dashboard" => dashboard(c, q),
         "iteration.timeline" => iteration_timeline(c, q),
@@ -355,7 +349,14 @@ fn filtered(c: &Context<'_>, kind: &str, q: &Value) -> Result<Vec<Record>> {
     }
     Ok(rows)
 }
-fn matching(c: &Context<'_>, kind: &str, q: &Value) -> Result<Vec<Record>> {
+pub(crate) fn matching(c: &Context<'_>, kind: &str, q: &Value) -> Result<Vec<Record>> {
+    Ok(matching_page(c, kind, q)?.0)
+}
+pub(crate) fn matching_page(
+    c: &Context<'_>,
+    kind: &str,
+    q: &Value,
+) -> Result<(Vec<Record>, usize)> {
     let mut rows = filtered(c, kind, q)?;
     let sort = q["sort"].as_str().unwrap_or(
         if matches!(kind, "status" | "task_type" | "relation_type") {
@@ -384,7 +385,8 @@ fn matching(c: &Context<'_>, kind: &str, q: &Value) -> Result<Vec<Record>> {
         };
         (if desc { order.reverse() } else { order }).then_with(|| a.id.cmp(&b.id))
     });
-    paginate(rows, q)
+    let total = rows.len();
+    Ok((paginate(rows, q)?, total))
 }
 fn priority(v: &Value) -> u8 {
     match v.as_str() {

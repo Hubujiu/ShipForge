@@ -267,6 +267,7 @@ fn apply(c: &Context<'_>, input: &[Value]) -> Result<Value> {
     let mut updated = 0usize;
     let mut warnings = Vec::new();
     let mut closing = Vec::new();
+    let mut resolved_discussions = Vec::new();
     while !pending.is_empty() {
         let mut deferred = Vec::new();
         let mut last = String::new();
@@ -333,6 +334,18 @@ fn apply(c: &Context<'_>, input: &[Value]) -> Result<Value> {
                 .map_err(storage)?;
             match crate::domain::write_import(c, &request, false) {
                 Ok(_) => {
+                    if kind == "comment"
+                        && request["fields"]["resolved"] == true
+                        && request["fields"]["parent"].is_null()
+                    {
+                        resolved_discussions.push((
+                            id.clone(),
+                            request["fields"]["resolution_comment"]
+                                .as_str()
+                                .unwrap_or(&id)
+                                .to_owned(),
+                        ));
+                    }
                     if kind == "task" {
                         crate::onboarding::imported_tasks(c)?;
                     }
@@ -356,6 +369,13 @@ fn apply(c: &Context<'_>, input: &[Value]) -> Result<Value> {
             return Err(invalid(&format!("unresolved import reference ({last})")));
         }
         pending = deferred;
+    }
+    for (root, origin) in resolved_discussions {
+        if !crate::discussions::restore(c, &root, &origin)? {
+            warnings.push(format!(
+                "{root}: resolution restored on the root because the selected reply was unavailable"
+            ));
+        }
     }
     for id in closing {
         let row = c.get("iteration", &id)?;

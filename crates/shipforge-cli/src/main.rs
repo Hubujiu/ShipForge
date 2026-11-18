@@ -88,6 +88,9 @@ enum Command {
         url: String,
         #[arg(long)]
         token_stdin: bool,
+        /// Reauthenticate this saved account and keep its last location.
+        #[arg(long)]
+        account: Option<String>,
     },
     /// Remove the saved team connection from this device.
     Disconnect,
@@ -141,14 +144,23 @@ fn parse(text: &str) -> Result<Value, String> {
 fn execute(cli: Cli) -> Result<Value, String> {
     let mut body = match cli.command {
         Command::Schema => return Ok(shipforge_client::schema()),
-        Command::Connect { url, token_stdin } => {
+        Command::Connect {
+            url,
+            token_stdin,
+            account,
+        } => {
             let token = if token_stdin {
                 stdin()?
             } else {
                 std::env::var("SHIPFORGE_TOKEN")
                     .map_err(|_| "invalid: pass --token-stdin or use SHIPFORGE_TOKEN".to_owned())?
             };
-            Client::save_connection(cli.data_dir.as_deref(), &url, token.trim())?;
+            Client::sign_in(
+                cli.data_dir.as_deref(),
+                &url,
+                token.trim(),
+                account.as_deref(),
+            )?;
             return Ok(json!({"connected":true}));
         }
         Command::Disconnect => {

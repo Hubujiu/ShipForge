@@ -44,6 +44,10 @@ pub(super) struct Remote {
 }
 
 impl Remote {
+    pub(super) fn credential_site(&self) -> &str {
+        &self.command_url
+    }
+
     pub fn new(directory: &Path, address: &str, token: &str) -> Result<Self, String> {
         let address = endpoint(address, token)?;
         let mut sha = Sha256::new();
@@ -118,6 +122,14 @@ impl Remote {
             return Err(format!("{code}: {message}"));
         }
         let mut data = answer["data"].clone();
+        if body["op"] == "bugly.rotate"
+            && let Some(path) = data["path"].as_str()
+        {
+            data["url"] = json!(format!(
+                "{}{path}",
+                self.command_url.trim_end_matches("/v1/command")
+            ));
+        }
         if body["op"] == "chat.share.create"
             && let Some(key) = data["share"].as_str()
         {
@@ -150,18 +162,17 @@ impl Remote {
             .and_then(|o| o.remove("queue_if_offline"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let needs_live_chat_access = matches!(op.as_str(), "get" | "list" | "search")
+        let needs_live_access = matches!(op.as_str(), "get" | "list" | "search")
             && (matches!(
                 request["kind"].as_str(),
-                Some("chat" | "message" | "notification" | "artifact" | "run")
+                Some("chat" | "message" | "notification" | "artifact" | "run" | "view" | "comment")
             ) || (op == "search" && request["kind"].as_str().is_none()));
-        let cacheable = !needs_live_chat_access
+        let cacheable = !needs_live_access
             && matches!(
                 op.as_str(),
                 "list"
                     | "preferences.get"
                     | "get"
-                    | "view.run"
                     | "dashboard"
                     | "iteration.timeline"
                     | "search"

@@ -75,6 +75,7 @@ pub(super) fn create(c: &Context<'_>, room: &Record, q: &Value) -> Result<Value>
     let mut messages = Vec::new();
     for id in ids {
         let message = c.readable("message", id)?;
+        super::may_share_inherited(c, id)?;
         let f = &message.fields;
         if f["chat"] != room.id {
             return Err(invalid(
