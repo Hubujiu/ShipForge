@@ -598,6 +598,26 @@ pub(crate) fn changed(c: &Context<'_>, before: Option<&Record>, item: &Record) -
     }
     automation::changed(c, before, item)
 }
+pub(crate) fn cancel_space_runs(c: &Context<'_>) -> Result<()> {
+    let mut cancelled = Vec::new();
+    for run in c.records("run")?.into_iter().filter(active) {
+        let mut fields = run.fields.clone();
+        fields["status"] = json!("cancelled");
+        fields["finished_at"] = json!(now());
+        fields["result"] = json!("空间已停用");
+        cancelled.push(c.update(&run, &run.title, fields)?);
+    }
+    c.db.execute(
+        "UPDATE sf_run_leases SET expires=0 WHERE space=? AND response_hash IS NULL",
+        params![c.space],
+    )
+    .map_err(db_error)?;
+    // Complete all records before notifying parents, so a crew cannot queue a summary in this space.
+    for run in cancelled {
+        on_terminal(c, &run)?;
+    }
+    Ok(())
+}
 fn active(r: &Record) -> bool {
     matches!(
         r.fields["status"].as_str(),

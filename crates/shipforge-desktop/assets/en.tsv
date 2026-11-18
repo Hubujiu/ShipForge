@@ -494,6 +494,8 @@ Slack 频道 ID	Slack channel ID
 用来重新提交的服务器版本号	Server revision for resubmission
 目标任务	Target task
 空间分拣台	Space triage
+任务编号前缀	Task number prefix
+允许从 Slack 卡片改派处理人	Allow reassignment from Slack task cards
 空间可见性	Space visibility
 空间角色	Space role
 签发令牌	Issue token
@@ -802,3 +804,73 @@ Agent 模板	Agent templates
 为任务评论设置触发条件和执行者。	Choose the task comment trigger and an executor.
 创建基于 Webhook 的自动化	Create a webhook automation
 配置 Webhook 触发器，由已获授权的外部事件唤起规则。	Configure a webhook trigger for authorized external events.
+更多	More
+空间功能	Space modules
+选择要打开或固定的空间功能。	Open or pin a module in this space.
+客户请求	Customer requests
+记录客户反馈和请求的处理进度。	Record customer feedback and track requests.
+迭代模块	Iterations module
+客户请求模块	Customer requests module
+客户或联系人	Customer or contact
+处理状态	Request status
+待处理	Open
+已解决	Resolved
+停用空间	Deactivate space
+恢复空间	Restore space
+加入空间	Join space
+退出空间	Leave space
+进入空间	Open space
+查看历史	View history
+使用中	Active
+公开空间	Public space
+私有空间	Private space
+没有已停用的空间。	No deactivated spaces.
+没有可用空间。	No spaces available.
+停用后，空间中的历史记录仍可查看。恢复后可继续编辑。	You can view this space's history after deactivation. Restore the space to edit it again.
+未完成任务	Unfinished tasks
+未完成任务的处理方式	What to do with unfinished tasks
+请选择处理方式	Choose an action
+移动到其他空间	Move to another space
+取消未完成任务	Cancel unfinished tasks
+请选择未完成任务的处理方式。	Choose what to do with unfinished tasks.
+请选择目标空间。	Choose a destination space.
+可在此启用空间功能。	You can enable space modules here.
+取消固定	Unpin from sidebar
+固定到侧栏	Pin to sidebar
+未启用	Disabled
+启用模块	Enable module
+侧栏已更新	Sidebar updated
+空间功能已启用	Space module enabled
+空间已更新	Space updated
+该空间已停用，历史记录为只读。	This space is deactivated. Its history is read-only.
+标签分组	Label groups
+将互斥的标签归入一组。	Choose one label from each group.
+批量处理标签	Edit labels in bulk
+查找标签	Find labels
+合并标签	Merge labels
+应用到所选任务	Apply to selected tasks
+合并至目标标签	Merge into target label
+同时含有标签	Has all these labels
+搜索标签	Search labels
+创建并选中标签	Create and select label
+标签作用范围	Label scope
+当前空间	Current space
+整个组织	Entire organization
+标签颜色（#RRGGBB）	Label color (#RRGGBB)
+归档标签	Archive label
+标签名称	Label name
+所选任务	Selected tasks
+标签操作	Label action
+添加	Add
+移除	Remove
+替换全部	Replace all
+清除分组	Clear group
+要清除的分组	Group to clear
+待合并标签	Source label
+目标标签	Target label
+标签已更新	Labels updated
+空间标签	Space labels
+组织标签	Organization labels
+已归档	Archived
+请选择待合并标签	Choose a source label
+请选择目标标签	Choose a target label

@@ -1,5 +1,5 @@
 use super::*;
-use crate::domain::{BASE_STATUS, ref_record, strings, valid_date};
+use crate::domain::{BASE_STATUS, ref_record, valid_date};
 use std::collections::{HashMap, HashSet};
 
 pub(crate) fn validate_task(
@@ -165,8 +165,12 @@ pub(crate) fn validate_task(
     } else if !f["assignee"].is_null() {
         return Err(invalid("assignee must be an id or null"));
     }
+    if f["iteration"].is_string() && old.is_none_or(|r| r.fields["iteration"] != f["iteration"]) {
+        crate::spaces::require_module(c, "iterations")?;
+    }
     if let Some(it) = ref_record(c, f, "iteration", "iteration")?
-        && it.fields["status"] == "closed"
+        && (it.fields["status"] == "cancelled"
+            || (it.fields["status"] == "closed" && category != "done"))
         && old.is_none_or(|r| r.fields["iteration"] != f["iteration"])
     {
         return Err(invalid("cannot add work to a closed iteration"));
@@ -187,7 +191,11 @@ pub(crate) fn validate_task(
     if !f["due_date"].is_null() {
         valid_date(&f["due_date"])?;
     }
-    strings(&f["labels"], "labels")?;
+    f["labels"] = crate::tags::normalize(
+        c,
+        old.map(|r| &r.fields["labels"]).unwrap_or(&Value::Null),
+        &f["labels"],
+    )?;
     if !f["custom"].is_null() && !f["custom"].is_object() {
         return Err(invalid("custom must be an object"));
     }
@@ -342,6 +350,12 @@ pub(crate) fn target_status(c: &Context<'_>, task: &Record, category: &str) -> R
 }
 
 pub(crate) fn cleanup(c: &Context<'_>, r: &Record) -> Result<()> {
+    if r.kind == "iteration" {
+        return crate::iterations::remove_manual(c, r);
+    }
+    if matches!(r.kind.as_str(), "tag" | "tag_group") {
+        return crate::tags::cleanup(c, r);
+    }
     if crate::defaults::builtin(&r.kind, &r.id) {
         return Err(invalid("built-in configuration is permanent"));
     }
@@ -370,7 +384,9 @@ pub(crate) fn cleanup(c: &Context<'_>, r: &Record) -> Result<()> {
                                     "transfer ownership of the member's space before removal",
                                 ));
                             }
-                            cleanup(&scope, &m)?;
+                            if child.fields["deactivated"] != true {
+                                cleanup(&scope, &m)?;
+                            }
                             scope.remove(&m)?;
                         }
                     }
@@ -426,14 +442,13 @@ pub(crate) fn cleanup(c: &Context<'_>, r: &Record) -> Result<()> {
                 }
             }
         }
-        "iteration" | "status" | "project" | "task_type" | "field" | "relation_type" | "tag" => {
+        "iteration" | "status" | "project" | "task_type" | "field" | "relation_type" => {
             let key = match r.kind.as_str() {
                 "iteration" => "iteration",
                 "status" => "status",
                 "project" => "project",
                 "task_type" => "type",
                 "field" => "custom",
-                "tag" => "labels",
                 _ => "type",
             };
             let linked_kind = if r.kind == "relation_type" {

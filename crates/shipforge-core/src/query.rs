@@ -16,8 +16,8 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
                     actor: c.actor,
                     space: &space.id,
                 };
-                if dest.metadata_role().is_ok() {
-                    spaces.push(space);
+                if let Ok(role) = dest.metadata_role() {
+                    spaces.push(crate::spaces::listing(c, space, &role)?);
                 }
             }
             Ok(json!(spaces))
@@ -28,6 +28,9 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
             let id = required(q, "id")?;
             if kind == "project" {
                 return resolve_project(c, id).map(as_value);
+            }
+            if matches!(kind, "tag" | "tag_group") {
+                return crate::tags::accessible(c, kind, id).map(as_value);
             }
             match c.readable(kind, id) {
                 Ok(r) => Ok(as_value(r)),
@@ -82,14 +85,15 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
         }
         "search" => {
             let text = required(q, "query")?.trim().to_lowercase();
+            let tags = matching_tags(c, &text)?;
             let kinds = if let Some(k) = q["kind"].as_str() {
                 check_kind(k)?;
                 vec![k]
             } else {
-                vec![
+                let space = c.get("space", c.space)?;
+                let mut searchable = vec![
                     "task",
                     "view",
-                    "iteration",
                     "project",
                     "document",
                     "note",
@@ -103,12 +107,19 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
                     "automation",
                     "machine",
                     "artifact",
-                ]
+                ];
+                if crate::spaces::enabled(&space, "iterations") {
+                    searchable.push("iteration");
+                }
+                if crate::spaces::enabled(&space, "customer_requests") {
+                    searchable.push("customer_request");
+                }
+                searchable
             };
             let mut matches = Vec::new();
             for kind in kinds {
                 for r in visible_records(c, kind)? {
-                    if search_matches(&r, &text) {
+                    if search_matches(&r, &text, &tags) {
                         matches.push(r);
                     }
                 }
@@ -174,6 +185,9 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
     }
 }
 pub(crate) fn visible_records(c: &Context<'_>, kind: &str) -> Result<Vec<Record>> {
+    if matches!(kind, "tag" | "tag_group") {
+        return crate::tags::catalog(c, kind);
+    }
     let mut rows = Vec::new();
     let mut followed = std::collections::HashSet::new();
     if kind == "task" {
@@ -227,7 +241,17 @@ pub(crate) fn visible_records(c: &Context<'_>, kind: &str) -> Result<Vec<Record>
     }
     Ok(rows)
 }
-fn search_matches(r: &Record, text: &str) -> bool {
+fn matching_tags(c: &Context<'_>, text: &str) -> Result<std::collections::HashSet<String>> {
+    if text.is_empty() {
+        return Ok(Default::default());
+    }
+    Ok(crate::tags::catalog(c, "tag")?
+        .into_iter()
+        .filter(|r| r.title.to_lowercase().contains(text))
+        .map(|r| r.id)
+        .collect())
+}
+fn search_matches(r: &Record, text: &str, tags: &std::collections::HashSet<String>) -> bool {
     r.title.to_lowercase().contains(text)
         || r.fields["attachments"].as_array().is_some_and(|a| {
             a.iter()
@@ -245,7 +269,7 @@ fn search_matches(r: &Record, text: &str) -> bool {
         || r.fields["labels"].as_array().is_some_and(|a| {
             a.iter()
                 .filter_map(Value::as_str)
-                .any(|s| s.to_lowercase().contains(text))
+                .any(|s| s.to_lowercase().contains(text) || tags.contains(s))
         })
 }
 fn filter_eq(actual: &Value, wanted: &Value, actor: &str) -> bool {
@@ -268,6 +292,21 @@ fn satisfies(c: &Context<'_>, r: &Record, filter: Option<&Value>) -> Result<bool
     for (key, wanted) in filters {
         let negate = key.ends_with("_not");
         let key = key.strip_suffix("_not").unwrap_or(key);
+        if r.kind == "task"
+            && key == "labels"
+            && let Some(labels) = wanted.as_array()
+        {
+            let values = &r.fields["labels"];
+            let matched = if negate {
+                labels.iter().any(|v| filter_eq(values, v, c.actor))
+            } else {
+                labels.iter().all(|v| filter_eq(values, v, c.actor))
+            };
+            if matched == negate {
+                return Ok(false);
+            }
+            continue;
+        }
         let value = match key {
             "status_category" if r.kind == "task" => json!(c.status_category(r)?),
             "assignee" if r.kind == "task" => {
@@ -302,8 +341,15 @@ fn filtered(c: &Context<'_>, kind: &str, q: &Value) -> Result<Vec<Record>> {
         .trim()
         .to_lowercase();
     let mut rows = Vec::new();
+    let tags = if kind == "task" {
+        matching_tags(c, &text)?
+    } else {
+        Default::default()
+    };
     for r in visible_records(c, kind)? {
-        if (text.is_empty() || search_matches(&r, &text)) && satisfies(c, &r, q.get("filter"))? {
+        if (text.is_empty() || search_matches(&r, &text, &tags))
+            && satisfies(c, &r, q.get("filter"))?
+        {
             rows.push(r);
         }
     }
@@ -379,7 +425,7 @@ fn iteration_timeline(c: &Context<'_>, q: &Value) -> Result<Value> {
     let today = match q.get("as_of") {
         Some(value) => NaiveDate::parse_from_str(value.as_str().unwrap_or(""), "%Y-%m-%d")
             .map_err(|_| invalid("as_of must use YYYY-MM-DD"))?,
-        None => chrono::Utc::now().date_naive(),
+        None => crate::iterations::local_today(c)?,
     };
     let today = today.to_string();
     #[derive(Default)]
@@ -404,6 +450,34 @@ fn iteration_timeline(c: &Context<'_>, q: &Value) -> Result<Value> {
         }
     }
     let mut rows = visible_records(c, "iteration")?;
+    let manual = crate::iterations::configured_manual(c)?;
+    let next_manual = if manual {
+        rows.iter()
+            .filter(|r| r.fields["status"] == "planned")
+            .filter_map(|r| {
+                let date = r.fields["start_date"]
+                    .as_str()
+                    .or(r.fields["start"].as_str())?;
+                (date >= today.as_str()).then_some((date, r.id.as_str()))
+            })
+            .min()
+            .map(|(_, id)| id.to_owned())
+    } else {
+        None
+    };
+    if let Some(owner) = q.get("owner") {
+        let id = owner
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .ok_or_else(|| invalid("owner must be a member ID or @me"))?;
+        let id = if id == "@me" { c.actor } else { id };
+        rows.retain(|r| {
+            r.fields
+                .get("owner")
+                .map_or_else(|| r.fields["creator"].as_str(), Value::as_str)
+                == Some(id)
+        });
+    }
     for it in &mut rows {
         let start = it.fields["start_date"]
             .as_str()
@@ -411,6 +485,14 @@ fn iteration_timeline(c: &Context<'_>, q: &Value) -> Result<Value> {
         let end = it.fields["end_date"].as_str().or(it.fields["end"].as_str());
         let phase = if it.fields["status"] == "closed" {
             "closed"
+        } else if it.fields["status"] == "cancelled" {
+            "cancelled"
+        } else if manual && it.fields["status"] == "active" {
+            "active"
+        } else if next_manual.as_deref() == Some(it.id.as_str()) {
+            "upcoming"
+        } else if (manual || it.fields["cadence"] == true) && it.fields["status"] == "planned" {
+            "planned"
         } else if start.is_some_and(|s| s > today.as_str()) {
             "upcoming"
         } else if end.is_some_and(|s| s < today.as_str()) {
@@ -420,7 +502,21 @@ fn iteration_timeline(c: &Context<'_>, q: &Value) -> Result<Value> {
         } else {
             "unscheduled"
         };
-        let scope = counts.remove(&it.id).unwrap_or_default();
+        let mut scope = counts.remove(&it.id).unwrap_or_default();
+        if it.fields["status"] == "closed"
+            && let Some(history) = crate::iterations::closed_scope(c, &it.id)?
+        {
+            scope = Scope::default();
+            for (r, category) in history {
+                scope.total += 1;
+                let estimate = r.fields["estimate"].as_f64().unwrap_or_default();
+                scope.estimate += estimate;
+                if category == "done" {
+                    scope.completed += 1;
+                    scope.completed_estimate += estimate;
+                }
+            }
+        }
         it.fields["planning"] = json!({"phase":phase,"start":start,"end":end,"total":scope.total,
             "completed":scope.completed,"capacity":it.fields["capacity"].as_u64()});
         if estimates_enabled {

@@ -19,6 +19,27 @@ pub(super) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
         c.require_admin()?;
         crate::vcs::validate(f)?;
         crate::task_commands::source_members::validate_map(c, f)?;
+        if f.get("slack_assignment")
+            .is_some_and(|value| !value.is_boolean())
+        {
+            return Err(crate::invalid("slack_assignment must be a boolean"));
+        }
+        if f["slack_assignment"] == true
+            && (f["provider"] != "slack"
+                || f["outbound"] != true
+                || !f["assignee_map"].as_object().is_some_and(|map| {
+                    !map.is_empty()
+                        && map.keys().all(|id| {
+                            id.starts_with(['U', 'W'])
+                                && id.len() <= 160
+                                && id.bytes().all(|b| b.is_ascii_alphanumeric())
+                        })
+                }))
+        {
+            return Err(crate::invalid(
+                "Slack assignment requires outbound messages and a mapping from Slack user IDs to space members",
+            ));
+        }
         if f["link_tasks"] == true
             && let Some(id) = f["review_rule_id"].as_str().filter(|s| !s.is_empty())
         {

@@ -7,12 +7,16 @@ mod defaults;
 mod domain;
 mod im;
 mod invitations;
+mod iterations;
+mod jira;
 pub mod onboarding;
 mod persistence;
 pub mod preferences;
 mod protocol;
 mod providers;
 mod query;
+mod spaces;
+mod tags;
 mod task_commands;
 mod tasks;
 mod transfer;
@@ -77,6 +81,31 @@ impl Store {
         connector: &str,
         payload: &Value,
     ) -> Result<Value> {
+        self.verified_slack(actor, space, connector, |c, connector| {
+            im::echo(c, connector, payload)
+        })
+    }
+
+    /// Apply an interactive message only after the native adapter authenticates Slack and its route.
+    pub fn slack_card_action(
+        &mut self,
+        actor: &str,
+        space: &str,
+        connector: &str,
+        payload: &Value,
+    ) -> Result<Value> {
+        self.verified_slack(actor, space, connector, |c, connector| {
+            im::click(c, connector, payload)
+        })
+    }
+
+    fn verified_slack(
+        &mut self,
+        actor: &str,
+        space: &str,
+        connector: &str,
+        apply: impl FnOnce(&Context<'_>, &Record) -> Result<Value>,
+    ) -> Result<Value> {
         identifier(actor)?;
         identifier(space)?;
         identifier(connector)?;
@@ -90,8 +119,9 @@ impl Store {
             space,
         };
         c.require_admin()?;
+        spaces::ensure_active(&c)?;
         let connector = c.readable("connector", connector)?;
-        let answer = im::echo(&c, &connector, payload)?;
+        let answer = apply(&c, &connector)?;
         tx.commit().map_err(storage)?;
         Ok(answer)
     }
@@ -112,6 +142,7 @@ impl Store {
         })?;
         identifier(space)?;
         let read = is_read_only(op);
+        iterations::maintain_space(&mut self.db, space, chrono::Utc::now())?;
         let tx = self
             .db
             .transaction_with_behavior(if read {
@@ -128,19 +159,27 @@ impl Store {
         if !matches!(
             op,
             "space.list"
+                | "space.join"
+                | "space.leave"
                 | "organization.list"
                 | "schema"
                 | "preferences.get"
                 | "preferences.update"
                 | "invitation.accept"
                 | "chat.share.read"
+                | "jira.read"
+                | "jira.write"
         ) {
             c.authorize_scope(op, &request)?;
+        }
+        if !read && spaces::guarded(op) {
+            spaces::ensure_active(&c)?;
         }
         // A lease credential or machine token must never enter a general request receipt.
         let cache = !read
             && !worker::OPS.contains(&op)
             && op != "provider.ingest"
+            && op != "jira.write"
             && !op.starts_with("im.")
             && !op.starts_with("invitation.");
         let key = if cache {
@@ -182,14 +221,24 @@ impl Store {
             }
         }
         let mut result = match op {
+            op if op.starts_with("space.") && op != "space.list" => {
+                spaces::execute(&c, &request, op)
+            }
+            "jira.read" | "jira.write" => jira::execute(&c, &request, read),
             op if op.starts_with("invitation.") => invitations::execute(&c, op, &request),
             "schema" => Ok(schema()),
+            "iteration.settings"
+            | "iteration.configure"
+            | "iteration.start"
+            | "iteration.history" => iterations::execute(&c, &request, op),
             "task.conversation" => task_commands::conversation(&c, &request),
             "task.assign" => task_commands::assignees::assign(&c, &request),
             "task.command" => task_commands::command(&c, &request),
             "task.move" => task_commands::move_task(&c, &request),
             "onboarding.catalog" => Ok(json!(onboarding::groups())),
             "onboarding.get" => onboarding::get(&c),
+            "tag.apply" => tags::apply(&c, &request),
+            "tag.merge" => tags::merge(&c, &request),
             "onboarding.display" => onboarding::display(&c, &request),
             "onboarding.setup" => onboarding::setup(&c, &request),
             "preferences.get" | "preferences.update" => preferences::execute(&c, &request),

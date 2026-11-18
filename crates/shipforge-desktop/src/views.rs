@@ -119,13 +119,56 @@ impl Workbench {
         if self.loading {
             header = header.child(text("读取中…", 11., DIM));
         }
+        if matches!(p, Page::Tags | Page::TagGroups) {
+            header = header.child(
+                outlined(self.button(
+                    "find-tags",
+                    "查找标签",
+                    UiAction::Form(Mode::FindLabels),
+                    cx,
+                ))
+                .child(crate::locale::label("查找标签")),
+            );
+            let (label, page) = if p == Page::Tags {
+                ("标签分组", Page::TagGroups)
+            } else {
+                ("任务标签", Page::Tags)
+            };
+            header = header.child(
+                outlined(self.button("tag-groups-switch", label, UiAction::Go(page), cx))
+                    .child(crate::locale::label(label)),
+            );
+            if p == Page::Tags && self.writable() {
+                header = header.child(
+                    outlined(self.button(
+                        "merge-tags",
+                        "合并标签",
+                        UiAction::Form(Mode::MergeTags),
+                        cx,
+                    ))
+                    .child(crate::locale::label("合并标签")),
+                );
+            }
+        }
+        if matches!(p, Page::Tasks | Page::Mine) && self.writable() {
+            header = header.child(
+                outlined(self.button(
+                    "bulk-task-tags",
+                    "批量处理标签",
+                    UiAction::Form(Mode::BulkTags),
+                    cx,
+                ))
+                .child(crate::locale::label("批量处理标签")),
+            );
+        }
         if matches!(p, Page::Members | Page::Settings) {
             header = header.child(
                 outlined(self.button("join-org", "接受邀请", UiAction::Form(Mode::JoinInvite), cx))
                     .child(crate::locale::label("接受邀请")),
             );
         }
-        if p == Page::Members && matches!(self.role.as_str(), "admin" | "owner") {
+        if p == Page::Members && self.writable() && matches!(self.role.as_str(), "admin" | "owner")
+        {
             let viewing = self.loc.section == "invitations";
             let label = if viewing {
                 "成员列表"
@@ -165,7 +208,13 @@ impl Workbench {
                     .child(crate::locale::label("邮箱邀请")),
                 );
         }
-        if p.creatable() && self.writable() {
+        if p.creatable()
+            && if p == Page::Spaces {
+                self.can_create_space()
+            } else {
+                self.writable()
+            }
+        {
             let k = info.kind;
             header = header.child(
                 primary(self.button(
@@ -185,6 +234,14 @@ impl Workbench {
             .min_h_0()
             .bg(rgb(BG))
             .child(header);
+        if self.current_archived() {
+            root = root.child(
+                text("该空间已停用，历史记录为只读。", 13., MUTED)
+                    .px(px(16.))
+                    .py(px(6.))
+                    .bg(rgb(0xf5efd9)),
+            );
+        }
         if let Some(error) = self.error.as_ref().or_else(|| self.errors.get(info.kind)) {
             root = root.child(
                 row()
@@ -202,6 +259,11 @@ impl Workbench {
             );
         }
         match p {
+            Page::Spaces => root.child(self.space_directory(cx)).into_any_element(),
+            Page::SpaceModules => root.child(self.space_module_page(cx)).into_any_element(),
+            page if self.module_disabled(page) => {
+                root.child(self.space_module_page(cx)).into_any_element()
+            }
             Page::Tasks | Page::Mine | Page::Triage | Page::Dashboard => root
                 .child(self.task_page(f32::from(w.viewport_size().width), cx))
                 .into_any_element(),
@@ -695,6 +757,31 @@ impl Workbench {
             .child(board)
             .into_any_element()
     }
+    fn task_labels(&self, r: &Record) -> Div {
+        let mut labels = row().flex_wrap().gap(px(5.));
+        for id in r
+            .fields
+            .get("labels")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            let color = self
+                .find("tag", id)
+                .and_then(|r| r.field("color").strip_prefix('#'))
+                .and_then(|c| u32::from_str_radix(c, 16).ok())
+                .unwrap_or(MUTED);
+            labels = labels.child(
+                row()
+                    .items_center()
+                    .gap(px(3.))
+                    .child(mark(color))
+                    .child(text(self.name("tag", id), 11., MUTED)),
+            );
+        }
+        labels
+    }
     fn task_card(&self, r: &Record, column: &str, cx: &Context<Self>) -> impl IntoElement {
         let mut bottom = row()
             .w_full()
@@ -737,6 +824,13 @@ impl Workbench {
                 .gap(px(4.))
                 .child(text(r.code(), 11., DIM).truncate())
                 .child(headline(r.title.clone(), 13.))
+                .when(
+                    r.fields
+                        .get("labels")
+                        .and_then(Value::as_array)
+                        .is_some_and(|labels| !labels.is_empty()),
+                    |area| area.child(self.task_labels(r)),
+                )
                 .child(bottom),
         )
     }
@@ -915,6 +1009,12 @@ impl Workbench {
     fn list_tabs(&self, cx: &Context<Self>) -> Div {
         let mut tabs = row().min_h(px(41.)).px(px(13.)).gap(px(4.));
         let pairs: &[(&str, &str)] = match self.loc.page {
+            Page::Tags | Page::TagGroups => &[
+                ("", "全部"),
+                ("space", "空间标签"),
+                ("organization", "组织标签"),
+                ("archived", "已归档"),
+            ],
             Page::Inbox => &[
                 ("", "收件箱"),
                 ("unread", "未读"),
@@ -934,6 +1034,7 @@ impl Workbench {
             Page::Iterations => &[
                 ("", "全部迭代"),
                 ("upcoming", "即将开始"),
+                ("planned", "已计划"),
                 ("active", "进行中"),
                 ("closed", "已结束"),
             ],
@@ -953,6 +1054,26 @@ impl Workbench {
     fn visible_record(&self, r: &Record) -> bool {
         let tab = self.loc.section.as_str();
         match self.loc.page {
+            Page::Tags | Page::TagGroups => {
+                let archived = r.fields.get("archived") == Some(&Value::Bool(true));
+                let query = self
+                    .loc
+                    .filter
+                    .get("query")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let scope = if r.field("scope") == "organization" {
+                    "organization"
+                } else {
+                    "space"
+                };
+                r.title.to_lowercase().contains(&query.to_lowercase())
+                    && match tab {
+                        "archived" => archived,
+                        "space" | "organization" => !archived && scope == tab,
+                        _ => !archived,
+                    }
+            }
             Page::Inbox => match tab {
                 "snoozed" => r.field("state") == "snoozed",
                 "cleared" => r.field("state") == "cleared",
@@ -1396,6 +1517,17 @@ impl Workbench {
                 "run" | "notification" | "machine" | "artifact"
             );
         let mut actions = row().flex_wrap().gap(px(5.));
+        if r.kind == "space" && r.id == self.loc.space {
+            actions = actions.child(
+                outlined(self.button(
+                    "space-iteration-history",
+                    "迭代结项历史",
+                    UiAction::Inspect(json!({"op":"iteration.history"}), "迭代结项历史".into()),
+                    cx,
+                ))
+                .child("迭代历史"),
+            );
+        }
         if can_edit {
             actions = actions.child(
                 outlined(self.button("edit-object", "编辑", UiAction::Edit(r.clone()), cx))
@@ -1411,19 +1543,21 @@ impl Workbench {
                 } else {
                     ("关注", "bell")
                 };
-                actions = actions.child(
-                    outlined(self.button(
-                        "task-follow",
-                        label,
-                        UiAction::Apply(
-                            json!({"op":"follow","id":r.id,"enabled":!following}),
-                            "关注设置已更新".into(),
-                        ),
-                        cx,
-                    ))
-                    .child(icon(glyph, 13.))
-                    .child(crate::locale::label(label).to_owned()),
-                );
+                actions = actions.when(!self.current_archived(), |a| {
+                    a.child(
+                        outlined(self.button(
+                            "task-follow",
+                            label,
+                            UiAction::Apply(
+                                json!({"op":"follow","id":r.id,"enabled":!following}),
+                                "关注设置已更新".into(),
+                            ),
+                            cx,
+                        ))
+                        .child(icon(glyph, 13.))
+                        .child(crate::locale::label(label).to_owned()),
+                    )
+                });
                 if self.writable() {
                     actions = actions.child(
                         outlined(self.button(
@@ -1609,7 +1743,34 @@ impl Workbench {
                 }
             }
             "iteration" | "project" => {
-                if r.kind == "iteration" && r.field("status") != "closed" && self.writable() {
+                if r.kind == "iteration"
+                    && !matches!(r.field("status"), "closed" | "cancelled" | "active")
+                    && self.writable()
+                    && (r.fields.get("cadence") != Some(&Value::Bool(true))
+                        || r.field("status") == "upcoming"
+                            && matches!(self.role.as_str(), "owner" | "admin"))
+                {
+                    actions=actions.child(outlined(self.button("start-iteration","今天开始",UiAction::Form(Mode::Confirm{label:"今天开始此迭代".into(),command:json!({"op":"iteration.start","space":self.loc.space,"id":r.id,"expected_rev":r.rev})}),cx)).child("今天开始"));
+                }
+                if r.kind == "iteration" && r.field("status") == "closed" {
+                    actions = actions.child(
+                        outlined(self.button(
+                            "iteration-scope-history",
+                            "结项时的范围",
+                            UiAction::Inspect(
+                                json!({"op":"iteration.history","id":r.id}),
+                                "结项时的范围".into(),
+                            ),
+                            cx,
+                        ))
+                        .child("查看结项快照"),
+                    );
+                }
+                if r.kind == "iteration"
+                    && !matches!(r.field("status"), "closed" | "cancelled")
+                    && r.fields.get("cadence") != Some(&Value::Bool(true))
+                    && self.writable()
+                {
                     actions = actions.child(
                         outlined(self.button(
                             "finish-iteration",
@@ -1921,7 +2082,18 @@ impl Workbench {
             ("迭代", self.name("iteration", r.field("iteration"))),
             ("专项", self.name("project", r.field("project"))),
             ("截止日期", r.field("due_date").into()),
-            ("标签", r.display("labels")),
+            (
+                "标签",
+                r.fields
+                    .get("labels")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .map(|id| self.name("tag", id))
+                    .collect::<Vec<_>>()
+                    .join("、"),
+            ),
         ];
         if self
             .find("space", &self.loc.space)

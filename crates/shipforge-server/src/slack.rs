@@ -120,6 +120,12 @@ impl Routes {
             header("X-Slack-Request-Timestamp").ok_or("unauthorized: missing Slack timestamp")?;
         let signature =
             header("X-Slack-Signature").ok_or("unauthorized: missing Slack signature")?;
+        let form = header("Content-Type").is_some_and(|s| {
+            s.split(';').next().is_some_and(|v| {
+                v.trim()
+                    .eq_ignore_ascii_case("application/x-www-form-urlencoded")
+            })
+        });
         const LIMIT: usize = 1024 * 1024;
         if request.body_length().is_some_and(|v| v > LIMIT) {
             return Err("too_large: Slack event exceeds 1 MiB".into());
@@ -138,7 +144,28 @@ impl Routes {
             .map_err(|_| "server: invalid local clock")?
             .as_secs();
         verify(&binding.key, &ts, &signature, &raw, at)?;
-        let p: Value = serde_json::from_slice(&raw).map_err(|_| "invalid: malformed Slack JSON")?;
+        let p: Value = if form {
+            let mut items = url::form_urlencoded::parse(&raw).filter(|(k, _)| k == "payload");
+            let (_, body) = items
+                .next()
+                .ok_or("invalid: Slack interactive payload is missing")?;
+            if items.next().is_some() {
+                return Err("invalid: duplicate Slack payload".into());
+            }
+            let value: Value = serde_json::from_str(&body)
+                .map_err(|_| "invalid: malformed Slack interactive payload")?;
+            if value["type"] != "block_actions" {
+                return Err("invalid: unsupported Slack interactive action".into());
+            }
+            value
+        } else {
+            let value: Value =
+                serde_json::from_slice(&raw).map_err(|_| "invalid: malformed Slack JSON")?;
+            if value["type"] == "block_actions" {
+                return Err("invalid: Slack interactive payload requires form encoding".into());
+            }
+            value
+        };
         if let Some(app) = app {
             let candidates = self.0.iter().filter(|(_, b)| b.app == app);
             if p["type"] == "url_verification" {
@@ -160,14 +187,21 @@ impl Routes {
             if p["api_app_id"] != app {
                 return Err("forbidden: unexpected Slack app".into());
             }
-            let channel = event_channel(&p["event"]);
-            if let Some((path, route)) = candidates
-                .into_iter()
-                .find(|(_, b)| p["team_id"] == b.workspace && channel.as_str() == Some(&b.channel))
-            {
+            let (workspace, channel) = if form {
+                (&p["team"]["id"], &p["channel"]["id"])
+            } else {
+                (&p["team_id"], event_channel(&p["event"]))
+            };
+            if let Some((path, route)) = candidates.into_iter().find(|(_, b)| {
+                workspace.as_str() == Some(&b.workspace) && channel.as_str() == Some(&b.channel)
+            }) {
                 return route.receive(path, &p, auth, store);
             }
-            return Ok(json!({"ok":true}));
+            return if form {
+                Err("forbidden: Slack card has no matching channel binding".into())
+            } else {
+                Ok(json!({"ok":true}))
+            };
         }
         binding.receive(path, &p, auth, store)
     }
@@ -234,6 +268,10 @@ impl Binding {
             return Err(
                 "forbidden: Slack route does not match an active authorized connector".into(),
             );
+        }
+        if p["type"] == "block_actions" {
+            store.slack_card_action(&principal.actor, space, id, p)?;
+            return Ok(Value::Null);
         }
         if p["type"] == "url_verification" {
             let challenge = p["challenge"]

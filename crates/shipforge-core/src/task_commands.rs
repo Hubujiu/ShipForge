@@ -67,6 +67,8 @@ pub(crate) fn move_task(c: &Context<'_>, q: &Value) -> Result<Value> {
         ));
     }
     let mut f = old.fields.clone();
+    let retained_labels = crate::tags::move_labels(c, &old)?;
+    f["labels"] = json!([]);
     if let Some(id) = f["iteration"].as_str()
         && target.find("iteration", id)?.is_none()
     {
@@ -109,6 +111,7 @@ pub(crate) fn move_task(c: &Context<'_>, q: &Value) -> Result<Value> {
         f["status"] = Value::Null;
     }
     tasks::validate_task(&target, None, &old.id, &mut f)?;
+    f["labels"] = retained_labels;
     let retired: i64 =
         c.db.query_row(
             "SELECT coalesce(max(rev),0) FROM event_log WHERE space=?1 AND kind='task' AND id=?2",

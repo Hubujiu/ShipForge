@@ -151,6 +151,7 @@ impl Host {
                 Err(e)
                     if confirmed.elapsed() > Duration::from_secs(85)
                         || e.contains("stale lease")
+                        || e.contains("space is deactivated")
                         || e.contains("disabled")
                         || e.contains("authentication") =>
                 {

@@ -24,6 +24,13 @@ pub(super) fn scoped(connector: &Record, route: &Value) -> bool {
 pub(crate) fn changed(c: &Context<'_>, before: Option<&Record>, record: &Record) -> Result<()> {
     if record.kind == "connector" {
         if before.is_some_and(|old| {
+            old.fields["slack_assignment"] == true
+                && (record.fields["slack_assignment"] != true
+                    || old.fields["assignee_map"] != record.fields["assignee_map"])
+        }) {
+            super::cards::forget(c, "connector", &record.id)?;
+        }
+        if before.is_some_and(|old| {
             ["workspace_id", "channel_id", "app_id", "bot_id", "provider"]
                 .iter()
                 .any(|key| old.fields[key] != record.fields[key])
@@ -39,10 +46,18 @@ pub(crate) fn changed(c: &Context<'_>, before: Option<&Record>, record: &Record)
     if record.fields["visibility"] == "private" {
         return cancel(c, &record.kind, &record.id);
     }
+    let assignees_only = record.kind == "task"
+        && before.is_some_and(|old| {
+            old.title == record.title
+                && old.fields["status"] == record.fields["status"]
+                && old.fields["assignees"] != record.fields["assignees"]
+        });
     let (task, body) = match record.kind.as_str() {
         "task"
             if before.is_some_and(|old| {
-                old.fields["status"] != record.fields["status"] || old.title != record.title
+                old.fields["status"] != record.fields["status"]
+                    || old.title != record.title
+                    || assignees_only
             }) =>
         {
             let number = record.fields["number"].as_str().unwrap_or(&record.id);
@@ -96,6 +111,9 @@ pub(crate) fn changed(c: &Context<'_>, before: Option<&Record>, record: &Record)
         let Some(connector) = c.find("connector", &id)? else {
             continue;
         };
+        if assignees_only && connector.fields["slack_assignment"] != true {
+            continue;
+        }
         if !scoped(&connector, &serde_json::from_str(&route).map_err(storage)?) {
             continue;
         }
@@ -106,6 +124,7 @@ pub(crate) fn changed(c: &Context<'_>, before: Option<&Record>, record: &Record)
 }
 
 fn cancel(c: &Context<'_>, kind: &str, id: &str) -> Result<()> {
+    super::cards::forget(c, kind, id)?;
     let condition = match kind {
         "task" => "task=?2",
         "comment" => "kind='comment' AND source=?2",
@@ -119,6 +138,7 @@ fn cancel(c: &Context<'_>, kind: &str, id: &str) -> Result<()> {
     Ok(())
 }
 pub(super) fn cancel_route(c: &Context<'_>, id: &str, route: &str) -> Result<()> {
+    super::cards::unbind(c, id, route)?;
     c.db.execute("UPDATE sf_im_outbox SET state='cancelled',body='',lease=NULL,error=NULL WHERE space=? AND connector=? AND route=? AND state!='sent'",params![c.space,id,route]).map_err(storage)?;
     Ok(())
 }
@@ -215,7 +235,9 @@ fn claim(c: &Context<'_>, connector: &Record) -> Result<Value> {
         };
         let address: Value = serde_json::from_str(&route).map_err(storage)?;
         let active = super::thread(c, id, &route)?.is_some_and(|(target, on)| on && target == task);
-        let visible = if let Some(record) = c.find(&kind, &source)? {
+        let visible = if kind == "card" {
+            connector.fields["slack_assignment"] == true
+        } else if let Some(record) = c.find(&kind, &source)? {
             record.fields["visibility"] != "private"
                 && c.visible(&record)?
                 && (kind != "comment" || record.fields["task"] == task)
@@ -237,9 +259,14 @@ fn claim(c: &Context<'_>, connector: &Record) -> Result<Value> {
         let lease = Uuid::new_v4().to_string();
         c.db.execute("UPDATE sf_im_outbox SET state='leased',lease=?,expires=?,attempts=attempts+1,error=NULL WHERE id=?",
             params![lease,now()+60_000,delivery]).map_err(storage)?;
-        return Ok(
-            json!({"delivery_id":delivery,"lease":lease,"task":task,"thread":address,"text":text}),
-        );
+        let mut item =
+            json!({"delivery_id":delivery,"lease":lease,"task":task,"thread":address,"text":text});
+        if connector.fields["slack_assignment"] == true && matches!(kind.as_str(), "task" | "card")
+        {
+            item["blocks"] =
+                super::cards::blocks(c, connector, &c.readable("task", &task)?, &delivery, &text)?;
+        }
+        return Ok(item);
     }
 }
 

@@ -4,7 +4,7 @@
 
 ## 取证范围
 
-按模块查看验收目的和功能说明请参见[功能基线][features]。
+各模块的验收目的见[功能基线][features]，通用记录的创建、更新和校验入口见[业务核心][domain]。
 
 | 来源 | 本次实际核对的范围 | 能支持的结论 |
 | --- | --- | --- |
@@ -44,12 +44,12 @@
 | 编号 | 入口、操作与条件 | HiFox 证据 | 对照判断 | ShipForge 可查证据 | 验收维度 | 可重复条件、待核结果或已知差异 |
 | --- | --- | --- | --- | --- | --- | --- |
 | S01 | 组织设置中的默认语言、任务优先级档数与危险操作区 | 图 补01 · [成员][members] | 部分 | 实现 · [通用表单][forms] | 行为、数据、权限 | 已有组织对象。分别验证优先级档数对已有任务/创建表单的影响、语言级联及危险操作可见角色。 |
-| S02 | 组织空间列表、创建空间、模块开关和停用 | 菜单 UI33 · 图 UI21 · [空间][spaces] | 部分 | 测试 · [空间数据][workspace-tests] | 行为、数据、权限 | 有空间创建/权限。停用后的侧栏、历史访问、恢复和模块排序需实测。 |
+| S02 | 组织空间目录、公开加入和退出、可选模块、个人固定、停用与恢复 | 菜单 UI33 · 图 UI21 · [空间][spaces] | 有对应 | 实机 · [Windows 空间验收][native] · [原生窗口用例][space-window] · 测试 · [成员与状态][space-lifecycle-tests] | 行为、数据、权限 | Windows 实测临时入口、固定、启用客户请求、预览未完成任务、停用后历史只读与恢复。隔离数据库覆盖公开加入、私有权限、迁移回滚、运行租约失效及个人固定跨重启。 |
 | S03 | 组织成员清单、角色、邀请、邀请链接及外部账号 | 图 UI33 · [成员][members] | 部分 | 测试 · [邀请与成员权限][invites-tests] · [HTTP 真实身份][invites-http] | 行为、数据、权限、待联调 | 管理员可按邮箱或共享链接邀人并同时选择空间。停用立即生效，重新启用后旧链接失效；地址错误或只读令牌均不能接受。真实邮件投递、外部账号合并待联调。 |
 | S04 | 空间成员与组织角色并存，访客仅能访问获邀空间 | [成员][members] · [分拣][triage] | 有对应 | 测试 · [成员与空间][workspace-tests] · [权限实现][access] | 行为、数据、权限、待联调 | 合成 Guest 获取显式成员资格前后、撤销后分别验证列表、搜索和直接读取。未加入的组织管理员可管理私有空间元数据，成员及任务仍需空间权限。 |
 | S05 | 成员 rail 区分 Agent、小队、真人、机器，检索并打开成员抽屉 | 图 UI17 · [成员改版][nov13] | 部分 | 实现 · [导航][shell] · [对象页][views] | 行为、数据、权限、待联调 | 成员与机器等页面存在。分类树、跨空间同名项、快捷新建、真人详情直达对话仍需点击。 |
 | S06 | 管理范围的 Agent、小队、机器与空间内的同名入口 | 图 UI06、UI11、UI13 · 菜单 UI33 | 部分 | 实现 · [目录][pages] | 行为、数据、权限 | 检查共享/私有及本人/空间过滤，管理动作对不同身份可见范围。 |
-| S07 | 全局与空间任务标签、名称筛选、分组、互斥、合并及归档 | 图 补02 · [标签][labels] | 部分 | 实现 · [核心对象][domain] | 行为、数据、权限 | 空列表展示新建标签和分组。用已有任务验证互斥、合并、批量操作及历史引用。 |
+| S07 | 全局与空间任务标签、名称筛选、分组、互斥、合并及归档 | 图 补02 · [标签][labels] | 有对应 | 测试 · [标签范围与批量事务][tag-tests] · [Windows 标签表单][tag-ui] | 行为、数据、权限 | 组织与空间标签可并用，同组后选替换先选。回归覆盖归档保留历史、合并更新任务和视图、多标签交集筛选、跨空间保留组织标签及批量失败回滚。 |
 | S08 | 组织状态库的类别、用量、顺序、默认值及多语言名 | 图 UI14 · [状态][statuses] · [11 月更新][changes] | 部分 | 测试 · [元数据][metadata] | 行为、数据、权限 | 修改名称有用例。需检查多语言回退、组织默认值与已有类型的特殊工作流。 |
 | S09 | 组织默认的字段、关联类型及空间任务类型管理 | 图 UI34、UI35 · [类型][types] · [关联][relations] | 有对应 | 测试 · [工作区][workspace-tests] | 行为、数据、权限 | 实际看过列表/空态。用两种任务类型验证自定义必填字段、双向关系名与停用回退。 |
 | S10 | 组织、空间、Agent 三级代码库与提交作者设置 | 图 补03 · 菜单 UI29 · [代码库][repos] | 部分 | 测试 · [工作树][worker-tests] | 行为、数据、权限 | 本地已批准仓库能执行。核验空间继承、Agent 覆盖、作者邮箱、共同署名和实际 Git 提交作者。 |
@@ -75,7 +75,7 @@
 | T07 | 保存个人或空间视图，新建中实时预览、复制、个人置顶和排序 | 图 UI05、UI28 · [视图][hviews] | 部分 | 测试 · [保存与实时查询][workspace-tests] | 行为、数据、权限 | 筛选与预览有实现。核对个人排序、可分享链接，临时筛选和更新已保存视图的分界。 |
 | T08 | 迭代时间轴、待规划、日期、容量、完成数、当前和未来 | 图 UI04 · [迭代][iterations] | 有对应 | 测试 · [时间轴][collab] · 实现 · [原生迭代][planning] | 行为、数据、权限 | 已核验日期和任务计数。比对有数据/无日期、关闭、未启动和不同角色的实际窗口。 |
 | T09 | 手动结项前预览，将未完成项移入下期或待规划 | [迭代][iterations] | 有对应 | 测试 · [原子转移][workspace-tests] | 行为、数据 | 跨端并发结项、存在取消状态与目标关闭时核对失败提示、剩余任务去向和编号。 |
-| T10 | 启用自动迭代、按周期建未来迭代、自动加入和顺延 | [迭代][iterations] | 缺口 | 未证 · [业务协议][protocol] | 行为、数据 | 手动时间轴不会证明自动节奏。用测试时钟和跨周末数据核对启停、恢复、归属及重试。 |
+| T10 | 启用自动迭代、按周期建未来迭代、自动加入和顺延 | [迭代][iterations] | 有对应 | 测试 · [固定时钟与成员隔离][iteration-tests] · [Windows 服务补跑][iteration-service] · [使用手册][iteration-manual] | 行为、数据、权限 | 固定时钟跨过夏令时和当地午夜，验证冷却、仅顺延未完成任务、只回填窗口内的匹配变化。临时服务离线一周后在首次客户端请求前完成结项。停用后检查历史及未来任务。 |
 | T11 | 专项空态、新建、多空间范围、负责人及汇总进度 | 图 UI22 · [专项][projects] | 有对应 | 测试 · [跨空间进度][collab] | 行为、数据、权限 | 参考图为空态。使用多空间成员与管理员打开有数据的专项，核对分母、失权和隐藏任务。 |
 | T12 | 专项时间线，按任务开始、结束或计划区间查看排期 | [专项][projects] · [项目产品页][p-planning] | 部分 | 实现 · [专项查询][query] | 行为、数据、权限 | 已有专项对象及进度。需核对图形排期、重叠日期、无日期任务与可见范围。 |
 | T13 | 分拣台未启用提示、进入设置、启用后的来源与类型 | 图 UI23 · [分拣][triage] | 部分 | 测试 · [来源筛选][collab] | 行为、数据、权限 | 截图仅有未启用态。需检验开关、私有空间访客可投递、关闭后再投递与旧队列的处置。 |
@@ -140,7 +140,7 @@
 | I01 | 外部应用目录、实例/个人身份、目标空间、同步方向与连接状态 | 图 UI10 · [概念对照][mapping] | 部分 | 实现 · [集成页][views] · [供应商基线][providers] | 行为、数据、权限、待联调 | 目录有名称或能建连接器不能证明对应厂商已授权、回调或写回成功。 |
 | I02 | 一次性导入、预览、字段/人员/状态映射、作业历史、撤回与导出 | 图 UI15 · [概念对照][mapping] | 部分 | 测试 · [行映射][metadata] · [事务][workspace-tests] | 行为、数据、权限、待联调 | 已有 JSON/映射行导入。参考图中有待开放入口，官方帮助另列已开放的 API/文件向导。核验实际账号、批次取消/恢复/回滚。 |
 | I03 | Jira Cloud/自建实例、CSV/API、Webhook、人员和状态映射与写回 | [Jira][i-jira] | 部分 | 测试 · [Jira 事件样例][provider-tests] | 行为、数据、权限、待联调 | 支持入站 Issue。实例授权、评论、附件、账号归属、远端写回和导入回滚需逐环验。 |
-| I04 | 已有 Jira 客户端改地址，读取/更新 Issue、执行流转及 JQL 搜索 | [兼容 API][i-jira-api] | 缺口 | 未证 · [ShipForge 服务][server] | 行为、数据、权限、待联调 | 用有权限的 Jira SDK 或客户端验证兼容请求、分页及返回形状。通用 JSON 请求不能代替该协议。 |
+| I04 | 已有 Jira 客户端改地址，读取/更新 Issue、执行流转及 JQL 搜索 | [兼容 API][i-jira-api] | 有对应 | 测试 · [Jira HTTP 与 SDK][jira-http] · [部署与用法][jira-doc] | 行为、数据、权限 | 实际 jira-python 3.10.5 操作本地团队服务。v2/v3 的任务、评论、流转、字段裁剪、JQL、分页及权限撤回分别验证。 |
 | I05 | 禅道产品线/项目、版本条件、字段映射、状态回写与失败恢复 | [禅道][i-zentao] | 缺口 | 未证 · [供应商基线][providers] | 行为、数据、权限、待联调 | 须用符合官方门槛的自建版本、企业凭据及允许写的测试项目；通用导入缺少专用向导。 |
 | I06 | TAPD 项目发现、两种身份凭据、导入、限流及持续同步 | [TAPD][i-tapd] | 缺口 | 未证 · [供应商基线][providers] | 行为、数据、权限、待联调 | 需 API 凭据、速率限制恢复和远端字段检查。 |
 | I07 | Bugly 提单 Webhook、产品范围、可选状态回写 | [Bugly][i-bugly] | 缺口 | 未证 · [供应商基线][providers] | 行为、数据、权限、待联调 | 使用测试产品的缺陷提单与回写权限；应该测按产品识别、重投和远端关闭。 |
@@ -160,7 +160,7 @@
 | I21 | 钉钉机器人与任务助手、通知与链接预览、Stream 生命周期 | [钉钉][i-dingtalk] | 部分 | 测试 · [已验证的 Stream/HTTP 载荷][provider-tests] | 行为、数据、权限、待联调 | 需凭据获取、续连、不同身份消息回复、任务卡片及租户授权状态。 |
 | I22 | 个人微信扫码绑定一个 Agent、过期重新扫码 | [微信][i-wechat] | 缺口 | 未证 · [供应商基线][providers] | 行为、数据、权限、待联调 | 扫码的个人账号与企业微信是两类接入；需经授权验证扫码、会话和失效重绑。 |
 | I23 | QQ 官方机器人，单聊/群 @ 绑定 Agent | [QQ][i-qq] | 缺口 | 未证 · [供应商基线][providers] | 行为、数据、权限、待联调 | 需授权机器人、平台允许的会话、真实回复与解绑验证。 |
-| I24 | Slack 工作区安装、任务线程、个人通知、机器人及文件/表情互动 | [Slack][i-slack] | 部分 | 测试 · [签名入站与话题回传][slack-http] · [线程入库][im-regression] | 行为、数据、权限、待联调 | 已验证工作区与频道隔离、指定任务线程定向回复、状态动态和去重回执。实际工作区安装、交互卡片、文件与表情待联调。 Slack 面板单选改派并整组替换人员尚待实现和实测。 |
+| I24 | Slack 工作区安装、任务线程、个人通知、机器人及文件/表情互动 | [Slack][i-slack] | 部分 | 测试 · [签名回调与单选改派][slack-http] · [线程入库][im-regression] | 行为、数据、权限、待联调 | 隔离服务验证线程同步、工作区/频道隔离、已送达卡片单选替换多人、保留 Agent、权限撤销与重放。真实租户安装、个人通知、文件和表情仍待联调。 |
 | I25 | Discord Gateway、Agent 机器人/任务助手、私信、频道、文件和命令 | [Discord][i-discord] | 部分 | 测试 · [Discord 事件][provider-tests] | 行为、数据、权限、待联调 | 需要授权的 Gateway、中继、已加入的服务器及合适 intents。真实触发与机器人回复待验。 |
 | I26 | Telegram Bot、群或话题、私聊、附件与任务助手 | [Telegram][i-telegram] | 部分 | 测试 · [Telegram 更新][provider-tests] | 行为、数据、权限、待联调 | 需有效 Bot 和测试群，核对新话题、机器人账号抑制和真实回复。 |
 | I27 | Microsoft Teams Bot Framework、频道/私聊、文件与空间助手 | [Teams][i-teams] | 部分 | 测试 · [Teams Activity][provider-tests] | 行为、数据、权限、待联调 | 需组织管理员许可、真实安装与认证中继；按会话回复与成员退组后的失权单验。 |
@@ -250,6 +250,8 @@
 [account]: https://help.hifox.com/docs/other/account-management
 [i-jira]: https://help.hifox.com/docs/integration/jira
 [i-jira-api]: https://help.hifox.com/docs/integration/jira-api
+[jira-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-jira.py
+[jira-doc]: jira-api.md
 [i-zentao]: https://help.hifox.com/docs/integration/zentao
 [i-tapd]: https://help.hifox.com/docs/integration/tapd
 [i-bugly]: https://help.hifox.com/docs/integration/bugly
@@ -281,6 +283,8 @@
 [rea]: client-analysis.md
 [ui]: interfaces.md
 [native]: design-qa.md
+[space-window]: ../crates/shipforge-desktop/src/space_ui_test.rs
+[space-lifecycle-tests]: ../crates/shipforge-core/tests/space_lifecycle.rs
 [cli]: cli.md
 [windows]: windows.md
 [coverage]: windows-coverage.md
@@ -335,3 +339,8 @@
 [im-regression]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/im_threads.rs
 [assign-ui]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/assignees_ui.rs
 [assign-core]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/assignees.rs
+[iteration-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/src/iterations/tests.rs
+[iteration-service]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-iterations.py
+[iteration-manual]: iterations.md
+[tag-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/tags.rs
+[tag-ui]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/tag_ui.rs

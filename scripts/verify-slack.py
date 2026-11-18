@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import time
 from urllib.error import HTTPError
+from urllib.parse import urlencode
 from urllib.request import ProxyHandler, Request, build_opener
 
 release = import_module("verify-release")
@@ -43,19 +44,24 @@ def verify(bin_dir, start, stop):
         env.pop("SHIPFORGE_GITHUB_WEBHOOKS", None)
         process, address = start(server, data, "127.0.0.1:0", extra=("--slack-config", str(config)), env=env)
         opener = build_opener(ProxyHandler({}))
-        def post(payload, *, offset=0, key=secret, route="default/support"):
+        def post(payload, *, offset=0, key=secret, route="default/support", form=False):
             raw = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode()
+            if form:
+                raw = urlencode({"payload": raw.decode()}).encode()
             ts = str(int(time.time()) + offset)
             sig = hmac.new(key.encode(), b"v0:" + ts.encode() + b":" + raw, sha256).hexdigest()
             request = Request("http://" + address + "/v1/slack/" + route, data=raw,
                               headers={"X-Slack-Request-Timestamp": ts, "X-Slack-Signature": "v0=" + sig,
-                                       "Content-Type": "application/json"})
+                                       "Content-Type": "application/x-www-form-urlencoded" if form else "application/json"})
             try:
                 response = opener.open(request, timeout=8)
             except HTTPError as error:
                 response = error
             with response:
-                return response.status, json.load(response)
+                raw = response.read()
+                if form and response.status == 200:
+                    assert not raw
+                return response.status, json.loads(raw) if raw else None
         try:
             challenge = {"type": "url_verification", "challenge": "test-challenge"}
             assert post(challenge) == (200, {"challenge": "test-challenge"})
@@ -100,9 +106,51 @@ def verify(bin_dir, start, stop):
             [sent] = command("im.outbox", id="support")
             assert sent["state"] == "sent" and sent["remote_id"] == "3.000003"
             assert len(command("list", kind="comment")) == 3
+            for actor, role in (("editor", "member"), ("viewer", "viewer"), ("assignee", "member")):
+                command("create", kind="member", id=actor, title=actor, fields={"role": role})
+            command("update", kind="space", id="default", fields={"allow_multiple_assignees": True})
+            command("update", kind="connector", id="support", fields={"slack_assignment": True,
+                    "assignee_map": {"Ueditor": "editor", "Uviewer": "viewer", "Utarget": "assignee"}})
+            command("create", kind="agent", id="card-agent", title="Synthetic worker")
+            card_task = command("create", kind="task", title="Task card", fields={
+                "assignees": ["editor", "viewer"], "executor": {"kind": "agent", "id": "card-agent"}})
+            card_origin = dict(event, event_id="CardRoot", event=dict(event["event"], ts="10.000001"))
+            command("im.bind", id="support", task_id=card_task["id"], provider="slack", payload=card_origin)
+            card = command("im.claim", id="support")
+            block = card["blocks"][1]
+            selector = block["elements"][0]
+            assert selector["type"] == "users_select" and "initial_user" not in selector
+            delivered = "11.000001"
+            command("im.ack", id="support", delivery_id=card["delivery_id"], lease=card["lease"], outcome="sent", remote_id=delivered)
+            click = {"type": "block_actions", "api_app_id": "A1", "team": {"id": "T1"}, "channel": {"id": "C1"},
+                     "user": {"id": "Ueditor", "team_id": "T1"},
+                     "container": {"type": "message", "channel_id": "C1", "message_ts": delivered},
+                     "message": {"type": "message", "ts": delivered, "thread_ts": "10.000001", "bot_id": "B1", "app_id": "A1"},
+                     "actions": [{"type": selector["type"], "action_id": selector["action_id"], "block_id": block["block_id"],
+                                  "selected_user": "Utarget", "action_ts": "12.000001"}]}
+            click_post = lambda event, **kw: post(event, form=True, **kw)[0]
+            assert click_post(click, key="wrong") == 401 and click_post(click, offset=-360) == 401
+            assert post(click)[0] == 400
+            assert click_post(dict(click, user={"id": "Uviewer"})) == 403
+            assert click_post(dict(click, user={"id": "Uunknown"})) == 403
+            assert click_post(dict(click, user={"id": "Ueditor", "team_id": "T2"})) == 403
+            assert click_post(dict(click, message=dict(click["message"], bot_id="Bother"))) == 403
+            assert click_post(dict(click, message=dict(click["message"], thread_ts="99.000001"))) == 403
+            assert click_post(dict(click, channel={"id": "C2"}), route="apps/A1/events") == 403
+            assert click_post(dict(click, actions=[dict(click["actions"][0], selected_user="Uunknown")])) == 400
+            before = command("get", kind="task", id=card_task["id"])
+            assert before["fields"]["assignees"] == ["editor", "viewer"]
+            assert click_post(click, route="apps/A1/events") == 200 and click_post(click) == 200
+            assigned = command("get", kind="task", id=card_task["id"])
+            assert assigned["rev"] == before["rev"] + 1 and assigned["fields"]["assignees"] == ["assignee"]
+            assert assigned["fields"]["executor"] == {"kind": "agent", "id": "card-agent"}
+            later = dict(click, actions=[dict(click["actions"][0], action_ts="13.000001", selected_user="Ueditor")])
+            assert click_post(later) == 409
+            command("im.unbind", id="support", task_id=card_task["id"], provider="slack", payload=card_origin)
+            assert click_post(click) == 403
             subprocess.run([str(server), "--data-dir", str(data), "token", "revoke", hook["id"]],
                            check=True, capture_output=True, timeout=10)
             assert post(challenge)[0] == 401
         finally:
             stop(process)
-    print("Verified native Slack signatures, route isolation, replay, thread comments, signed bot receipts and revocation on loopback.")
+    print("Verified native Slack signatures, route isolation, thread comments, receipts, single-person task cards, actor permissions, stale selections, replay and revocation on loopback.")

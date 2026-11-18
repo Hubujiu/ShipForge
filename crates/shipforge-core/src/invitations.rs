@@ -41,6 +41,7 @@ fn check_targets(c: &Context<'_>, spaces: &Value) -> Result<()> {
             return Err(invalid("choose distinct spaces in this organization"));
         }
         target.require_admin()?;
+        crate::spaces::ensure_active(&target)?;
     }
     Ok(())
 }

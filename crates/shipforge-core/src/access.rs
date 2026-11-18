@@ -31,15 +31,13 @@ impl Context<'_> {
         let member = org
             .find("member", self.actor)?
             .ok_or_else(|| forbidden("space is unavailable"))?;
-        if matches!(member.fields["role"].as_str(), Some("owner" | "admin"))
-            && (metadata || space.fields["visibility"] == "public")
-        {
+        if metadata && matches!(member.fields["role"].as_str(), Some("owner" | "admin")) {
             return Ok("admin".into());
         }
         if let Some(m) = space_member {
             return Ok(m.fields["role"].as_str().unwrap_or("viewer").into());
         }
-        if space.fields["visibility"] == "public" && member.fields["role"] != "guest" {
+        if metadata && space.fields["visibility"] == "public" && member.fields["role"] != "guest" {
             return Ok("viewer".into());
         }
         Err(forbidden("space is unavailable"))
@@ -56,6 +54,17 @@ impl Context<'_> {
             }
         } else {
             self.role()?;
+        }
+        if q["kind"] == "customer_request" {
+            crate::spaces::require_module(self, "customer_requests")?;
+        }
+        if q["kind"] == "iteration"
+            || matches!(
+                op,
+                "iteration.close" | "iteration.preview" | "iteration.timeline"
+            )
+        {
+            crate::spaces::require_module(self, "iterations")?;
         }
         Ok(())
     }
@@ -74,6 +83,7 @@ impl Context<'_> {
         }
     }
     pub(crate) fn require_edit(&self) -> Result<()> {
+        crate::spaces::ensure_active(self)?;
         if matches!(
             self.role()?.as_str(),
             "owner" | "admin" | "member" | "editor"
@@ -217,6 +227,38 @@ impl Context<'_> {
     }
     pub(crate) fn authorize_replay(&self, q: &Value, result: &Value) -> Result<()> {
         let op = required(q, "op")?;
+        if op == "iteration.close" {
+            self.require_edit()?;
+            self.readable("iteration", required(q, "id")?)?;
+            for task in result["moved"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(Value::as_str)
+            {
+                self.readable("task", task)?;
+            }
+            return Ok(());
+        }
+        if op == "iteration.configure" {
+            return self.require_admin();
+        }
+        if matches!(op, "space.join" | "space.leave") {
+            let org = self.org_id()?;
+            return Context {
+                space: &org,
+                ..*self
+            }
+            .role()
+            .map(|_| ());
+        }
+        if op == "space.pin" {
+            self.role()?;
+            return Ok(());
+        }
+        if matches!(op, "space.deactivate" | "space.restore") {
+            return self.require_admin();
+        }
         if op == "chat.share.create" {
             let room = self.readable("chat", required(q, "id")?)?;
             crate::chat::require_owner(self, &room)?;
@@ -275,6 +317,20 @@ impl Context<'_> {
         }
         match op {
             "preferences.update" | "onboarding.display" => {}
+            "tag.apply" => {
+                self.require_edit()?;
+                for id in crate::domain::strings(&q["tasks"], "tasks")? {
+                    self.readable("task", id)?;
+                }
+            }
+            "tag.merge" => {
+                let target = self.readable("tag", required(q, "target")?)?;
+                if target.fields["scope"] == "organization" {
+                    self.require_admin()?;
+                } else {
+                    self.require_edit()?;
+                }
+            }
             "attachment.upload" => {
                 let r = prior
                     .as_ref()

@@ -94,6 +94,25 @@ fn write_inner(
         return Ok(as_value(r.clone()));
     }
     let mut patch = fields_object(q.get("fields"))?;
+    let infer_iteration = kind == "task" && !from_source && !patch.contains_key("iteration");
+    let explicit_unplanned = kind == "task" && patch.get("iteration").is_some_and(Value::is_null);
+    if kind == "iteration" {
+        for field in ["cadence", "sequence", "closed_at"] {
+            if from_source {
+                patch.remove(field);
+            } else if patch.contains_key(field) {
+                return Err(invalid(
+                    "the iteration scheduler manages cadence and closure metadata",
+                ));
+            }
+        }
+    }
+    if kind == "space" {
+        crate::spaces::check_fields(&patch)?;
+    }
+    if kind == "customer_request" {
+        crate::spaces::require_module(c, "customer_requests")?;
+    }
     if kind == "task" {
         crate::task_commands::assignees::prepare(c, old.as_ref(), &mut patch, from_source)?;
     }
@@ -177,7 +196,10 @@ fn write_inner(
         created_at: at,
         updated_at: at,
     };
-    validate(c, old.as_ref(), &mut row)?;
+    validate(c, old.as_ref(), &mut row, from_source)?;
+    if infer_iteration {
+        crate::iterations::auto_assign(c, old.as_ref(), &mut row)?;
+    }
     worker::validate(c, old.as_ref(), &row)?;
     if matches!(kind, "status" | "task_type")
         && row.fields["default"] == true
@@ -197,8 +219,20 @@ fn write_inner(
         c.insert(&row)?;
         row
     };
+    if kind == "task"
+        && (explicit_unplanned
+            || from_source
+                && old.as_ref().is_none_or(|r| {
+                    r.fields["status"] != row.fields["status"]
+                        || r.fields["due_date"] != row.fields["due_date"]
+                }))
+    {
+        crate::iterations::record_override(c, &row)?;
+    }
+    crate::iterations::supplement(c, old.as_ref(), &row)?;
     if notify {
         crate::actions::after(c, old.as_ref(), &row)?;
+        crate::tags::changed(c, old.as_ref(), &row)?;
         worker::changed(c, old.as_ref(), &row)?;
         if old.is_none() && kind == "comment" {
             crate::im::changed(c, None, &row)?;
@@ -236,6 +270,7 @@ fn create_space(c: &Context<'_>, q: &Value) -> Result<Value> {
         space: &id,
     };
     let mut f = Value::Object(fields_object(q.get("fields"))?);
+    crate::spaces::check_fields(f.as_object().unwrap())?;
     f["creator"] = json!(c.actor);
     f["organization"] = if is_org { json!(&id) } else { json!(org_id) };
     if f["visibility"].is_null() {
@@ -292,6 +327,8 @@ fn validate_space(f: &Value) -> Result<()> {
         "triage_priority_required",
         "estimates_enabled",
         "allow_multiple_assignees",
+        "iterations_enabled",
+        "customer_requests_enabled",
     ] {
         if f.get(k).is_some_and(|v| !v.is_boolean()) {
             return Err(invalid("space feature settings must be boolean"));
@@ -329,7 +366,15 @@ pub(crate) fn ref_record(
         }
     }
 }
-fn validate(c: &Context<'_>, old: Option<&Record>, row: &mut Record) -> Result<()> {
+fn validate(
+    c: &Context<'_>,
+    old: Option<&Record>,
+    row: &mut Record,
+    from_source: bool,
+) -> Result<()> {
+    if row.kind == "iteration" {
+        crate::iterations::manual_fields(c, old, row, from_source)?;
+    }
     let f = &mut row.fields;
     if let Some(ex) = f.get("external_id").filter(|v| !v.is_null())
         && (!ex.as_str().is_some_and(|s| !s.is_empty())
@@ -340,6 +385,26 @@ fn validate(c: &Context<'_>, old: Option<&Record>, row: &mut Record) -> Result<(
         ));
     }
     match row.kind.as_str() {
+        "customer_request" => {
+            if f["status"].is_null() {
+                f["status"] = json!("open");
+            }
+            if !matches!(
+                f["status"].as_str(),
+                Some("open" | "in_progress" | "resolved")
+            ) {
+                return Err(invalid("unknown customer request status"));
+            }
+            if ["contact", "description"]
+                .iter()
+                .any(|key| f.get(*key).is_some_and(|v| !v.is_string()))
+            {
+                return Err(invalid(
+                    "customer request contact and description must be strings",
+                ));
+            }
+        }
+        "tag" | "tag_group" => return crate::tags::validate(c, old, row),
         "task" => validate_task(c, old, &row.id, f)?,
         "agent" => {
             if old.is_none() && f["agent_type"].is_null() {
@@ -361,6 +426,20 @@ fn validate(c: &Context<'_>, old: Option<&Record>, row: &mut Record) -> Result<(
                 && f["organization"] != prior.fields["organization"]
             {
                 return Err(invalid("space organization is immutable"));
+            }
+            if let Some(prior) = old
+                && [
+                    ("iterations_enabled", true),
+                    ("triage_enabled", false),
+                    ("customer_requests_enabled", false),
+                ]
+                .iter()
+                .any(|(key, default)| {
+                    f[*key].as_bool().unwrap_or(*default)
+                        != prior.fields[*key].as_bool().unwrap_or(*default)
+                })
+            {
+                c.require_admin()?;
             }
             validate_space(f)?;
         }
@@ -510,7 +589,10 @@ fn validate(c: &Context<'_>, old: Option<&Record>, row: &mut Record) -> Result<(
             if old.is_none() && f["status"].is_null() {
                 f["status"] = json!("planned");
             }
-            if f["status"] == "closed" && old.is_none_or(|r| r.fields["status"] != "closed") {
+            if !from_source
+                && f["status"] == "closed"
+                && old.is_none_or(|r| r.fields["status"] != "closed")
+            {
                 return Err(invalid("use iteration.close to finish an iteration"));
             }
         }
