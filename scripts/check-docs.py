@@ -18,8 +18,14 @@ def main():
 
     screen_ids = set()
     interfaces = (ROOT / "docs/interfaces.md").read_text(encoding="utf-8")
+    in_catalogue = False
     for line in interfaces.splitlines():
-        if not line.startswith("| UI"):
+        if line.startswith("| 界面 | 截图索引 |"):
+            in_catalogue = True
+            continue
+        if not line.startswith("|"):
+            in_catalogue = False
+        if not in_catalogue or line.startswith("| ---"):
             continue
         name, image, references, _description = [cell.strip() for cell in line.strip("|").split("|")]
         screen = name.split()[0]
