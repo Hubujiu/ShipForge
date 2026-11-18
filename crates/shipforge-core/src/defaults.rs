@@ -47,6 +47,53 @@ pub(crate) fn seed(c: &Context<'_>) -> Result<()> {
     .map_err(storage)?;
     Ok(())
 }
+pub(crate) fn starting_task_types(
+    c: &Context<'_>,
+    work: &str,
+    selection: Option<&serde_json::Value>,
+) -> Result<()> {
+    if work.trim().is_empty() || work.chars().count() > 80 {
+        return Err(crate::invalid("enter a work type of up to 80 characters"));
+    }
+    let types = match selection {
+        Some(value) => crate::domain::strings(value, "task_types")?,
+        None if matches!(work, "software" | "project") => vec!["requirement", "bug"],
+        None => vec!["task"],
+    };
+    let ids = types
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
+    if ids.is_empty()
+        || ids.len() != types.len()
+        || !ids
+            .iter()
+            .all(|id| matches!(*id, "requirement" | "bug" | "task" | "story"))
+    {
+        return Err(crate::invalid(
+            "select one or more available task types without duplicates",
+        ));
+    }
+    for (id, label) in [
+        ("requirement", "需求"),
+        ("bug", "缺陷"),
+        ("task", "任务"),
+        ("story", "用户故事"),
+    ] {
+        let record = c.find("task_type", id)?;
+        let mut fields = record.as_ref().map(|r| r.fields.clone()).unwrap_or_else(
+            || json!({"creator":c.actor,"system":true,"statuses":[],"required_fields":[]}),
+        );
+        fields["enabled"] = json!(ids.contains(id));
+        fields["default"] = json!(types[0] == id);
+        if let Some(prior) = record {
+            c.update(&prior, &prior.title, fields)?;
+        } else {
+            c.create("task_type", Some(id), label, fields)?;
+        }
+    }
+    Ok(())
+}
 pub(crate) fn selected(c: &Context<'_>, kind: &str, fallback: &str) -> Result<String> {
     Ok(c.records(kind)?
         .into_iter()

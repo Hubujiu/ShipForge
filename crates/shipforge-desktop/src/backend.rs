@@ -118,6 +118,10 @@ impl Backend {
                             for kind in kinds {
                                 let command = if kind == "catalog" {
                                     json!({"op":"catalog.list","space":space})
+                                } else if kind == "chat_invitation" {
+                                    json!({"op":"chat.invitations","space":space})
+                                } else if kind == "member_invitation" {
+                                    json!({"op":"invitation.list","space":space})
                                 } else if kind == "space" {
                                     json!({"op":"space.list"})
                                 } else if kind == "iteration" {

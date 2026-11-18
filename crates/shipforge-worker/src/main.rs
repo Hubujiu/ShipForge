@@ -3,6 +3,7 @@ mod github;
 mod host;
 mod mcp;
 mod process;
+mod slack;
 use clap::{Parser, Subcommand};
 use config::{Config, Result};
 use serde_json::json;
@@ -64,6 +65,17 @@ enum Action {
     },
     /// Report the locations of common installed runtime executables.
     Probe,
+    /// Deliver queued public task updates to their Slack threads, once or continuously.
+    SlackDeliver {
+        #[arg(long, default_value = "default")]
+        space: String,
+        #[arg(long)]
+        connector: String,
+        #[arg(long, default_value = "SHIPFORGE_SLACK_BOT_TOKEN")]
+        token_env: String,
+        #[arg(long)]
+        watch: bool,
+    },
     /// Import new and changed GitHub issues through an existing github connector.
     GithubSync {
         #[arg(long)]
@@ -120,6 +132,18 @@ fn execute() -> Result<serde_json::Value> {
             let dir = cfg.workspace.clone().unwrap_or(config::state_dir(&config)?);
             mcp::call(&cfg, &dir, &tool, &descriptor, arguments)
         }
+        Action::SlackDeliver {
+            space,
+            connector,
+            token_env,
+            watch,
+        } => slack::run(
+            &mut Client::from_env()?,
+            &space,
+            &connector,
+            &token_env,
+            watch,
+        ),
         Action::Probe => Ok(json!(
             ["git", "codex", "claude", "gemini", "node", "python"]
                 .iter()

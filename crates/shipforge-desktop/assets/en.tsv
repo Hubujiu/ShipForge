@@ -1,0 +1,804 @@
+偏好设置	Preferences
+按任务编号关联提交和合并请求	Link commits and pull requests by task number
+新建或重开合并请求时运行的规则（可选）	Review rule for opened or reopened requests (optional)
+GitLab 主机（默认 gitlab.com）	GitLab host (defaults to gitlab.com)
+查看源记录	Open source record
+回复到 Slack 话题	Reply to Slack thread
+Slack 应用 ID	Slack app ID
+Slack 机器人 ID	Slack bot ID
+将任务活动回写 Slack 线程	Send task updates to Slack threads
+快捷键	Keyboard shortcuts
+键盘快捷键	Keyboard shortcuts
+你的设置	Your settings
+主题	Theme
+跟随系统	System
+浅色	Light
+深色	Dark
+魔法蓝	Magic blue
+经典深色	Classic dark
+选择主题。跟随系统会使用操作系统的外观。	Choose a theme. System follows your operating system’s appearance.
+外边框颜色	Window frame color
+不设置外边框颜色	No frame color
+常规	General
+语言	Language
+设置此账号的语言。	Set the language for this account.
+选择此账号使用的应用语言。	Choose the application language for this account.
+密度	Density
+即将推出	Coming soon
+紧凑度、行高和字号设置仍在开发中。	Compact spacing, line height, and text size controls are in development.
+任务会话	Task conversations
+控制哪些场景会自动打开任务会话。	Choose when task conversations open automatically.
+指派给 Agent 后自动打开会话	Open the conversation after assigning an agent
+指派给 Agent 或小队时打开执行者的任务会话。	Open the assignee’s task conversation when assigning an agent or a team.
+使用快捷指令后自动打开会话	Open the conversation after a quick command
+从任务发起执行指令后打开该任务的会话。	Open this task’s conversation after issuing a run command.
+开启	On
+关闭	Off
+控制消息和应用级快捷键的行为。	Choose how message and application shortcuts work.
+发送消息	Send message
+适用于对话、任务评论和回复。	Applies to conversations, task comments and replies.
+Enter 发送	Enter to send
+Shift+Enter 发送	Shift+Enter to send
+Shift+Enter 换行	Shift+Enter inserts a new line
+Enter 换行	Enter inserts a new line
+应用命令	Application commands
+自定义用于导航和任务流程的全局快捷键。	Customize global shortcuts for navigation and task workflows.
+命令菜单	Command menu
+快速打开搜索、导航和快捷命令。	Open search, navigation and quick commands.
+将任务移动到空间	Move task to space
+选择任务和接收该任务的空间。	Choose a task and its destination space.
+在当前视图查找	Find in current view
+在当前任务列表或视图中搜索。	Search the current list or task view.
+按组合键 · Esc 取消	Press a shortcut · Esc cancels
+录制	Record
+重置	Reset
+正在保存，请稍后重试	Saving. Try again shortly.
+这个快捷键已分配给其他命令	This shortcut is assigned to another command.
+组合键无效或已被系统保留，可按 Esc 取消	Invalid or reserved shortcut. Press Esc to cancel.
+已提交任务指令	Task command submitted
+主页	Home
+首页	Home
+搜索	Search
+全局搜索	Global search
+个人工作	Personal work
+空间工作	Workspace
+协作	Collaboration
+组织	Organization
+全部设置	All settings
+设置	Settings
+设置向导	Setup guide
+开始使用	Getting started
+开始你的第一项工作。	Get started with your first task.
+收件箱	Inbox
+我的任务	My tasks
+小助手	Assistant
+市场	Marketplace
+任务	Tasks
+任务标签	Task labels
+迭代	Iterations
+专项	Projects
+分拣台	Triage
+视图	Views
+小队	Teams
+文档库	Documents
+技能	Skills
+运行历史	Run history
+运行产物	Artifacts
+成员	Members
+外部应用集成	Integrations
+关系	Relationship
+任务关联	Task relationships
+关联类型	Relationship types
+自定义字段	Custom fields
+工具与连接	Tools and connections
+任务状态	Task statuses
+任务类型	Task types
+导入与导出	Import and export
+机器	Machines
+空间	Spaces
+对话	Conversations
+自动化	Automations
+任务仪表盘	Task dashboard
+默认空间	Default space
+演示空间	Demo workspace
+本机工作区	Local workspace
+团队工作区	Team workspace
+连接设置	Connection settings
+全部	All
+需求	Requirement
+缺陷	Bug
+标签	Labels
+首页设置	Home settings
+录入	Entry
+待开始	To do
+待规划	Backlog
+进行中	In progress
+已完成	Done
+已取消	Canceled
+待分拣	Triage
+待分拣任务	Triage task
+无优先级	No priority
+低	Low
+中	Medium
+高	High
+紧急	Urgent
+看板	Board
+列表	List
+表格	Table
+仪表盘	Dashboard
+保存为视图	Save as view
+折叠的列	Collapsed columns
+筛选任务	Filter tasks
+筛选	Filter
+清除	Clear
+清空筛选	Clear filters
+没有匹配的任务	No matching tasks
+我创建的	Created by me
+指派给我的	Assigned to me
+新建任务	New task
+新建自动化	New automation
+新建文档	New document
+新建对话	New conversation
+新建视图	New view
+保存修改	Save changes
+保存	Save
+取消	Cancel
+创建	Create
+确认	Confirm
+重试	Retry
+编辑	Edit
+删除	Delete
+通知	Notifications
+添加评论	Add comment
+关注	Follow
+取消关注	Unfollow
+评论	Comment
+评论与活动	Comments and activity
+运行记录	Runs
+暂无消息	No messages
+暂无运行记录	No runs
+添加附件	Add attachment
+附件	Attachments
+属性	Properties
+当前状态	Current status
+状态	Status
+类型	Type
+处理人	Assignee
+负责人	Owner
+优先级	Priority
+截止日期	Due date
+开始处理	Start work
+标为完成	Mark done
+未指定	Not specified
+未设置	Not set
+未指派	Unassigned
+标题	Title
+名称	Name
+描述	Description
+正文	Content
+内容	Message
+任务标题	Task title
+目标空间	Destination space
+搜索标题或任务编号	Search title or task number
+查找	Find
+移动	Move
+已保存	Saved
+上传	Upload
+下载	Download
+上传附件	Upload attachment
+下载附件	Download attachment
+浏览…	Browse…
+保存到新文件	Save as a new file
+文件路径（最大 4 MiB）	File path (up to 4 MiB)
+共享	Shared
+私有	Private
+空间共享	Shared with space
+仅自己	Only me
+可见范围	Visibility
+历史版本	Version history
+恢复	Restore
+恢复此版本	Restore version
+发送	Send
+回复	Reply
+打开任务会话	Open task conversation
+立即执行	Run now
+立即执行任务指令	Run task command
+自动化规则	Automation rule
+执行指令	Instructions
+执行者	Assignee
+规则状态	Rule status
+添加触发器	Add trigger
+移除触发器	Remove trigger
+触发器	Triggers
+触发方式	Trigger
+定时运行	Schedule
+任务状态变化	Task status changes
+任务新增评论	A comment is added
+任务进入状态	Task enters status
+启用此触发器	Enable trigger
+启用	Enabled
+停用	Disabled
+重复	Repeat
+按间隔	At intervals
+间隔分钟数	Interval in minutes
+每天	Every day
+每周	Every week
+当地时间（HH:MM）	Local time (HH:MM)
+时区	Time zone
+上海	Shanghai
+东京	Tokyo
+伦敦	London
+纽约	New York
+通知成员	Notify members
+请选择	Select
+执行机器	Execution machine
+未完成	Unfinished
+开始日期（YYYY-MM-DD）	Start date (YYYY-MM-DD)
+截止日期（YYYY-MM-DD）	Due date (YYYY-MM-DD)
+结束日期（YYYY-MM-DD）	End date (YYYY-MM-DD)
+标签（用逗号分隔）	Labels (comma-separated)
+自定义字段值（JSON 对象）	Custom fields (JSON object)
+所属组织	Organization
+任务数量	Task count
+需要你处理的回复和任务动态会出现在这里。	Replies and task updates that need your attention appear here.
+分配给你的工作会出现在这里。	Tasks assigned to you appear here.
+创建第一条任务，安排当前空间的工作。	Create a task to organize work in this space.
+为一段时间内要交付的任务安排迭代。	Plan iterations for tasks due within a period.
+围绕目标、版本或客户交付组织跨迭代的任务。	Organize work across iterations around a goal, release, or customer delivery.
+保存筛选与布局，下次打开时看到最新任务。	Save filters and layouts to return to the latest results.
+访客与外部集成提交的任务会在此等待审核。	Tasks from guests and integrations await review here.
+任务、对话或自动化生成的运行会出现在这里。	Runs from tasks, conversations and automations appear here.
+管理此设备与团队服务的连接。	Manage this device’s connection to your team server.
+在个人或团队文档中保存决策、说明和交付成果。	Save decisions, instructions and deliverables in personal or shared documents.
+配置来源与字段映射，同步外部事项。	Configure sources and field mappings to sync external issues.
+创建组织，管理成员与空间。	Create organizations and manage their members and spaces.
+在文件与当前空间之间交换数据。	Exchange data between a file and this space.
+在空间中查找可复用的技能和 Agent 模板。	Find reusable skills and agent templates in this space.
+维护空间的任务类型和必填字段。	Manage task types and required fields.
+为不同工作阶段定义状态。	Define statuses for stages of work.
+将成员加入空间，并分配合适的角色。	Add members to the space and assign their roles.
+添加任务类型所需填写的字段。	Add fields required by task types.
+建立任务的阻塞、相关和重复关系。	Link blocking, related and duplicate tasks.
+定义任务关系的正向与逆向名称。	Name each direction of a task relationship.
+把可重复使用的工作方法登记为技能。	Register reusable workflows as skills.
+登记可供 Agent 显式使用的工具与连接。	Register tools and connections for agents.
+通过任务事件、定时或 Webhook 自动指派工作。	Dispatch work using task events, schedules, or webhooks.
+新建一个私人会话，向工作伙伴交代任务。	Start a private conversation to delegate work.
+选择 Agent 或创建对话，保存消息与结果。	Select an agent or start a conversation to save messages and results.
+还没有可统计的任务。	No tasks are available for reporting.
+确定	OK
+前进	Forward
+后退	Back
+刷新	Refresh
+切换侧栏	Toggle sidebar
+复制	Copy
+上传文档	Upload document
+文档	Document
+工作机	Worker
+更新草稿	Update draft
+待同步更改	Pending changes
+手动同步	Sync now
+计划	Plan
+视图名称	View name
+搜索关键词	Search
+应用筛选	Apply filters
+搜索工作空间	Search workspace
+搜索任务、文档、Agent…	Search tasks, documents, agents…
+输入关键词，在当前空间中查找对象。	Enter a keyword to search this space.
+读取中…	Loading…
+正在处理…	Working…
+清除选择	Clear selection
+本地工作区	Local workspace
+本地数据库	Local database
+消息	Messages
+运行	Run
+记录	Record
+连接器	Connector
+成员账号	Member account
+执行	Execute
+资源	Resource
+产物	Artifact
+工具	Tool
+空间设置	Space settings
+账号	Account
+连接团队服务	Connect to team server
+断开连接	Disconnect
+重连	Reconnect
+成员目录	Member directory
+组织设置	Organization settings
+角色	Role
+只读	Read only
+读写	Read and write
+管理员	Admin
+创建人	Creator
+创建时间	Created
+修改时间	Updated
+导入 JSON	Import JSON
+导出 JSON	Export JSON
+任务链接	Task link
+子任务	Subtasks
+需求类型	Requirement type
+已复制	Copied
+运行一次	Run once
+同步状态	Sync status
+运行结果	Run result
+重试一次	Retry
+执行中	Running
+排队中	Queued
+成功	Succeeded
+失败	Failed
+已计划	Planned
+已结束	Finished
+检查更新	Check for updates
+上次同步	Last sync
+布局	Layout
+分组	Group
+排序	Sort
+全部应用	All apps
+全部成员	All members
+团队服务	Team server
+账号设置	Account settings
+团队连接	Team connection
+刷新连接	Refresh connection
+查看权限	View permissions
+权限范围	Permissions
+周一	Monday
+周二	Tuesday
+周三	Wednesday
+周四	Thursday
+周五	Friday
+周六	Saturday
+周日	Sunday
+下一步	Next
+完成	Finish
+返回	Back
+跳过	Skip
+基本信息	Details
+选择	Select
+请选择一项	Select an option
+重置为默认	Reset to default
+内置外边框颜色 1	Frame color 1
+内置外边框颜色 2	Frame color 2
+内置外边框颜色 3	Frame color 3
+内置外边框颜色 4	Frame color 4
+内置外边框颜色 5	Frame color 5
+内置外边框颜色 6	Frame color 6
+内置外边框颜色 7	Frame color 7
+内置外边框颜色 8	Frame color 8
+内置外边框颜色 9	Frame color 9
+内置外边框颜色 10	Frame color 10
+内置外边框颜色 11	Frame color 11
+内置外边框颜色 12	Frame color 12
+关联	Relationship
+创建标签，按主题和来源整理任务。	Create labels to organize tasks by topic or source.
+创建空间以独立管理成员、任务和资料。	Create a space to manage its members, work, and resources.
+在工作机上启动 ShipForge Worker，即可查看在线能力。	Start ShipForge Worker on a machine to see its capabilities.
+将多个 Agent 编成小队，选择队长统筹工作。	Group agents into a team and choose its lead.
+将成员加入空间，并设置合适的角色。	Add members and assign their roles in the space.
+工作机返回的文本、链接与产物可以保存为文档。	Save text, links, and artifacts returned by a worker as documents.
+所有者	Owner
+把可重复使用的工作方法保存为技能。	Save reusable workflows as skills.
+提醒	Notification
+访客	Guest
+运行中	Running
+配置指令、技能与执行机器，让 Agent 参与任务。	Configure instructions, skills, and machines to assign work to agents.
+先连接一台装有运行工具的机器，再为 Agent 选择执行环境。	Connect a machine with a runtime, then select an environment for your agent.
+内存演示	In-memory demo
+在此新建任务	Create a task here
+复制结果	Copy result
+已有配置可直接启动。新配置会启用只读示例 Runtime「inspect-context」，可另选外部程序。	Start an existing configuration or use the read-only inspect-context runtime. A new configuration can also use another external program.
+收起侧栏	Collapse sidebar
+浏览文件	Browse files
+由此规则收到的 Webhook 事件触发。	Triggered by webhook events received by this rule.
+确认导入	Confirm import
+空间任务	Space tasks
+组织用于归集团队的空间与成员。地址标识可用小写字母、数字和短横线。	An organization groups your team’s spaces and members. Use lowercase letters, numbers, and hyphens in its address.
+请确认本次操作。	Confirm this action.
+选择主要工作类型和起始任务类型。之后可以在空间设置中调整。	Select the main work and task types. You can change them later in space settings.
+GitHub 或 GitLab 仓库（owner/repository）	GitHub or GitLab repository (owner/repository)
+GitLab 主机（默认 gitlab.com）	GitLab host (default gitlab.com)
+GitLab 或 Jira 上游投递 ID	GitLab or Jira delivery ID
+GitLab 项目 ID	GitLab project ID
+JSON 文件完整路径	Full path to the JSON file
+Jira 项目标识	Jira project key
+Runtime 名称	Runtime name
+Slack 工作区 ID	Slack workspace ID
+Slack 应用 ID	Slack app ID
+Slack 机器人 ID	Slack bot ID
+Slack 频道 ID	Slack channel ID
+事件编号	Event ID
+事项标题	Issue title
+令牌权限	Token scope
+任务估时	Task estimate
+任务并发数	Parallel tasks
+企业微信	WeCom
+停止	Stop
+停止本机工作机	Stop local worker
+公开	Public
+关联说明	Relationship description
+其他工作	Other work
+分拣时要求优先级	Require a priority during triage
+创建你的组织	Create your organization
+创建访问令牌	Create access token
+初始化默认空间	Initialize default space
+加尔各答	Kolkata
+参与 Agent	Participating agent
+反向名称	Inverse name
+可用选项（用逗号分隔）	Options (comma-separated)
+合并至重复任务	Merge into duplicate task
+启动	Start
+启动本机工作机	Start local worker
+启用任务类型	Enabled task types
+回复内容	Reply text
+回复工作机	Reply to worker
+处理同步冲突	Resolve sync conflict
+外部 Runtime 名称	External runtime name
+外部事项编号	External issue ID
+外部程序固定参数（JSON 数组）	Fixed program arguments (JSON array)
+姓名	Name
+字段映射（JSON）	Field mapping (JSON)
+字段类型	Field type
+容量（任务数）	Capacity (tasks)
+对话并发数	Parallel conversations
+导入外部事项	Import external issue
+导入空间	Import space
+导出	Export
+导出映射任务	Export mapped task
+导出空间	Export space
+将任务活动回写 Slack 线程	Post task updates to its Slack thread
+小队成员	Team members
+工作时段（JSON）	Working hours (JSON)
+工作机工具	Worker tool
+工作机配置文件（完整路径）	Worker configuration (full path)
+工作目录策略	Working directory policy
+工作类型	Work type
+工具类型	Tool type
+已关闭	Closed
+布尔	Boolean
+平台	Platform
+平台原始事件（JSON 对象）	Original platform event (JSON object)
+必填字段	Required fields
+成员账号标识	Member account ID
+成员邀请	Member invitation
+技能指令	Skill instructions
+指定机器	Assigned machine
+指定目录串行	Serialize work in the selected directory
+按任务编号关联提交和合并请求	Link commits and merge requests by task number
+授权工具	Authorized tool
+授权文档	Authorized document
+接收平台事件	Receive platform event
+操作	Action
+数值	Number
+文本	Text
+文档可见范围	Document visibility
+新配置的外部程序绝对路径（可选）	External program path for the new configuration (optional)
+新配置的工作目录（可选）	Working directory for the new configuration (optional)
+日期	Date
+最多可配置 32 个触发器。	A rule supports up to 32 triggers.
+最近更改	Most recently updated
+服务地址	Server address
+未完成任务转入（留空退回待规划）	Move unfinished work to (leave empty for backlog)
+来源任务	Source task
+来源版本	Source version
+柏林	Berlin
+标题或编号	Title or number
+正向名称	Forward name
+每周执行日	Weekdays
+没有可用的机器	No machines available
+洛杉矶	Los Angeles
+父任务	Parent task
+版本	Version
+状态工作流	Status workflow
+状态类别	Status category
+独立工作树	Isolated worktree
+用来重新提交的服务器版本号	Server revision for resubmission
+目标任务	Target task
+空间分拣台	Space triage
+空间可见性	Space visibility
+空间角色	Space role
+签发令牌	Issue token
+组织名称	Organization name
+组织地址标识	Organization URL key
+结束迭代	Close iteration
+继承其他 Agent	Inherit another agent
+继续	Continue
+职责与指令	Role and instructions
+自定义来源	Custom source
+要导出的任务	Task to export
+触发条件缺少字段	Trigger is missing a field
+访问令牌	Access token
+评论包含文字（可选）	Comment contains (optional)
+请填写名称或标题。	Enter a name or title.
+请选择星期	Select weekdays
+起始任务类型	Initial task type
+超时秒数	Timeout (seconds)
+软件研发	Software development
+进入工作区	Open workspace
+连接	Connect
+连接机器	Connect machine
+选择对象	Select an object
+选项	Options
+邀请成员	Invite member
+重复的目标任务	Duplicate target task
+钉钉	DingTalk
+队长 Agent	Lead agent
+需要分拣的任务类型	Task types requiring triage
+需要分拣的来源	Sources requiring triage
+项目管理	Project management
+顺序	Order
+预估工作量	Estimated effort
+预检	Preview
+预览平台事件	Preview platform event
+飞书	Feishu
+飞书或 Telegram 会话 ID	Feishu or Telegram chat ID
+验证 Agent 工具权限	Check agent tool permissions
+默认显示	Show by default
+7 天内到期	Due within 7 days
+Agent 模板	Agent templates
+一小时后提醒	Remind me in one hour
+产物已保存到文档库	Artifact saved to documents
+从文件新建文档	Create a document from a file
+任务已移动	Task moved
+优先级分布	Priority distribution
+供应商	Provider
+停止本机	Stop this machine
+全部任务	All tasks
+全部机器	All machines
+全部迭代	All iterations
+关注设置已更新	Follow setting updated
+关联任务	Linked tasks
+关闭详情	Close details
+切换到本机	Switch to local mode
+删除记录	Delete record
+即将开始	Upcoming
+原因	Reason
+取消运行	Cancel run
+启用后，外部来源的工作会先在此等待审核。	When enabled, work from external sources waits here for review.
+启用接单	Accept assignments
+处理冲突	Resolve conflict
+复制对象标识	Copy object ID
+字段映射	Field mapping
+存为个人文档	Save as a personal document
+容量	Capacity
+导出当前空间为 JSON；导入前可预检创建和跳过的记录。	Export the current space as JSON. Preview which records will be created or skipped before importing.
+工作区设置	Workspace settings
+工作时段	Working hours
+已分拣	Triaged
+已探测 Runtime	Runtimes detected
+已添加	Added
+已添加到空间	Added to space
+已清理	Cleared
+已逾期	Overdue
+延后	Defer
+开始日期	Start date
+当前没有待同步的更改。	No changes are waiting to sync.
+扫描本机 Runtime	Scan local runtimes
+拒绝	Reject
+探测 Runtime	Detect runtimes
+接收	Accept
+提醒已更新	Notification updated
+撤销	Revoke
+撤销访问	Revoke access
+撤销该访问令牌	Revoke this access token
+收件箱已清空	Inbox cleared
+暂停接单	Pause assignments
+更改	Change
+更新时间	Updated
+最近在线	Last seen
+未读	Unread
+查看源记录	View source record
+标记已读	Mark as read
+标记未读	Mark as unread
+标记重复	Mark duplicate
+没有设置截止日期的未完成任务。	No unfinished tasks have a due date.
+添加到空间	Add to space
+清理	Clear
+清除筛选	Clear filters
+状态分布	Status distribution
+状态已更新	Status updated
+移回收件箱	Move back to inbox
+稍后	Later
+空间数据	Space data
+立即同步	Sync now
+管理令牌	Manage tokens
+结束日期	End date
+继承自	Inherited from
+编号	Number
+编辑视图	Edit view
+舍弃	Discard
+舍弃草稿	Discard draft
+设置分拣台	Configure triage
+详情	Details
+还没有任务	No tasks yet
+重新尝试	Try again
+队长	Team lead
+阶段	Phase
+外部集成	External integration
+导入已完成	Import complete
+工作区服务已关闭	Workspace service stopped
+工作区服务已关闭，请重启工作台。	The workspace service stopped. Restart the app.
+工作机状态已更新	Worker status updated
+已保存离线草稿，重连后可同步。	Offline draft saved. Reconnect to sync.
+已更新工作区连接	Workspace connection updated
+操作已完成	Action complete
+本机 Runtime 探测结果	Detected local runtimes
+用户故事	User story
+空间数据已导出	Space data exported
+草稿已更新，可重新同步	Draft updated and ready to sync
+访问令牌（请妥善保存）	Access token (store securely)
+请先选择对象	Select an object first
+请填写组织名称和地址标识	Enter the organization name and URL key
+请输入内容。	Enter a message.
+请输入文件的完整路径。	Enter the full file path.
+请输入有效的服务器版本	Enter a valid server revision
+请输入服务地址和令牌。	Enter the server address and token.
+请选择完整文件路径。	Select a full file path.
+请选择成员。	Select a member.
+请选择目标空间	Select the destination space
+请选择要移动的任务	Select the task to move
+迭代已结束	Iteration closed
+选择文件	Select file
+待排期	Unscheduled
+待结项	Ready to close
+新建迭代	New iteration
+暂无符合条件的迭代	No matching iterations
+设置开始、结束日期和容量后，可在时间轴查看任务范围与完成情况。	Set start and end dates and capacity to view scope and progress on the timeline.
+不再显示	Do not show again
+向导选项	Guide options
+完成步骤，熟悉团队的工作方式。	Follow these steps to learn how your team works.
+开始使用 ShipForge	Get started with ShipForge
+按照以下步骤配置你的团队工作区。	Follow these steps to set up your team workspace.
+新手指引	Getting started
+无法读取新手指引进度	Unable to load guide progress
+显示侧边栏向导	Show sidebar guide
+更多操作	More actions
+查看全部	View all
+正在读取设置向导…	Loading the setup guide…
+隐藏侧边栏向导	Hide sidebar guide
+人员处理人	Assigned members
+允许多个处理人	Allow multiple assignees
+外部成员	External member
+执行者（Agent 或小队）	Executor (agent or crew)
+外部账号到空间成员映射（JSON）	External account to space member mapping (JSON)
+管理空间	Manage the space
+通过邮箱邀请成员	Invite a member by email
+创建组织邀请链接	Create an organization invitation link
+接受组织邀请	Accept an organization invitation
+生成邀请链接	Generate invitation link
+接受邀请	Accept invitation
+受邀成员邮箱	Invitee email
+组织角色	Organization role
+同时加入空间	Spaces to join
+邀请链接	Invitation link
+本组织成员	Organization members
+邀请参与	Invite participant
+成员列表	Members list
+邀请记录	Invitations
+邮箱邀请	Invite by email
+暂无邀请记录	No invitations yet
+可加入	Open
+已停用	Disabled
+已接受	Accepted
+已过期	Expired
+历史记录	History
+启用并复制	Enable and copy
+邀请链接已复制	Invitation link copied
+已加入组织	Joined organization
+已复制对话分享链接	Conversation link copied
+已复制本工作区分享码	Workspace sharing code copied
+打开已分享的对话	Open a shared conversation
+转让对话	Transfer conversation
+撤回授权	Revoke access
+谁可以查看	Who can view
+获得链接的任何人	Anyone with the link
+打开	Open
+排名	Rank
+完成进度	Progress
+停用邀请链接	Disable invitation link
+个人设置未同步	Personal settings could not sync
+创建新组织	Create an organization
+提交申请	Submit request
+已停用邀请	Invitation disabled
+重新启用	Reactivate
+复制链接	Copy link
+组织邀请链接	Organization invitation link
+选择任务	Select task
+选择 Agent	Select agent
+选择执行助手	Select agent
+启用或续期并复制	Enable or renew and copy
+连接一台机器	Connect a machine
+启动一台工作机，让它向当前空间报告可用的运行工具。	Start a worker so it can report its available tools to this space.
+创建你的第一个 Agent	Create your first agent
+创建 Agent	Create agent
+为执行者选择机器和 Runtime，写下它负责的工作。	Choose the machine and runtime, then describe the agent's responsibilities.
+创建第一个任务	Create your first task
+填写任务目标、背景和验收条件，保存后可继续指派。	Describe the goal, context, and acceptance criteria. You can assign the task after saving.
+把任务指派给 Agent	Assign a task to an agent
+指派给 Agent	Assign agent
+在任务的处理人中选择 Agent，运行进度会回到任务详情。	Choose an agent as the task executor. Track the run in the task details.
+导入 Jira、TAPD、禅道等平台里的任务	Import tasks from Jira, TAPD, ZenTao, and other tools
+去接入	Open integrations
+选择工单来源或导入文件，先预览，再将事项写入空间。	Select an issue source or import file. Preview the items before adding them to the space.
+邀请团队成员	Invite team members
+从成员管理发出空间邀请，让同事加入工作。	Send an invitation from Members so a colleague can join the space.
+把任务指派给成员	Assign a task to a member
+指派成员	Assign member
+给任务选择一位成员作为处理人。	Choose a member to work on the task.
+在任务下评论和回复	Comment and reply on a task
+发表评论	Add comment
+打开任务，在活动区写下评论或回复。	Open a task and write a comment or reply in its activity feed.
+从收件箱处理任务	Work on a task from the inbox
+打开收件箱	Open inbox
+从与你有关的任务提醒进入处理。	Open a task from one of your notifications.
+清理收件箱中的任务	Clear a task from the inbox
+将已处理的任务提醒标为已清理。	Mark a task notification as cleared after handling it.
+为 Agent 编写指令	Write instructions for an agent
+编辑指令	Edit instructions
+在 Agent 设置中保存工作职责和执行要求。	Save the agent's responsibilities and requirements in its settings.
+和你的 Agent 对话	Talk to your agent
+与 Agent 对话	Chat with agent
+在有 Agent 参与的对话中发送第一条消息。	Send your first message in a conversation with an agent.
+把 Agent 共享到空间	Share an agent with a space
+共享 Agent	Share agent
+把可见范围设为空间，让成员可以指派它。	Set the agent's visibility to the space so members can assign work to it.
+创建一个 Agent 小队	Create an agent crew
+创建小队	Create crew
+选择队长和队员，保存一个协作小队。	Choose a leader and crew members, then save the crew.
+安装一个技能	Install a skill
+安装技能	Install skill
+从市场把一项技能安装到工作区。	Install a skill into the workspace from the marketplace.
+为 Agent 装配技能	Give an agent a skill
+装配技能	Add skill
+在 Agent 的技能列表中选择已安装的技能并保存。	Select an installed skill in the agent's settings and save.
+关注任务	Follow a task
+打开任务	Open task
+在任务详情选择关注，以后可在收件箱查看相关动态。	Choose Follow in the task details to see updates in your inbox.
+添加任务标签	Add a task label
+管理标签	Manage labels
+创建标签或把标签添加到一个任务。	Create a label or attach an existing one to a task.
+创建子任务	Create a subtask
+新建子任务	New subtask
+为新任务指定父任务，将工作拆成可跟进的子项。	Choose a parent task to split work into smaller, trackable items.
+设置关联任务	Link related tasks
+在两个任务之间建立相关、阻塞或重复关系。	Link two tasks as related, blocking, or duplicates.
+创建自定义视图	Create a custom view
+设置任务筛选和布局，给视图命名后保存。	Choose task filters and a layout, then name and save the view.
+保存一个团队视图	Save a team view
+共享视图	Share view
+将保存视图的可见范围设置为空间共享。	Set the saved view's visibility to the space.
+创建专项	Create a project
+新建专项	New project
+建立专项目标，把相关工作归集在一起。	Give the project a goal and group related work together.
+设置任务所属专项	Add a task to a project
+关联专项	Select project
+在任务属性中选择它所属的专项。	Choose the project in the task properties.
+为任务类型配置字段	Configure fields for a task type
+配置字段	Configure fields
+编辑任务类型，选择适用的自定义字段。	Edit the task type and select its custom fields.
+管理任务状态	Manage task statuses
+添加或修改可供任务使用的状态。	Add or change the statuses available to tasks.
+设置 Git 提交和 PR 自动关联到任务	Link Git commits and pull requests to tasks
+连接 Git	Connect Git
+绑定 Git 平台与仓库，使提交和合并请求可按任务编号关联。	Connect a Git provider and repository to link commits and pull requests by task number.
+开启任务估时	Enable task estimates
+开启估时	Enable estimates
+在空间设置中启用估时，再给任务填写工作量。	Turn on estimates in space settings, then enter an estimate on a task.
+集成飞书、钉钉、企业微信等 IM 平台	Connect Feishu, DingTalk, WeCom, or another messaging service
+连接协作平台	Connect messaging service
+接入团队使用的国内消息平台，验证第一条入站事件。	Connect your team's messaging service and verify the first incoming event.
+连接 Slack 或 Lark	Connect Slack or Lark
+连接 IM 平台	Connect messaging service
+为 Slack 或 Lark 建立绑定并验证事件可以送达。	Connect a Slack or Lark conversation and verify event delivery.
+创建一个 Agent 自动化	Create an agent automation
+选择执行者并保存一条自动化规则。	Choose an executor and save an automation rule.
+运行一次自动化	Run an automation
+打开自动化	Open automations
+从规则详情运行，查看本次执行记录。	Run a rule from its details and inspect the execution record.
+创建定时运行的自动化	Create a scheduled automation
+配置时间或间隔，让工作机按计划运行。	Set a time or interval for the worker to run the rule.
+创建基于任务状态的自动化	Automate task status changes
+选择任务状态变化作为规则的触发条件。	Choose a task status change as the rule's trigger.
+创建基于评论的自动化	Automate task comments
+为任务评论设置触发条件和执行者。	Choose the task comment trigger and an executor.
+创建基于 Webhook 的自动化	Create a webhook automation
+配置 Webhook 触发器，由已获授权的外部事件唤起规则。	Configure a webhook trigger for authorized external events.

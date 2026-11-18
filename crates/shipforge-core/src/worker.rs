@@ -1,5 +1,5 @@
 use crate::{Context, Record, Result};
-use chrono::{Timelike, Utc};
+use chrono::Utc;
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 #[path = "automation.rs"]
 mod automation;
+mod working_hours;
 
 pub(crate) const OPS: &[&str] = &[
     "agent.resolve",
@@ -73,6 +74,10 @@ pub(crate) fn extend_schema(schema: &mut Value) {
         json!({"type":"array","items":{"type":"string"},"maxItems":128}),
     );
     let rules = schema["allOf"].as_array_mut().expect("schema rules");
+    rules.push(json!({
+        "if":{"required":["kind"],"properties":{"op":{"enum":["create","update"]},"kind":{"const":"agent"}}},
+        "then":{"properties":{"fields":{"properties":{"working_hours":working_hours::schema()}}}}
+    }));
     for (ops, required) in [
         (
             &[
@@ -123,7 +128,7 @@ fn db_error(e: rusqlite::Error) -> String {
 fn token() -> String {
     format!("{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple())
 }
-fn digest(value: &str) -> String {
+pub(crate) fn digest(value: &str) -> String {
     Sha256::digest(value.as_bytes())
         .iter()
         .map(|b| format!("{b:02x}"))
@@ -249,25 +254,7 @@ pub(crate) fn validate(c: &Context<'_>, _before: Option<&Record>, item: &Record)
             {
                 return Err("unknown directory mode".into());
             }
-            if let Some(hours) = fields.get("working_hours").filter(|h| !h.is_null()) {
-                for key in ["start", "end"] {
-                    if hours[key]
-                        .as_i64()
-                        .filter(|v| (0..24).contains(v))
-                        .is_none()
-                    {
-                        return Err("working hours must be hours 0–23".into());
-                    }
-                }
-                if let Some(offset) = hours.get("utc_offset_minutes")
-                    && offset
-                        .as_i64()
-                        .filter(|n| (-840..=840).contains(n))
-                        .is_none()
-                {
-                    return Err("invalid time zone offset".into());
-                }
-            }
+            working_hours::WorkingHours::parse(&fields["working_hours"])?;
             for key in ["max_parallel", "chat_parallel"] {
                 if let Some(n) = fields.get(key)
                     && n.as_u64().filter(|n| (1..=64).contains(n)).is_none()
@@ -546,6 +533,16 @@ fn manual_enqueue(c: &Context<'_>, q: &Value) -> Result<Value> {
     let kind = q["handler_kind"].as_str().unwrap_or("agent");
     let mut fields =
         json!({"instruction":q["instruction"],"task_id":q["task_id"],"chat_id":q["chat_id"]});
+    let chat = q["chat_id"]
+        .as_str()
+        .map(|id| read(c, "chat", id))
+        .transpose()?;
+    if chat
+        .as_ref()
+        .is_some_and(|r| r.fields["visibility"] == "private")
+    {
+        fields["visibility"] = json!("private");
+    }
     let title = if let Some(id) = q["task_id"].as_str() {
         let task = read(c, "task", id)?;
         if !is_ready(c, &task)? {
@@ -553,8 +550,8 @@ fn manual_enqueue(c: &Context<'_>, q: &Value) -> Result<Value> {
         }
         fields["task"] = task_context(c, &task)?;
         task.title
-    } else if let Some(id) = q["chat_id"].as_str() {
-        read(c, "chat", id)?.title
+    } else if let Some(chat) = chat {
+        chat.title
     } else {
         req(q, "instruction")?.to_owned()
     };
@@ -747,22 +744,9 @@ fn disable(c: &Context<'_>, q: &Value) -> Result<Value> {
     encoded(c.update(&r, &r.title, f)?)
 }
 fn within_hours(config: &Value, at: i64) -> bool {
-    let h = &config["working_hours"];
-    let (Some(start), Some(end)) = (h["start"].as_u64(), h["end"].as_u64()) else {
-        return true;
-    };
-    let offset = h["utc_offset_minutes"].as_i64().unwrap_or(0);
-    let hour = chrono::DateTime::from_timestamp_millis(at + offset * 60_000)
-        .map(|d| u64::from(d.hour()))
-        .unwrap_or(0);
-    if start == end {
-        true
-    } else if start < end {
-        (start..end).contains(&hour)
-    } else {
-        hour >= start || hour < end
-    }
+    working_hours::WorkingHours::parse(&config["working_hours"]).is_ok_and(|h| h.allows(at))
 }
+
 fn expire(c: &Context<'_>, runs: &[Record], at: i64) -> Result<()> {
     for r in runs
         .iter()

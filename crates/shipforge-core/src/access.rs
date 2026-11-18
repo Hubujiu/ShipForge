@@ -2,6 +2,14 @@ use super::*;
 
 impl Context<'_> {
     pub(crate) fn role(&self) -> Result<String> {
+        self.space_role(false)
+    }
+
+    pub(crate) fn metadata_role(&self) -> Result<String> {
+        self.space_role(true)
+    }
+
+    fn space_role(&self, metadata: bool) -> Result<String> {
         let space = self
             .find("space", self.space)?
             .ok_or_else(|| forbidden("space is unavailable"))?;
@@ -23,16 +31,33 @@ impl Context<'_> {
         let member = org
             .find("member", self.actor)?
             .ok_or_else(|| forbidden("space is unavailable"))?;
-        if matches!(member.fields["role"].as_str(), Some("owner" | "admin")) {
+        if matches!(member.fields["role"].as_str(), Some("owner" | "admin"))
+            && (metadata || space.fields["visibility"] == "public")
+        {
             return Ok("admin".into());
         }
         if let Some(m) = space_member {
             return Ok(m.fields["role"].as_str().unwrap_or("viewer").into());
         }
-        if space.fields["visibility"] == "public" {
+        if space.fields["visibility"] == "public" && member.fields["role"] != "guest" {
             return Ok("viewer".into());
         }
         Err(forbidden("space is unavailable"))
+    }
+
+    pub(crate) fn authorize_scope(&self, op: &str, q: &Value) -> Result<()> {
+        if q["kind"] == "space" && matches!(op, "get" | "list" | "update") {
+            self.metadata_role()?;
+            if op == "update" && q["fields"]["visibility"] == "public" {
+                let space = self.get("space", self.space)?;
+                if space.fields["visibility"] == "private" {
+                    self.require_admin()?;
+                }
+            }
+        } else {
+            self.role()?;
+        }
+        Ok(())
     }
     pub(crate) fn org_id(&self) -> Result<String> {
         let row = self.get("space", self.space)?;
@@ -63,6 +88,18 @@ impl Context<'_> {
         if r.space != self.space {
             return Ok(false);
         }
+        if r.kind == "chat" {
+            return crate::chat::can_read(self, r);
+        }
+        if r.kind == "invitation" {
+            return Ok(self.require_admin().is_ok());
+        }
+        if matches!(r.kind.as_str(), "message" | "artifact" | "run")
+            && let Some(chat) = fields["chat"].as_str().or(fields["chat_id"].as_str())
+            && !crate::chat::retained(self, r, chat)?
+        {
+            return Ok(false);
+        }
         if r.kind == "notification" && fields["recipient"].as_str() != Some(self.actor) {
             return Ok(false);
         }
@@ -71,12 +108,31 @@ impl Context<'_> {
             && fields["creator"].as_str() != Some(self.actor)
             && fields["owner"].as_str() != Some(self.actor)
         {
-            return Ok(false);
+            // A completed Agent reply follows its private conversation's grants.
+            // Its run, machine configuration and independently private rows keep their own ACL.
+            let shared_reply = if r.kind == "message"
+                && fields["author_kind"] == "agent"
+                && fields["run"].is_string()
+                && let Some(chat) = fields["chat"].as_str()
+            {
+                self.find("chat", chat)?
+                    .is_some_and(|room| room.fields["visibility"] == "private")
+            } else {
+                false
+            };
+            if !shared_reply {
+                return Ok(false);
+            }
         }
         // A private chat, task or document must not be discoverable through its child rows.
         let parent_keys: &[(&str, &str)] = match r.kind.as_str() {
             "message" => &[("chat", "chat")],
-            "notification" => &[("task", "task"), ("run_id", "run")],
+            "notification" => &[
+                ("task", "task"),
+                ("run_id", "run"),
+                ("chat", "chat"),
+                ("message", "message"),
+            ],
             "comment" => &[("task", "task")],
             "artifact" => &[
                 ("chat", "chat"),
@@ -105,7 +161,7 @@ impl Context<'_> {
         if r.kind == "task" && self.role()? == "guest" {
             return Ok(fields["creator"].as_str() == Some(self.actor)
                 || fields["owner"].as_str() == Some(self.actor)
-                || fields["assignee"].as_str() == Some(self.actor));
+                || crate::task_commands::assignees::people(fields).any(|id| id == self.actor));
         }
         Ok(true)
     }
@@ -115,10 +171,18 @@ impl Context<'_> {
         {
             return Err(forbidden("record is unavailable"));
         }
+        if let Some(room) = existing.filter(|r| r.kind == "chat") {
+            crate::chat::can_edit(self, room)?;
+        }
+        if kind == "space" {
+            return match self.metadata_role()?.as_str() {
+                "owner" | "admin" => Ok(()),
+                _ => Err(forbidden("space administrator required")),
+            };
+        }
         if matches!(
             kind,
             "member"
-                | "space"
                 | "organization"
                 | "status"
                 | "field"
@@ -153,6 +217,33 @@ impl Context<'_> {
     }
     pub(crate) fn authorize_replay(&self, q: &Value, result: &Value) -> Result<()> {
         let op = required(q, "op")?;
+        if op == "chat.share.create" {
+            let room = self.readable("chat", required(q, "id")?)?;
+            crate::chat::require_owner(self, &room)?;
+            crate::chat::read_share(self.db, required(result, "share")?, Some(self.actor))?;
+            return self.require_edit();
+        }
+        if matches!(op, "chat.manage" | "chat.preferences" | "chat.share.revoke") {
+            // These receipts contain only the requesting actor's acknowledgment.
+            return self.role().map(|_| ());
+        }
+        if op == "task.move" {
+            self.require_edit()?;
+            let dest = Context {
+                space: required(q, "target")?,
+                ..*self
+            };
+            dest.require_edit()?;
+            dest.readable("task", required(q, "id")?)?;
+            return Ok(());
+        }
+        if op == "task.command" {
+            self.require_edit()?;
+            self.readable("task", required(q, "id")?)?;
+            self.readable("chat", required(&result["chat"], "id")?)?;
+            self.readable("run", required(&result["run"], "id")?)?;
+            return Ok(());
+        }
         if op == "create" && matches!(q["kind"].as_str(), Some("space" | "organization")) {
             let anchor = self.org_id()?;
             let org = Context {
@@ -183,6 +274,7 @@ impl Context<'_> {
             }
         }
         match op {
+            "preferences.update" | "onboarding.display" => {}
             "attachment.upload" => {
                 let r = prior
                     .as_ref()

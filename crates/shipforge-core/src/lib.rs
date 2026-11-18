@@ -2,14 +2,21 @@
 mod access;
 mod actions;
 mod attachments;
+mod chat;
 mod defaults;
 mod domain;
+mod im;
+mod invitations;
+pub mod onboarding;
 mod persistence;
+pub mod preferences;
 mod protocol;
 mod providers;
 mod query;
+mod task_commands;
 mod tasks;
 mod transfer;
+mod vcs;
 mod worker;
 
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -17,6 +24,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::Path;
 
+pub use chat::share_text;
 pub use protocol::{is_read_only, schema};
 
 pub type Result<T> = std::result::Result<T, String>;
@@ -55,6 +63,39 @@ impl Store {
         Self::from_connection(Connection::open_in_memory().map_err(storage)?)
     }
 
+    /// Read only the content explicitly frozen for this share. A caller supplies a
+    /// verified identity for organization links; a public link can be opened anonymously.
+    pub fn shared_conversation(&self, share: &str, actor: Option<&str>) -> Result<Value> {
+        chat::read_share(&self.db, share, actor)
+    }
+
+    /// Accept a Slack bot receipt after the native HTTP adapter verifies the request signature.
+    pub fn confirm_slack_delivery(
+        &mut self,
+        actor: &str,
+        space: &str,
+        connector: &str,
+        payload: &Value,
+    ) -> Result<Value> {
+        identifier(actor)?;
+        identifier(space)?;
+        identifier(connector)?;
+        let tx = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(storage)?;
+        let c = Context {
+            db: &tx,
+            actor,
+            space,
+        };
+        c.require_admin()?;
+        let connector = c.readable("connector", connector)?;
+        let answer = im::echo(&c, &connector, payload)?;
+        tx.commit().map_err(storage)?;
+        Ok(answer)
+    }
+
     fn from_connection(mut db: Connection) -> Result<Self> {
         persistence::initialize(&mut db)?;
         Ok(Self { db })
@@ -84,11 +125,24 @@ impl Store {
             actor,
             space,
         };
-        if !matches!(op, "space.list" | "organization.list" | "schema") {
-            c.role()?;
+        if !matches!(
+            op,
+            "space.list"
+                | "organization.list"
+                | "schema"
+                | "preferences.get"
+                | "preferences.update"
+                | "invitation.accept"
+                | "chat.share.read"
+        ) {
+            c.authorize_scope(op, &request)?;
         }
         // A lease credential or machine token must never enter a general request receipt.
-        let cache = !read && !worker::OPS.contains(&op) && op != "provider.ingest";
+        let cache = !read
+            && !worker::OPS.contains(&op)
+            && op != "provider.ingest"
+            && !op.starts_with("im.")
+            && !op.starts_with("invitation.");
         let key = if cache {
             request
                 .get("request_id")
@@ -128,11 +182,23 @@ impl Store {
             }
         }
         let mut result = match op {
+            op if op.starts_with("invitation.") => invitations::execute(&c, op, &request),
             "schema" => Ok(schema()),
+            "task.conversation" => task_commands::conversation(&c, &request),
+            "task.assign" => task_commands::assignees::assign(&c, &request),
+            "task.command" => task_commands::command(&c, &request),
+            "task.move" => task_commands::move_task(&c, &request),
+            "onboarding.catalog" => Ok(json!(onboarding::groups())),
+            "onboarding.get" => onboarding::get(&c),
+            "onboarding.display" => onboarding::display(&c, &request),
+            "onboarding.setup" => onboarding::setup(&c, &request),
+            "preferences.get" | "preferences.update" => preferences::execute(&c, &request),
             "whoami" => Ok(json!({"actor":actor,"space":space,"role":c.role()?})),
             "attachment.upload" => attachments::upload(&c, &request),
             "attachment.download" => attachments::download(&c, &request),
             "provider.ingest" | "provider.preview" => providers::execute(&c, &request, read),
+            op if op.starts_with("im.") => im::execute(&c, &request),
+            op if op.starts_with("chat.") => chat::execute(&c, &request, op),
             "create" | "update" | "delete" => write_request(&c, &request),
             "list" | "get" | "search" | "events" | "space.list" | "organization.list"
             | "view.run" | "dashboard" | "task.relations" | "project.progress"
@@ -142,6 +208,9 @@ impl Store {
             | "artifact.save" | "import" => actions::execute(&c, &request, op),
             _ => worker::dispatch(&c, &request).ok_or_else(|| invalid("unknown operation"))?,
         }?;
+        if !read {
+            onboarding::successful(&c, op, &request, &result)?;
+        }
         if let Some(key) = key {
             tx.execute(
                 "INSERT INTO receipts(space,actor,key,request,result) VALUES(?1,?2,?3,?4,?5)",
@@ -156,6 +225,9 @@ impl Store {
             .map_err(storage)?;
         }
         current_following(&c, &mut result)?;
+        if request["kind"] == "chat" && matches!(op, "get" | "list") {
+            chat::annotate(&c, &mut result)?;
+        }
         tx.commit().map_err(storage)?;
         Ok(result)
     }
@@ -166,14 +238,20 @@ fn current_following(c: &Context<'_>, result: &mut Value) -> Result<()> {
         && result["fields"].is_object()
         && let Some(id) = result["id"].as_str()
     {
+        let threads = crate::im::options(c, id)?;
         let follows: bool =
             c.db.query_row(
                 "SELECT EXISTS(SELECT 1 FROM followers WHERE space=? AND actor=? AND task=?)",
-                params![c.space, c.actor, id],
+                params![result["space"].as_str().unwrap_or(c.space), c.actor, id],
                 |r| r.get(0),
             )
             .map_err(storage)?;
         result["fields"]["following"] = json!(follows);
+        if threads.as_array().is_some_and(|v| !v.is_empty()) {
+            result["fields"]["im_threads"] = threads;
+        } else if let Some(fields) = result["fields"].as_object_mut() {
+            fields.remove("im_threads");
+        }
     }
     Ok(())
 }

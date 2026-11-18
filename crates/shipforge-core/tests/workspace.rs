@@ -436,3 +436,175 @@ fn workspace_membership_and_aggregate_progress_cross_space() {
         1
     );
 }
+
+#[test]
+fn organization_guests_need_an_explicit_membership_even_in_public_spaces() {
+    let mut db = Store::memory().unwrap();
+    add_member(&mut db, "visitor", "guest");
+    add_member(&mut db, "colleague", "member");
+    for (id, visibility) in [("open-area", "public"), ("closed-area", "private")] {
+        add(&mut db, "space", id, json!({"visibility":visibility}));
+        apply(
+            &mut db,
+            "owner",
+            json!({"op":"create","space":id,"kind":"task","id":"a","title":"Release checklist"}),
+        );
+    }
+    let spaces = |db: &mut Store, actor: &str| {
+        apply(db, actor, json!({"op":"space.list"}))
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["id"].as_str().unwrap().to_owned())
+            .collect::<Vec<_>>()
+    };
+    assert!(spaces(&mut db, "colleague").contains(&"open-area".to_owned()));
+    assert!(!spaces(&mut db, "colleague").contains(&"closed-area".to_owned()));
+    let verify_hidden = |db: &mut Store, space: &str| {
+        assert!(!spaces(db, "visitor").iter().any(|id| id == space));
+        for q in [
+            json!({"op":"get","kind":"task","id":"a","space":space}),
+            json!({"op":"search","query":"checklist","space":space}),
+            json!({"op":"events","space":space}),
+        ] {
+            assert!(
+                db.execute("visitor", q)
+                    .unwrap_err()
+                    .starts_with("forbidden:")
+            );
+        }
+    };
+    verify_hidden(&mut db, "open-area");
+    verify_hidden(&mut db, "closed-area");
+    for space in ["open-area", "closed-area"] {
+        apply(
+            &mut db,
+            "owner",
+            json!({"op":"create","space":space,"kind":"member","id":"visitor","title":"Visitor","fields":{"role":"viewer","actor":"visitor"}}),
+        );
+        assert_eq!(
+            apply(
+                &mut db,
+                "visitor",
+                json!({"op":"get","space":space,"kind":"task","id":"a"})
+            )["title"],
+            "Release checklist"
+        );
+        assert!(spaces(&mut db, "visitor").iter().any(|id| id == space));
+        apply(
+            &mut db,
+            "owner",
+            json!({"op":"delete","space":space,"kind":"member","id":"visitor"}),
+        );
+        verify_hidden(&mut db, space);
+    }
+}
+
+#[test]
+fn organization_admins_manage_private_space_metadata_without_receiving_its_content() {
+    let mut db = Store::memory().unwrap();
+    add_member(&mut db, "org-admin", "admin");
+    add_member(&mut db, "someone", "member");
+    add(
+        &mut db,
+        "space",
+        "research",
+        json!({"visibility":"private"}),
+    );
+    apply(
+        &mut db,
+        "owner",
+        json!({"op":"create","kind":"project","id":"work","title":"Shared target","fields":{"spaces":["default","research"]}}),
+    );
+    apply(
+        &mut db,
+        "owner",
+        json!({"op":"create","space":"research","kind":"task","id":"plan","title":"Restricted plan","fields":{"project":"work","status":"done"}}),
+    );
+
+    assert!(
+        apply(&mut db, "org-admin", json!({"op":"space.list"}))
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["id"] == "research")
+    );
+    assert!(
+        apply(&mut db, "someone", json!({"op":"space.list"}))
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["id"] != "research")
+    );
+    let renamed = apply(
+        &mut db,
+        "org-admin",
+        json!({"op":"update","space":"research","kind":"space","id":"research","title":"Research team","request_id":"rename-once"}),
+    );
+    assert_eq!(renamed["title"], "Research team");
+    assert_eq!(
+        apply(
+            &mut db,
+            "org-admin",
+            json!({"op":"get","space":"research","kind":"space","id":"research"})
+        ),
+        renamed
+    );
+    for q in [
+        json!({"op":"list","space":"research","kind":"member"}),
+        json!({"op":"get","space":"research","kind":"task","id":"plan"}),
+        json!({"op":"search","space":"research","query":"Restricted"}),
+        json!({"op":"events","space":"research"}),
+        json!({"op":"export","space":"research"}),
+        json!({"op":"create","space":"research","kind":"member","id":"org-admin","title":"Admin","fields":{"actor":"org-admin","role":"admin"}}),
+        json!({"op":"update","space":"research","kind":"space","id":"research","fields":{"visibility":"public"}}),
+    ] {
+        assert!(
+            db.execute("org-admin", q)
+                .unwrap_err()
+                .starts_with("forbidden:")
+        );
+    }
+    assert_eq!(
+        apply(
+            &mut db,
+            "org-admin",
+            json!({"op":"project.progress","id":"work"})
+        )["total"],
+        0
+    );
+    assert_eq!(
+        apply(
+            &mut db,
+            "owner",
+            json!({"op":"project.progress","id":"work"})
+        )["total"],
+        1
+    );
+    apply(
+        &mut db,
+        "owner",
+        json!({"op":"create","space":"research","kind":"member","id":"org-admin","title":"Admin","fields":{"actor":"org-admin","role":"viewer"}}),
+    );
+    assert_eq!(
+        apply(
+            &mut db,
+            "org-admin",
+            json!({"op":"get","space":"research","kind":"task","id":"plan"})
+        )["id"],
+        "plan"
+    );
+    assert!(db.execute("org-admin",json!({"op":"update","kind":"task","space":"research","id":"plan","title":"Restricted edit"})).is_err());
+    apply(
+        &mut db,
+        "owner",
+        json!({"op":"delete","space":"research","kind":"member","id":"org-admin"}),
+    );
+    assert!(
+        db.execute(
+            "org-admin",
+            json!({"op":"list","space":"research","kind":"task"})
+        )
+        .is_err()
+    );
+}

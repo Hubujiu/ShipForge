@@ -1,4 +1,6 @@
 mod auth;
+mod github;
+mod slack;
 
 use auth::{Auth, Principal};
 use clap::{Parser, Subcommand};
@@ -29,6 +31,12 @@ enum Action {
     Serve {
         #[arg(long, default_value = "127.0.0.1:47138")]
         listen: SocketAddr,
+        /// JSON configuration of Slack Events API routes and local secret variable names.
+        #[arg(long, env = "SHIPFORGE_SLACK_CONFIG")]
+        slack_config: Option<PathBuf>,
+        /// JSON routes for signed GitHub push and pull_request webhooks.
+        #[arg(long, env = "SHIPFORGE_GITHUB_WEBHOOKS")]
+        github_config: Option<PathBuf>,
     },
     /// Manage bearer tokens on the server's own machine.
     Token {
@@ -91,11 +99,25 @@ fn run(args: Args) -> Result<(), String> {
             println!("{answer}");
             Ok(())
         }
-        Action::Serve { listen } => serve(&args.data_dir, listen),
+        Action::Serve {
+            listen,
+            slack_config,
+            github_config,
+        } => serve(
+            &args.data_dir,
+            listen,
+            slack::Routes::load(slack_config.as_deref())?,
+            github::Routes::load(github_config.as_deref())?,
+        ),
     }
 }
 
-fn serve(dir: &Path, addr: SocketAddr) -> Result<(), String> {
+fn serve(
+    dir: &Path,
+    addr: SocketAddr,
+    routes: slack::Routes,
+    github: github::Routes,
+) -> Result<(), String> {
     let database = dir.join("workspace.sqlite3");
     let server = Server::http(addr).map_err(|e| format!("server: {e}"))?;
     // Migrate once, before accepting requests; use one connection per serving thread.
@@ -111,10 +133,16 @@ fn serve(dir: &Path, addr: SocketAddr) -> Result<(), String> {
     std::thread::scope(|scope| {
         for (mut store, auth) in workers {
             let server = &server;
+            let routes = &routes;
+            let github = &github;
             scope.spawn(move||{
                 for mut request in server.incoming_requests() {
-                    let answer=handle(&mut request,&auth,&mut store);
+                    let native_slack=request.url().starts_with("/v1/slack/");
+                    let share=request.url().starts_with("/share/");
+                    let answer=handle(&mut request,&auth,&mut store,routes,github);
                     let (status,body)=match answer {
+                        Ok(data) if native_slack => (200,data),
+                        Ok(data) if share => (200,data),
                         Ok(data)=>(200,json!({"protocol":1,"ok":true,"data":data})),
                         Err(error)=>{
                             let (code,message)=error.split_once(": ").unwrap_or(("server",&error));
@@ -123,8 +151,10 @@ fn serve(dir: &Path, addr: SocketAddr) -> Result<(), String> {
                             (status,json!({"protocol":1,"ok":false,"error":{"code":code,"message":client_message}}))
                         }
                     };
-                    let response=Response::from_string(body.to_string()).with_status_code(StatusCode(status))
-                        .with_header(Header::from_bytes("Content-Type","application/json; charset=utf-8").unwrap())
+                    let (text,content_type)=if share && status==200 {(shipforge_core::share_text(&body),"text/plain; charset=utf-8")}else{(body.to_string(),"application/json; charset=utf-8")};
+                    let response=Response::from_string(text).with_status_code(StatusCode(status))
+                        .with_header(Header::from_bytes("Content-Type",content_type).unwrap())
+                        .with_header(Header::from_bytes("Referrer-Policy","no-referrer").unwrap())
                         .with_header(Header::from_bytes("Cache-Control","no-store").unwrap())
                         .with_header(Header::from_bytes("X-Content-Type-Options","nosniff").unwrap());
                     let _=request.respond(response);
@@ -135,7 +165,34 @@ fn serve(dir: &Path, addr: SocketAddr) -> Result<(), String> {
     Ok(())
 }
 
-fn handle(request: &mut Request, auth: &Auth, store: &mut Store) -> Result<Value, String> {
+fn handle(
+    request: &mut Request,
+    auth: &Auth,
+    store: &mut Store,
+    routes: &slack::Routes,
+    github: &github::Routes,
+) -> Result<Value, String> {
+    if let Some(share) = request.url().strip_prefix("/share/") {
+        if request.method() != &Method::Get {
+            return Err("method: use GET".into());
+        }
+        let actor = request
+            .headers()
+            .iter()
+            .find(|h| h.field.equiv("Authorization"))
+            .map(|h| {
+                let secret = h
+                    .value
+                    .as_str()
+                    .strip_prefix("Bearer ")
+                    .ok_or_else(|| "unauthorized: invalid bearer token".to_owned())?;
+                let p = auth.authenticate(secret)?;
+                auth::authorize(&p, &json!({"op":"chat.share.read"}))?;
+                Ok::<_, String>(p.actor)
+            })
+            .transpose()?;
+        return store.shared_conversation(share, actor.as_deref());
+    }
     if request.method() == &Method::Get && request.url() == "/healthz" {
         return Ok(json!({"service":"ShipForge","version":env!("CARGO_PKG_VERSION"),"protocol":1}));
     }
@@ -143,6 +200,12 @@ fn handle(request: &mut Request, auth: &Auth, store: &mut Store) -> Result<Value
         return Err("method: use POST".into());
     }
     let path = request.url().to_owned();
+    if let Some(route) = path.strip_prefix("/v1/github/") {
+        return github.handle(route, request, auth, store);
+    }
+    if let Some(route) = path.strip_prefix("/v1/slack/") {
+        return routes.handle(route, request, auth, store);
+    }
     let integration_path = path.strip_prefix("/v1/integrations/");
     if path != "/v1/command" && !path.starts_with("/v1/hooks/") && integration_path.is_none() {
         return Err("not_found: route".into());

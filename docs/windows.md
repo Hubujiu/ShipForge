@@ -2,7 +2,7 @@
 
 ## 安装和第一条任务
 
-1. 从 GitHub Release 下载 `shipforge-0.6.0-windows-x64-setup.exe`，运行后在开始菜单打开 ShipForge。也可以将同一版本 ZIP 解压到可写目录，双击 `shipforge-desktop.exe`。[发布页](https://github.com/Hubujiu/ShipForge/releases)
+1. 从 GitHub Release 下载当前版本的 Windows x64 安装程序（文件名以 `-windows-x64-setup.exe` 结尾），安装后在开始菜单打开 ShipForge。也可以将同一版本 ZIP 解压到可写目录，双击 `shipforge-desktop.exe`。[发布页](https://github.com/Hubujiu/ShipForge/releases)
 2. 在「空间任务」点击「新建任务」，填写标题并保存。点击任务打开详情，可调整状态、负责人、描述，或添加评论。从列表切回看板能看到同一条任务。
 3. 在程序目录打开 PowerShell，执行下面的命令。在同一个 Windows 用户下，桌面与 CLI 默认共用工作区。使用 `--data-dir` 可以另建独立的本地工作区。
 
@@ -30,6 +30,10 @@
 ```
 
 CLI 也可从标准输入接收令牌，例如 `$teamToken | .\shipforge.exe connect https://team.example.org --token-stdin`。使用 `.\shipforge.exe sync status` 检查待发送数，使用 `.\shipforge.exe sync flush` 提交离线草稿。桌面在连接恢复后会尝试发送可同步的草稿。若有修订冲突，在连接设置或 `sync pending` 中查看草稿，再读取最新记录，选择重新提交或舍弃。[命令与离线草稿](cli.md)
+
+在「对话」中新建群聊后，可从详情选择真人或 Agent、转让群主和管理个人提醒。私有会话的受邀成员从「对话」接受邀请。所有者可选择已发送的消息生成分享，或撤销同一选区的分享链接。团队模式生成基于当前服务地址的链接。本机模式的分享码在同一工作区读取。[对话和分享使用说明](conversations.md)
+
+团队组织 Guest 只能打开获邀加入的下属空间。组织管理员能查看私有空间名称等元数据，打开任务与成员清单需要该空间的成员身份。部署时用于运维的安装主体 `owner` 保留跨空间权限。为日常团队成员签发各自身份的令牌。
 
 ## 接入第一台执行机器
 

@@ -20,6 +20,8 @@ CREATE INDEX IF NOT EXISTS record_history ON event_log(space,kind,id,seq);
 CREATE TABLE IF NOT EXISTS versions(space TEXT NOT NULL,id TEXT NOT NULL,rev INTEGER NOT NULL,title TEXT NOT NULL,fields TEXT NOT NULL,actor TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(space,id,rev));
 CREATE TABLE IF NOT EXISTS sequences(space TEXT PRIMARY KEY,n INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS space_defaults(space TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS personal_preferences(actor TEXT PRIMARY KEY, rev INTEGER NOT NULL, settings TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS task_conversations(space TEXT NOT NULL, actor TEXT NOT NULL, task TEXT NOT NULL, kind TEXT NOT NULL, handler TEXT NOT NULL, chat TEXT NOT NULL, PRIMARY KEY(space,actor,task,kind,handler));
 CREATE TABLE IF NOT EXISTS attachments(space TEXT NOT NULL,id TEXT NOT NULL,content BLOB NOT NULL,PRIMARY KEY(space,id));
 CREATE TABLE IF NOT EXISTS followers(space TEXT NOT NULL,task TEXT NOT NULL,actor TEXT NOT NULL,PRIMARY KEY(space,task,actor));
 ";
@@ -44,6 +46,18 @@ pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
         .map_err(storage)?;
     tx.pragma_update(None, "user_version", 1).map_err(storage)?;
     crate::worker::init(&tx)?;
+    crate::chat::init(&tx)?;
+    crate::onboarding::initialize(&tx)?;
+    crate::invitations::initialize(&tx)?;
+    if tables == 0 {
+        tx.execute(
+            "INSERT OR IGNORE INTO guide_setup(space) VALUES('default')",
+            [],
+        )
+        .map_err(storage)?;
+    }
+    crate::im::init(&tx)?;
+    crate::vcs::init(&tx)?;
     let c = Context {
         db: &tx,
         actor: "owner",
@@ -85,6 +99,7 @@ pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
             space: &space,
         })?;
     }
+    crate::onboarding::backfill(&tx)?;
     tx.commit().map_err(storage)
 }
 
@@ -92,12 +107,16 @@ const COLUMNS: &str = "space,kind,id,title,fields,rev,created_at,updated_at";
 
 fn from_row(r: &Row<'_>) -> rusqlite::Result<Record> {
     let text: String = r.get(4)?;
-    let fields = serde_json::from_str(&text).map_err(|err| {
+    let mut fields = serde_json::from_str(&text).map_err(|err| {
         rusqlite::Error::FromSqlConversionFailure(4, rusqlite::types::Type::Text, Box::new(err))
     })?;
+    let kind: String = r.get(1)?;
+    if kind == "task" {
+        crate::task_commands::assignees::upgrade(&mut fields);
+    }
     Ok(Record {
         space: r.get(0)?,
-        kind: r.get(1)?,
+        kind,
         id: r.get(2)?,
         title: r.get(3)?,
         fields,
@@ -185,9 +204,19 @@ impl Context<'_> {
     pub(crate) fn insert(&self, row: &Record) -> Result<()> {
         let data = row.fields.to_string();
         self.db.execute("INSERT INTO records(space,kind,id,title,fields,rev,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![row.space,row.kind,row.id,row.title,data,row.rev,row.created_at,row.updated_at]).map_err(store_constraint)?;
-        self.event(row, "create")
+        self.event(row, "create")?;
+        crate::onboarding::observe(self, row, None)
     }
     pub(crate) fn update(&self, old: &Record, title: &str, fields: Value) -> Result<Record> {
+        self.update_mode(old, title, fields, true)
+    }
+    pub(crate) fn update_mode(
+        &self,
+        old: &Record,
+        title: &str,
+        fields: Value,
+        notify: bool,
+    ) -> Result<Record> {
         let mut row = old.clone();
         row.title = title.to_owned();
         row.fields = fields;
@@ -198,6 +227,10 @@ impl Context<'_> {
             return Err(conflict("record revision changed"));
         }
         self.event(&row, "update")?;
+        crate::onboarding::observe(self, &row, Some(old))?;
+        if notify || row.fields["visibility"] == "private" || row.kind == "connector" {
+            crate::im::changed(self, Some(old), &row)?;
+        }
         Ok(row)
     }
     pub(crate) fn remove(&self, old: &Record) -> Result<()> {
@@ -212,9 +245,13 @@ impl Context<'_> {
             return Err(conflict("record revision changed"));
         }
         let mut tombstone = old.clone();
+        if old.kind == "member" {
+            crate::chat::forget_grants(self, &old.id)?;
+        }
         tombstone.rev += 1;
         tombstone.updated_at = now();
         self.event(&tombstone, "delete")?;
+        crate::im::removed(self, old)?;
         if old.kind == "document" || old.fields["attachments"].is_array() {
             crate::attachments::prune(self)?;
         }

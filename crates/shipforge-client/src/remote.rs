@@ -117,7 +117,14 @@ impl Remote {
                 .unwrap_or("request rejected");
             return Err(format!("{code}: {message}"));
         }
-        Ok(answer["data"].clone())
+        let mut data = answer["data"].clone();
+        if body["op"] == "chat.share.create"
+            && let Some(key) = data["share"].as_str()
+        {
+            let base = self.command_url.trim_end_matches("/v1/command");
+            data["link"] = json!(format!("{base}/share/{key}"));
+        }
+        Ok(data)
     }
 
     pub fn execute(&mut self, mut request: Value) -> Result<Value, String> {
@@ -143,17 +150,24 @@ impl Remote {
             .and_then(|o| o.remove("queue_if_offline"))
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
-        let cacheable = matches!(
-            op.as_str(),
-            "list"
-                | "get"
-                | "view.run"
-                | "dashboard"
-                | "iteration.timeline"
-                | "search"
-                | "space.list"
-                | "document.history"
-        );
+        let needs_live_chat_access = matches!(op.as_str(), "get" | "list" | "search")
+            && (matches!(
+                request["kind"].as_str(),
+                Some("chat" | "message" | "notification" | "artifact" | "run")
+            ) || (op == "search" && request["kind"].as_str().is_none()));
+        let cacheable = !needs_live_chat_access
+            && matches!(
+                op.as_str(),
+                "list"
+                    | "preferences.get"
+                    | "get"
+                    | "view.run"
+                    | "dashboard"
+                    | "iteration.timeline"
+                    | "search"
+                    | "space.list"
+                    | "document.history"
+            );
         if queue && request.get("request_id").is_none() {
             request["request_id"] = json!(Uuid::new_v4().to_string());
         }
@@ -191,6 +205,20 @@ impl Remote {
                     tx.execute(
                         "INSERT OR REPLACE INTO reads(query,answer,at) VALUES(?1,?2,unixepoch())",
                         params![key, encoded],
+                    )
+                    .map_err(storage)?;
+                    tx.commit().map_err(storage)?;
+                } else if op == "preferences.update" {
+                    let query = json!({"op":"preferences.get"}).to_string();
+                    let tx = self.cache.transaction().map_err(storage)?;
+                    tx.execute(
+                        "DELETE FROM reads WHERE json_extract(query,'$.op')='preferences.get'",
+                        [],
+                    )
+                    .map_err(storage)?;
+                    tx.execute(
+                        "INSERT INTO reads(query,answer,at) VALUES(?1,?2,unixepoch())",
+                        params![query, answer.to_string()],
                     )
                     .map_err(storage)?;
                     tx.commit().map_err(storage)?;

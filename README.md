@@ -4,7 +4,7 @@ ShipForge 是用 Rust 和 GPUI 编写的开源协作工作台。你可以在 Win
 
 **[下载 Windows x64 安装程序](https://github.com/Hubujiu/ShipForge/releases/latest) · [Windows 使用指南](docs/windows.md) · [CLI 手册](docs/cli.md)**
 
-打开 ShipForge 即可创建第一条本地任务。想先看看有数据的看板，可在程序目录运行 `shipforge-desktop.exe --demo`。团队协作、外部工具和第三方同步按需配置。
+首次打开 ShipForge 会引导你设置组织和默认空间。侧栏的四个步骤可以带你连接机器、创建 Agent、建任务并指派。想先看看有数据的看板，可在程序目录运行 `shipforge-desktop.exe --demo`。团队协作、外部工具和第三方同步按需配置。[新手指引](docs/onboarding.md)
 
 ![Windows 上的 ShipForge 任务看板](docs/images/windows-board.jpg)
 
@@ -12,8 +12,9 @@ ShipForge 是用 Rust 和 GPUI 编写的开源协作工作台。你可以在 Win
 | --- | --- |
 | [Windows 功能对照](docs/windows-coverage.md) | 从参考能力定位到 Windows 实际入口，列明本机、团队及第三方接入范围。 |
 | [Windows 实机截图与验收](docs/design-qa.md) | 查看原生看板、任务详情和定时规则编辑器，以及附件、重开和文档版本的测试结果。 |
-| [功能清单与验收条件](docs/features.md) | 对照 HiFox 官网、帮助中心和 Windows 实机梳理的 26 项能力。 |
-| [界面索引](docs/interfaces.md) | 36 个实机页面、面板和表单状态，含导航路径与可公开查看的官方参考。 |
+| [功能清单与验收条件](docs/features.md) | 对照 HiFox 官网、帮助中心和 Windows 实机梳理的产品能力，涵盖首次进入与新手指引。 |
+| [行为覆盖清单](docs/parity-inventory.md) | 逐项查找官方说明、ShipForge 验收证据、当前差异及第三方待联调范围。 |
+| [界面索引](docs/interfaces.md) | 首批实机样本的 36 个页面、面板和表单状态，含导航路径与可公开查看的官方参考。 |
 | [客户端与 REA 分析](docs/client-analysis.md) | HiFox 0.4.538 安装包、可读模块恢复结果和桌面桥接职责。 |
 | [Rust 与 GPUI 架构](docs/architecture.md) | 单机、团队服务、CLI 和执行机器的职责，以及设计目标与当前实现的区别。 |
 | [命令协议](docs/protocol.schema.json) | 桌面、服务、CLI 共享的操作名称和 JSON 请求结构。 |

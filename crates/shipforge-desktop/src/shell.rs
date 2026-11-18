@@ -1,3 +1,4 @@
+use crate::appearance::{paint as rgb, surface as white};
 use crate::{
     app::{UiAction, Workbench},
     catalog::Page,
@@ -94,7 +95,11 @@ impl Workbench {
                                     .child(icon("search", 13.).text_color(rgb(MUTED)))
                                     .child(text("搜索", 12., MUTED))
                                     .child(div().flex_1())
-                                    .child(text("Ctrl K", 10., DIM)),
+                                    .child(text(
+                                        self.personal.shortcut_label("command_menu"),
+                                        10.,
+                                        DIM,
+                                    )),
                             ),
                     ),
             )
@@ -203,7 +208,7 @@ impl Workbench {
             b.child(text(
                 self.list("task")
                     .iter()
-                    .filter(|r| r.field("assignee") == self.actor)
+                    .filter(|r| r.members().contains(&self.actor.as_str()))
                     .count()
                     .to_string(),
                 10.,
@@ -215,7 +220,7 @@ impl Workbench {
         let mut group = col()
             .gap(px(2.))
             .mb(px(14.))
-            .child(text(label.to_owned(), 11., DIM).px(px(9.)).pb(px(4.)));
+            .child(text(label, 11., DIM).px(px(9.)).pb(px(4.)));
         for &page in pages {
             group = group.child(self.nav_item(page, cx));
         }
@@ -239,9 +244,13 @@ impl Workbench {
                 | Machines
                 | Tools
         );
+        let setting = setting
+            || self.loc.page == Tags
+            || (self.loc.page == GettingStarted && self.loc.section == "settings");
         let mut list = col().w_full().px(px(8.)).pt(px(6.));
         if setting {
             list = list
+                .child(self.personal_navigation(cx))
                 .child(self.nav_group(
                     "组织",
                     &[
@@ -262,6 +271,7 @@ impl Workbench {
                     &[
                         Tasks,
                         Types,
+                        Tags,
                         Statuses,
                         Fields,
                         RelationTypes,
@@ -355,6 +365,12 @@ impl Workbench {
                     .overflow_y_scroll()
                     .child(list),
             )
+            .when(!setting && self.guide.visible(), |panel| {
+                panel.child(self.guide_sidebar(cx))
+            })
+            .when(setting, |panel| {
+                panel.child(self.nav_item(GettingStarted, cx))
+            })
             .child(
                 row()
                     .h(px(49.))
@@ -398,7 +414,7 @@ impl Workbench {
             || format!("modal-{}", e.spec.key),
             |t| format!("trigger-{t}-{}", e.spec.key),
         );
-        let label = e.spec.label;
+        let label = crate::locale::label(e.spec.label);
         let mut field = col().w_full().gap(px(4.)).child(text(label, 12., MUTED));
         match e.control {
             Control::Text(ref input) => {
@@ -410,15 +426,20 @@ impl Workbench {
                     Format::Many(k) => (self.options(k), true, true),
                     Format::Bool => (
                         vec![
-                            ("true".into(), "启用".into()),
-                            ("false".into(), "关闭".into()),
+                            ("true".into(), crate::locale::label("启用").into()),
+                            ("false".into(), crate::locale::label("关闭").into()),
                         ],
                         false,
                         false,
                     ),
                     Format::Choice(v) => (
                         v.iter()
-                            .map(|(k, l)| (k.to_string(), l.to_string()))
+                            .map(|(k, l)| {
+                                (
+                                    k.to_string(),
+                                    crate::locale::choice(e.spec.key, k, l).to_string(),
+                                )
+                            })
                             .collect(),
                         false,
                         false,
@@ -426,7 +447,7 @@ impl Workbench {
                     _ => unreachable!(),
                 };
                 if allow_empty {
-                    options.insert(0, (String::new(), "未设置".into()));
+                    options.insert(0, (String::new(), crate::locale::label("未设置").into()));
                 }
                 let selected: Vec<&str> = value.split(',').map(str::trim).collect();
                 let display = if multi {
@@ -514,7 +535,7 @@ impl Workbench {
                     UiAction::Browse { index: i, save },
                     cx,
                 ))
-                .child("浏览…"),
+                .child(crate::locale::label("浏览…")),
             );
         }
         field
@@ -543,11 +564,32 @@ impl Workbench {
                     cx,
                 ))
                 .child(icon("copy", 13.))
-                .child("复制"),
+                .child(crate::locale::label("复制")),
             );
         }
         if let Mode::Machine { stop: false } = &mode {
             body=body.child(text("已有配置可直接启动。新配置会启用只读示例 Runtime「inspect-context」，可另选外部程序。",13.,MUTED));
+        }
+        if matches!(mode, Mode::MissingMachine) {
+            body = body.child(text(
+                "先连接一台装有运行工具的机器，再为 Agent 选择执行环境。",
+                14.,
+                INK,
+            ));
+        }
+        if matches!(mode, Mode::SetupOrganization) {
+            body = body.child(text(
+                "组织用于归集团队的空间与成员。地址标识可用小写字母、数字和短横线。",
+                13.,
+                MUTED,
+            ));
+        }
+        if matches!(mode, Mode::SetupSpace { .. }) {
+            body = body.child(text(
+                "选择主要工作类型和起始任务类型。之后可以在空间设置中调整。",
+                13.,
+                MUTED,
+            ));
         }
         if let Mode::Confirm { .. } = &mode {
             body = body.child(text("请确认本次操作。", 14., MUTED));
@@ -581,7 +623,7 @@ impl Workbench {
                             cx,
                         ))
                         .child(icon("plus", 13.))
-                        .child("添加触发器"),
+                        .child(crate::locale::label("添加触发器")),
                     ),
             );
             for (i, e) in entries
@@ -653,7 +695,21 @@ impl Workbench {
                 body.child(left).child(right)
             };
         } else {
-            for (i, e) in entries.into_iter().enumerate() {
+            let connector_provider = if matches!(&mode,Mode::Create(k) if k=="connector")
+                || matches!(&mode,Mode::Edit(r) if r.kind=="connector")
+            {
+                entries
+                    .iter()
+                    .find(|e| e.spec.key == "provider")
+                    .map(|e| e.raw(cx))
+            } else {
+                None
+            };
+            for (i, e) in entries.into_iter().enumerate().filter(|(_, e)| {
+                connector_provider
+                    .as_deref()
+                    .is_none_or(|p| crate::forms::connector_field_visible(e.spec.key, p))
+            }) {
                 body = body.child(self.editor_row(i, e, open_pick, &mode, w, cx));
             }
         }
@@ -697,6 +753,31 @@ impl Workbench {
             body = body.child(panel);
         }
         if matches!(mode, Mode::Search) {
+            body = body.child(
+                row()
+                    .flex_wrap()
+                    .gap(px(5.))
+                    .child(
+                        outlined(self.button(
+                            "command-find",
+                            "在当前视图查找",
+                            UiAction::Personal(crate::personal::Action::Find),
+                            cx,
+                        ))
+                        .child(crate::locale::label("在当前视图查找")),
+                    )
+                    .when(self.writable(), |bar| {
+                        bar.child(
+                            outlined(self.button(
+                                "command-move",
+                                "将任务移动到空间",
+                                UiAction::Personal(crate::personal::Action::Move),
+                                cx,
+                            ))
+                            .child(crate::locale::label("将任务移动到空间")),
+                        )
+                    }),
+            );
             for (i, r) in results.iter().take(150).enumerate() {
                 body = body.child(
                     self.button(
@@ -734,7 +815,7 @@ impl Workbench {
             ));
         }
         if !error.is_empty() {
-            body = body.child(text(error, 13., ERROR));
+            body = body.child(text(crate::locale::label(&error).to_owned(), 13., ERROR));
         }
         let confirm = if self.busy {
             "正在处理…"
@@ -755,19 +836,19 @@ impl Workbench {
             footer = footer.child(
                 self.button("modal-cancel", "取消", UiAction::CloseForm, cx)
                     .disabled(self.busy)
-                    .child("取消"),
+                    .child(crate::locale::label("取消")),
             );
         }
         footer = footer.child(
             primary(self.button("modal-submit", confirm, UiAction::Submit, cx))
                 .disabled(self.busy)
-                .child(confirm),
+                .child(crate::locale::label(confirm)),
         );
         let popup = col()
             .id("form-dialog")
             .test_support()
             .role(Role::Dialog)
-            .aria_label(mode.heading())
+            .aria_label(crate::locale::label(&mode.heading()).to_owned())
             .occlude()
             .w(px(width))
             .max_h(px(max_h - 64.))
@@ -787,7 +868,10 @@ impl Workbench {
                     .flex_shrink_0()
                     .border_b_1()
                     .border_color(rgb(LINE))
-                    .child(headline(mode.heading(), 16.))
+                    .child(headline(
+                        crate::locale::label(&mode.heading()).to_owned(),
+                        16.,
+                    ))
                     .child(div().flex_1())
                     .child(
                         self.tool_button("modal-x", "关闭", "x", UiAction::CloseForm, cx)
@@ -879,6 +963,7 @@ impl Render for Workbench {
             .line_height(relative(1.5))
             .bg(rgb(BG))
             .capture_key_down(cx.listener(Self::key))
+            .capture_action(cx.listener(Self::personal_enter))
             .child(
                 col().size_full().child(chrome).child(
                     row()

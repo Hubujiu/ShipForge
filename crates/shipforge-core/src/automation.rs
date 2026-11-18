@@ -17,6 +17,21 @@ pub(super) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
     let f = &r.fields;
     if r.kind == "connector" {
         c.require_admin()?;
+        crate::vcs::validate(f)?;
+        crate::task_commands::source_members::validate_map(c, f)?;
+        if f["link_tasks"] == true
+            && let Some(id) = f["review_rule_id"].as_str().filter(|s| !s.is_empty())
+        {
+            read(c, "automation", id)?;
+        }
+        if f["provider"] == "slack" && f["outbound"] == true {
+            for field in ["workspace_id", "channel_id", "app_id", "bot_id"] {
+                let id = crate::required(f, field)?;
+                if id.len() > 160 || !id.bytes().all(|b| b.is_ascii_alphanumeric()) {
+                    return Err(crate::invalid("Slack outbound requires scoped Slack IDs"));
+                }
+            }
+        }
         if f["provider"] == "github" {
             let repo = req(f, "repository")?;
             let parts = repo.split('/').collect::<Vec<_>>();
@@ -439,7 +454,13 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
     if description.len() > 1_048_576 {
         return Err("external description exceeds 1 MiB".into());
     }
-    let incoming = json!({"title":title,"description":description,"closed":q["closed"].as_bool().unwrap_or(false)});
+    let mut incoming = json!({"title":title,"description":description,"closed":q["closed"].as_bool().unwrap_or(false)});
+    for key in ["assignees", "source_assignees"] {
+        if let Some(value) = q.get(key) {
+            crate::domain::strings(value, key)?;
+            incoming[key] = value.clone();
+        }
+    }
     let payload = digest(&json!([external, source_version, incoming]).to_string());
     let previous:Option<(String,String)>=c.db.query_row("SELECT payload,response FROM sf_connector_events WHERE space=? AND connector=? AND event=?",params![c.space,connector.id,event],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(db_error)?;
     if let Some((original, response)) = previous {
@@ -459,11 +480,26 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
         {
             json!({"action":"unchanged","task":task.id,"external_id":external})
         } else {
-            let local = mapped_task(c, &task)?;
+            let mut local = mapped_task(c, &task)?;
+            let mut base = base;
+            for key in ["assignees", "source_assignees"] {
+                if incoming.get(key).is_some() {
+                    local[key] = task.fields.get(key).cloned().unwrap_or_else(|| json!([]));
+                    if base.get(key).is_none() {
+                        base[key] = json!([]);
+                    }
+                }
+            }
             let mut merged = local.clone();
             let mut conflicts = Vec::new();
-            for key in ["title", "description", "closed"] {
-                if incoming[key] == base[key] {
+            for key in [
+                "title",
+                "description",
+                "closed",
+                "assignees",
+                "source_assignees",
+            ] {
+                if incoming.get(key).is_none() || incoming[key] == base[key] {
                     continue;
                 }
                 if incoming[key] != local[key] && local[key] != base[key] {
@@ -482,6 +518,11 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
                 );
             }
             let mut patch = json!({"description":merged["description"]});
+            for key in ["assignees", "source_assignees"] {
+                if let Some(value) = merged.get(key) {
+                    patch[key] = value.clone();
+                }
+            }
             if merged["closed"] != local["closed"] {
                 patch["status"] = json!(if merged["closed"] == true {
                     "done"
@@ -490,22 +531,32 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
                 });
             }
             if merged != local {
-                crate::write_request(
+                crate::domain::write_import(
                     c,
                     &json!({"op":"update","kind":"task","id":task.id,"expected_rev":task.rev,"title":merged["title"],"fields":patch}),
+                    true,
                 )?;
             }
-            c.db.execute("UPDATE sf_connector_objects SET base=?,source_version=? WHERE space=? AND connector=? AND external=?",params![incoming.to_string(),source_version,c.space,connector.id,external]).map_err(db_error)?;
+            for (key, value) in incoming.as_object().unwrap() {
+                base[key] = value.clone();
+            }
+            c.db.execute("UPDATE sf_connector_objects SET base=?,source_version=? WHERE space=? AND connector=? AND external=?",params![base.to_string(),source_version,c.space,connector.id,external]).map_err(db_error)?;
             json!({"action":if merged==local{"unchanged"}else{"updated"},"task":task.id,"external_id":external})
         }
     } else {
         let mut record = json!({"description":description,"external_id":external,"connector":connector.id,"source":"integration"});
+        for key in ["assignees", "source_assignees"] {
+            if let Some(value) = incoming.get(key) {
+                record[key] = value.clone();
+            }
+        }
         if incoming["closed"] == true {
             record["status"] = json!("done");
         }
-        let task = crate::write_request(
+        let task = crate::domain::write_import(
             c,
             &json!({"op":"create","kind":"task","title":title,"fields":record}),
+            true,
         )?;
         let tid = req(&task, "id")?;
         c.db.execute("INSERT INTO sf_connector_objects(space,connector,external,task,base,source_version) VALUES(?,?,?,?,?,?)",params![c.space,connector.id,external,tid,incoming.to_string(),source_version]).map_err(db_error)?;

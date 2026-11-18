@@ -122,7 +122,7 @@ fn opaque<'a>(obj: &'a Value, key: &str) -> Result<&'a str> {
     Ok(s)
 }
 // Teams and DingTalk identifiers may themselves contain JSON, ':', '/', '+', '=' or '%'.
-fn component(s: &str) -> String {
+pub(crate) fn component(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for byte in s.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {

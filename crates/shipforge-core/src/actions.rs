@@ -40,11 +40,7 @@ pub(crate) fn after(c: &Context<'_>, old: Option<&Record>, row: &Record) -> Resu
             recipients.insert(s.to_string());
         }
     }
-    if task.fields["assignee_kind"] == "member"
-        && let Some(s) = task.fields["assignee"].as_str()
-    {
-        recipients.insert(s.into());
-    }
+    recipients.extend(crate::task_commands::assignees::people(&task.fields).map(str::to_owned));
     let mut stmt =
         c.db.prepare("SELECT actor FROM followers WHERE space=?1 AND task=?2")
             .map_err(storage)?;
@@ -73,7 +69,7 @@ pub(crate) fn after(c: &Context<'_>, old: Option<&Record>, row: &Record) -> Resu
             continue;
         }
         let important = mentions.is_some_and(|a| a.iter().any(|s| s == &actor))
-            || task.fields["assignee"] == actor;
+            || crate::task_commands::assignees::people(&task.fields).any(|id| id == actor);
         notify(c, &actor, &task, &row.id, important)?;
     }
     Ok(())

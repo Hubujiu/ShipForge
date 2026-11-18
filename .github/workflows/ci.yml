@@ -55,6 +55,8 @@ jobs:
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Check product baseline
         run: python scripts/check-docs.py
+      - name: Check documented behavior inventory
+        run: python scripts/check-parity-inventory.py
       - name: Check native UI contract
         run: pnpm run lint
       - name: Test UI linter

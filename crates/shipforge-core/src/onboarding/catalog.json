@@ -1,0 +1,68 @@
+[
+  {
+    "id": "start", "title": "开始使用", "icon": "rocket",
+    "steps": [
+      {"id":"connect_machine","title":"连接一台机器","points":30,"button":"连接机器","hint":"启动一台工作机，让它向当前空间报告可用的运行工具。"},
+      {"id":"create_agent","title":"创建你的第一个 Agent","points":30,"button":"创建 Agent","hint":"为执行者选择机器和 Runtime，写下它负责的工作。"},
+      {"id":"create_task","title":"创建第一个任务","points":25,"button":"新建任务","hint":"填写任务目标、背景和验收条件，保存后可继续指派。"},
+      {"id":"assign_agent","title":"把任务指派给 Agent","points":30,"button":"指派给 Agent","hint":"在任务的处理人中选择 Agent，运行进度会回到任务详情。"},
+      {"id":"import_tasks","title":"导入 Jira、TAPD、禅道等平台里的任务","points":25,"button":"去接入","hint":"选择工单来源或导入文件，先预览，再将事项写入空间。"}
+    ]
+  },
+  {
+    "id": "collaborate", "title": "协作", "icon": "users",
+    "steps": [
+      {"id":"invite_member","title":"邀请团队成员","points":25,"button":"邀请成员","hint":"从成员管理发出空间邀请，让同事加入工作。"},
+      {"id":"assign_member","title":"把任务指派给成员","points":10,"button":"指派成员","hint":"给任务选择一位成员作为处理人。"},
+      {"id":"comment_task","title":"在任务下评论和回复","points":10,"button":"发表评论","hint":"打开任务，在活动区写下评论或回复。"},
+      {"id":"handle_inbox","title":"从收件箱处理任务","points":10,"button":"打开收件箱","hint":"从与你有关的任务提醒进入处理。"},
+      {"id":"clear_inbox","title":"清理收件箱中的任务","points":10,"button":"打开收件箱","hint":"将已处理的任务提醒标为已清理。"}
+    ]
+  },
+  {
+    "id": "agents", "title": "Agents", "icon": "bot",
+    "steps": [
+      {"id":"agent_instructions","title":"为 Agent 编写指令","points":20,"button":"编辑指令","hint":"在 Agent 设置中保存工作职责和执行要求。"},
+      {"id":"chat_agent","title":"和你的 Agent 对话","points":25,"button":"与 Agent 对话","hint":"在有 Agent 参与的对话中发送第一条消息。"},
+      {"id":"share_agent","title":"把 Agent 共享到空间","points":20,"button":"共享 Agent","hint":"把可见范围设为空间，让成员可以指派它。"},
+      {"id":"create_crew","title":"创建一个 Agent 小队","points":15,"button":"创建小队","hint":"选择队长和队员，保存一个协作小队。"},
+      {"id":"install_skill","title":"安装一个技能","points":25,"button":"安装技能","hint":"从市场把一项技能安装到工作区。"},
+      {"id":"equip_skill","title":"为 Agent 装配技能","points":15,"button":"装配技能","hint":"在 Agent 的技能列表中选择已安装的技能并保存。"}
+    ]
+  },
+  {
+    "id": "tasks", "title": "任务", "icon": "list-checks",
+    "steps": [
+      {"id":"follow_task","title":"关注任务","points":10,"button":"打开任务","hint":"在任务详情选择关注，以后可在收件箱查看相关动态。"},
+      {"id":"label_task","title":"添加任务标签","points":10,"button":"管理标签","hint":"创建标签或把标签添加到一个任务。"},
+      {"id":"subtask","title":"创建子任务","points":10,"button":"新建子任务","hint":"为新任务指定父任务，将工作拆成可跟进的子项。"},
+      {"id":"relate_task","title":"设置关联任务","points":10,"button":"打开任务","hint":"在两个任务之间建立相关、阻塞或重复关系。"},
+      {"id":"custom_view","title":"创建自定义视图","points":15,"button":"新建视图","hint":"设置任务筛选和布局，给视图命名后保存。"},
+      {"id":"team_view","title":"保存一个团队视图","points":15,"button":"共享视图","hint":"将保存视图的可见范围设置为空间共享。"},
+      {"id":"create_project","title":"创建专项","points":15,"button":"新建专项","hint":"建立专项目标，把相关工作归集在一起。"},
+      {"id":"project_task","title":"设置任务所属专项","points":10,"button":"关联专项","hint":"在任务属性中选择它所属的专项。"}
+    ]
+  },
+  {
+    "id": "manage", "title": "管理空间", "icon": "boxes",
+    "steps": [
+      {"id":"type_fields","title":"为任务类型配置字段","points":10,"button":"配置字段","hint":"编辑任务类型，选择适用的自定义字段。"},
+      {"id":"manage_status","title":"管理任务状态","points":10,"button":"管理任务状态","hint":"添加或修改可供任务使用的状态。"},
+      {"id":"git_link","title":"设置 Git 提交和 PR 自动关联到任务","points":10,"button":"连接 Git","hint":"绑定 Git 平台与仓库，使提交和合并请求可按任务编号关联。"},
+      {"id":"estimates","title":"开启任务估时","points":10,"button":"开启估时","hint":"在空间设置中启用估时，再给任务填写工作量。"},
+      {"id":"connect_im","title":"集成飞书、钉钉、企业微信等 IM 平台","points":20,"button":"连接协作平台","hint":"接入团队使用的国内消息平台，验证第一条入站事件。"},
+      {"id":"connect_slack_lark","title":"连接 Slack 或 Lark","points":20,"button":"连接 IM 平台","hint":"为 Slack 或 Lark 建立绑定并验证事件可以送达。"}
+    ]
+  },
+  {
+    "id": "automate", "title": "自动化", "icon": "workflow",
+    "steps": [
+      {"id":"create_rule","title":"创建一个 Agent 自动化","points":10,"button":"新建自动化","hint":"选择执行者并保存一条自动化规则。"},
+      {"id":"run_rule","title":"运行一次自动化","points":10,"button":"打开自动化","hint":"从规则详情运行，查看本次执行记录。"},
+      {"id":"schedule_rule","title":"创建定时运行的自动化","points":10,"button":"新建自动化","hint":"配置时间或间隔，让工作机按计划运行。"},
+      {"id":"status_rule","title":"创建基于任务状态的自动化","points":10,"button":"新建自动化","hint":"选择任务状态变化作为规则的触发条件。"},
+      {"id":"comment_rule","title":"创建基于评论的自动化","points":10,"button":"新建自动化","hint":"为任务评论设置触发条件和执行者。"},
+      {"id":"webhook_rule","title":"创建基于 Webhook 的自动化","points":10,"button":"新建自动化","hint":"配置 Webhook 触发器，由已获授权的外部事件唤起规则。"}
+    ]
+  }
+]

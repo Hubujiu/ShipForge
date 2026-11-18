@@ -2,10 +2,11 @@
 mod extended;
 use crate::{Context, Result, invalid, required, worker};
 use chrono::{DateTime, NaiveDateTime};
+pub(crate) use extended::component as teams_component;
 use serde_json::{Value, json};
 pub(crate) const NAMES: &[&str] = &[
-    "gitlab", "jira", "feishu", "lark", "slack", "telegram", "linear", "asana", "teams", "discord",
-    "wecom", "dingtalk",
+    "github", "gitlab", "jira", "feishu", "lark", "slack", "telegram", "linear", "asana", "teams",
+    "discord", "wecom", "dingtalk",
 ];
 
 pub(crate) fn execute(c: &Context<'_>, q: &Value, preview: bool) -> Result<Value> {
@@ -26,6 +27,12 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, preview: bool) -> Result<Value
         return Err(invalid("payload must be an event object"));
     }
     let f = &connector.fields;
+    if provider == "github"
+        || (provider == "gitlab"
+            && matches!(p["object_kind"].as_str(), Some("push" | "merge_request")))
+    {
+        return crate::vcs::ingest(c, &connector, q, preview);
+    }
     let event = match provider {
         "gitlab" => gitlab(p, f)?,
         "jira" => jira(p, f)?,
@@ -61,6 +68,11 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, preview: bool) -> Result<Value
         return Err(invalid("external description exceeds 1 MiB"));
     }
     let mut mapped = json!({"id":id,"provider":provider,"external_id":event.object,"event_id":delivery,"source_version":format!("{:020}",event.micros),"title":event.title,"description":event.description,"closed":event.closed});
+    crate::task_commands::source_members::provider(c, provider, p, f, &mut mapped)?;
+    let origin = crate::im::origin(provider, p)?;
+    if let Some(origin) = &origin {
+        mapped["thread"] = origin.route();
+    }
     if preview {
         return Ok(mapped);
     }
@@ -71,6 +83,9 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, preview: bool) -> Result<Value
         mapped["resolve"] = choice.clone();
     }
     mapped["op"] = json!("connector.ingest");
+    if let Some(origin) = origin {
+        return crate::im::receive(c, &connector, &mapped, origin);
+    }
     worker::dispatch(c, &mapped).ok_or_else(|| invalid("connector ingestion unavailable"))?
 }
 
