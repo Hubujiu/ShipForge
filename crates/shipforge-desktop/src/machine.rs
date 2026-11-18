@@ -70,6 +70,11 @@ pub fn control(
         .map(Path::to_owned)
         .map(Ok)
         .unwrap_or_else(shipforge_client::data_dir)?;
+    if fields["probe"] == true {
+        let raw = output(command(&program, &dir).arg("probe"))?;
+        let found: Value = serde_json::from_str(&raw).map_err(|e| e.to_string())?;
+        return Ok(found);
+    }
     let config = Path::new(fields["config"].as_str().unwrap_or_default());
     if !config.is_absolute() {
         return Err("需要工作机配置文件的绝对路径。".into());

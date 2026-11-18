@@ -2,10 +2,16 @@ use super::{array_ids, db_error, digest, encoded, enqueue, now, read, req};
 use crate::{Context, Record, Result};
 use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
+use std::collections::HashSet;
+#[path = "automation/schedule.rs"]
+mod schedule;
+use schedule::Schedule;
 
 pub(super) fn init(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS sf_connector_objects(space TEXT NOT NULL,connector TEXT NOT NULL,external TEXT NOT NULL,task TEXT NOT NULL,base TEXT NOT NULL,source_version TEXT NOT NULL,PRIMARY KEY(space,connector,external),UNIQUE(space,connector,task));
-    CREATE TABLE IF NOT EXISTS sf_connector_events(space TEXT NOT NULL,connector TEXT NOT NULL,event TEXT NOT NULL,payload TEXT NOT NULL,response TEXT NOT NULL,PRIMARY KEY(space,connector,event));").map_err(db_error)
+    CREATE TABLE IF NOT EXISTS sf_connector_events(space TEXT NOT NULL,connector TEXT NOT NULL,event TEXT NOT NULL,payload TEXT NOT NULL,response TEXT NOT NULL,PRIMARY KEY(space,connector,event));
+    CREATE TABLE IF NOT EXISTS sf_schedule_cursors(space TEXT NOT NULL,rule TEXT NOT NULL,slot TEXT NOT NULL,seen INTEGER NOT NULL,last_run TEXT,PRIMARY KEY(space,rule,slot));
+    CREATE TABLE IF NOT EXISTS sf_automation_deliveries(space TEXT NOT NULL,rule TEXT NOT NULL,source TEXT NOT NULL,event TEXT NOT NULL,payload TEXT NOT NULL,run TEXT NOT NULL,PRIMARY KEY(space,rule,source,event));").map_err(db_error)
 }
 pub(super) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
     let f = &r.fields;
@@ -46,6 +52,7 @@ pub(super) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
         read(c, "member", contact)?;
     }
     if let Some(triggers) = f.get("triggers") {
+        let mut schedules = HashSet::new();
         for trigger in triggers
             .as_array()
             .filter(|v| v.len() <= 32)
@@ -54,11 +61,9 @@ pub(super) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
             match req(trigger, "type")? {
                 "status" | "comment" | "webhook" => {}
                 "schedule" => {
-                    if !trigger["interval_minutes"]
-                        .as_i64()
-                        .is_some_and(|i| (1..=525600).contains(&i))
-                    {
-                        return Err("scheduled interval must be 1 to 525600 minutes".into());
+                    let schedule = Schedule::parse(trigger)?;
+                    if !schedules.insert(schedule.signature(trigger)) {
+                        return Err("duplicate schedule; use different trigger IDs to configure identical times".into());
                     }
                 }
                 _ => return Err("unknown trigger type".into()),
@@ -120,6 +125,9 @@ pub(super) fn dispatch(c: &Context<'_>, q: &Value) -> Result<Value> {
         Some("automation.fire") => {
             let rule = read(c, "automation", req(q, "id")?)?;
             let event = req(q, "event_id")?;
+            if event.len() > 256 || event.chars().any(char::is_control) {
+                return Err("invalid automation event ID".into());
+            }
             let source = q["source"].as_str().unwrap_or("manual");
             if rule.fields["enabled"] != true {
                 return Err("automation is disabled".into());
@@ -136,13 +144,30 @@ pub(super) fn dispatch(c: &Context<'_>, q: &Value) -> Result<Value> {
                 .as_str()
                 .map(|id| read(c, "task", id))
                 .transpose()?;
-            encoded(fire(
+            let payload = &q["payload"];
+            if !payload.is_null() && (!payload.is_object() || payload.to_string().len() > 131072) {
+                return Err("webhook payload must be an object under 128 KiB".into());
+            }
+            let content = digest(&json!([q["task_id"], payload]).to_string());
+            let receipt:Option<(String,String)>=c.db.query_row("SELECT payload,run FROM sf_automation_deliveries WHERE space=? AND rule=? AND source=? AND event=?",params![c.space,rule.id,source,event],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(db_error)?;
+            if let Some((delivered, id)) = receipt {
+                if delivered != content {
+                    return Err(
+                        "conflict: automation event ID was reused with different content".into(),
+                    );
+                }
+                return encoded(read(c, "run", &id)?);
+            }
+            let run = fire(
                 c,
                 &rule,
                 &format!("{source}:{event}"),
                 source,
                 task.as_ref(),
-            )?)
+                json!({"webhook_payload":payload}),
+            )?;
+            c.db.execute("INSERT INTO sf_automation_deliveries(space,rule,source,event,payload,run) VALUES(?,?,?,?,?,?)",params![c.space,rule.id,source,event,content,run.id]).map_err(db_error)?;
+            encoded(run)
         }
         Some("automation.tick") => tick(c, q),
         Some("connector.ingest") => ingest(c, q),
@@ -164,11 +189,17 @@ fn fire(
     event: &str,
     source: &str,
     task: Option<&Record>,
+    extra: Value,
 ) -> Result<Record> {
     let handler = req(&rule.fields, "handler_id")?;
     let kind = rule.fields["handler_kind"].as_str().unwrap_or("agent");
     let mut fields = json!({"origin_kind":"automation","automation_id":rule.id,"instruction":rule.fields["instruction"],"source":source});
-    if rule.fields["visibility"]=="private"{fields["visibility"]=json!("private");}
+    if let Some(values) = extra.as_object() {
+        fields.as_object_mut().unwrap().extend(values.clone());
+    }
+    if rule.fields["visibility"] == "private" {
+        fields["visibility"] = json!("private");
+    }
     if let Some(t) = task {
         fields["task_id"] = json!(t.id);
         fields["task"] = super::task_context(c, t)?;
@@ -183,6 +214,9 @@ fn fire(
     )
 }
 pub(super) fn changed(c: &Context<'_>, before: Option<&Record>, item: &Record) -> Result<()> {
+    if item.kind == "automation" {
+        return reset_schedules(c, before, item);
+    }
     let (trigger_kind, task) = match item.kind.as_str() {
         "task" if before.is_some_and(|b| b.fields["status"] != item.fields["status"]) => {
             ("status", item.clone())
@@ -233,7 +267,39 @@ pub(super) fn changed(c: &Context<'_>, before: Option<&Record>, item: &Record) -
                 &format!("{trigger_kind}:{}:{}:{idx}", item.id, item.rev),
                 trigger_kind,
                 Some(&task),
+                Value::Null,
             )?;
+        }
+    }
+    Ok(())
+}
+fn schedules(r: &Record) -> Result<Vec<(usize, String, Schedule)>> {
+    if r.fields["enabled"] != true {
+        return Ok(Vec::new());
+    }
+    enabled_triggers(r)
+        .filter(|(_, t)| t["type"] == "schedule")
+        .map(|(idx, t)| {
+            let schedule = Schedule::parse(t)?;
+            Ok((idx, schedule.signature(t), schedule))
+        })
+        .collect()
+}
+fn reset_schedules(c: &Context<'_>, before: Option<&Record>, r: &Record) -> Result<()> {
+    let prior = before.map(schedules).transpose()?.unwrap_or_default();
+    let current = schedules(r)?;
+    for (_, key, _) in &prior {
+        if !current.iter().any(|(_, k, _)| k == key) {
+            c.db.execute(
+                "DELETE FROM sf_schedule_cursors WHERE space=? AND rule=? AND slot=?",
+                params![c.space, r.id, key],
+            )
+            .map_err(db_error)?;
+        }
+    }
+    for (_, key, schedule) in current {
+        if !prior.iter().any(|(_, k, _)| k == &key) {
+            c.db.execute("INSERT INTO sf_schedule_cursors(space,rule,slot,seen,last_run) VALUES(?,?,?,?,NULL) ON CONFLICT(space,rule,slot) DO UPDATE SET seen=excluded.seen,last_run=NULL",params![c.space,r.id,key,schedule.start_cursor(r.updated_at)]).map_err(db_error)?;
         }
     }
     Ok(())
@@ -244,8 +310,10 @@ fn tick(c: &Context<'_>, q: &Value) -> Result<Value> {
     } else {
         c.require_admin()?;
     }
+    tick_at(c, now())
+}
+fn tick_at(c: &Context<'_>, timestamp: i64) -> Result<Value> {
     let mut results = Vec::new();
-    let timestamp = now();
     for rule in c
         .records("automation")?
         .into_iter()
@@ -262,23 +330,40 @@ fn tick(c: &Context<'_>, q: &Value) -> Result<Value> {
         if engine.require_edit().is_err() {
             continue;
         }
-        for (idx, t) in enabled_triggers(&rule).filter(|(_, t)| t["type"] == "schedule") {
-            let interval = t["interval_minutes"]
-                .as_i64()
-                .unwrap_or(60)
-                .clamp(1, 525600)
-                * 60_000;
-            let bucket = timestamp / interval;
-            let run = fire(
-                &engine,
-                &rule,
-                &format!("schedule:{idx}:{interval}:{bucket}"),
-                "schedule",
-                None,
-            )?;
-            if c.visible(&run)? {
-                results.push(run.id);
+        for (idx, key, schedule) in schedules(&rule)? {
+            let cursor:Option<(i64,Option<String>)>=c.db.query_row("SELECT seen,last_run FROM sf_schedule_cursors WHERE space=? AND rule=? AND slot=?",params![c.space,rule.id,key],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(db_error)?;
+            let (seen, mut last_id) =
+                cursor.unwrap_or_else(|| (schedule.start_cursor(rule.updated_at), None));
+            let due = schedule.occurrences(seen, timestamp, idx, &key)?;
+            if due.is_empty() {
+                if let Some(id) = &last_id
+                    && let Some(run) = c.find("run", id)?
+                    && c.visible(&run)?
+                {
+                    results.push(run.id);
+                }
+                continue;
             }
+            for occurrence in &due {
+                let run = fire(
+                    &engine,
+                    &rule,
+                    &occurrence.event,
+                    "schedule",
+                    None,
+                    json!({"scheduled_for":occurrence.at}),
+                )?;
+                if c.visible(&run)? {
+                    results.push(run.id.clone());
+                }
+                last_id = Some(run.id);
+            }
+            let processed = if due.len() == schedule::BATCH {
+                due.last().unwrap().at
+            } else {
+                timestamp
+            };
+            c.db.execute("INSERT INTO sf_schedule_cursors(space,rule,slot,seen,last_run) VALUES(?,?,?,?,?) ON CONFLICT(space,rule,slot) DO UPDATE SET seen=excluded.seen,last_run=excluded.last_run",params![c.space,rule.id,key,processed,last_id]).map_err(db_error)?;
         }
     }
     Ok(json!({"runs":results}))
@@ -361,17 +446,16 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
         if original != payload {
             return Err("event_id was reused with different content".into());
         }
-        let receipt:Value=serde_json::from_str(&response).map_err(|e|e.to_string())?;
-        read(c,"task",req(&receipt,"task")?)?;
+        let receipt: Value = serde_json::from_str(&response).map_err(|e| e.to_string())?;
+        read(c, "task", req(&receipt, "task")?)?;
         return Ok(receipt);
     }
     let base:Option<(String,String,String)>=c.db.query_row("SELECT task,base,source_version FROM sf_connector_objects WHERE space=? AND connector=? AND external=?",params![c.space,connector.id,external],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(db_error)?;
     let response = if let Some((task_id, base, previous_version)) = base {
         let task = read(c, "task", &task_id)?;
         let base: Value = serde_json::from_str(&base).map_err(|e| e.to_string())?;
-        if (source_version < previous_version.as_str()
-            || source_version == previous_version && incoming == base)
-            && q["resolve"].is_null()
+        if source_version < previous_version.as_str()
+            || (source_version == previous_version && incoming == base && q["resolve"].is_null())
         {
             json!({"action":"unchanged","task":task.id,"external_id":external})
         } else {
@@ -415,8 +499,10 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
             json!({"action":if merged==local{"unchanged"}else{"updated"},"task":task.id,"external_id":external})
         }
     } else {
-        let mut record=json!({"description":description,"external_id":external,"connector":connector.id,"source":"integration"});
-        if incoming["closed"]==true {record["status"]=json!("done");}
+        let mut record = json!({"description":description,"external_id":external,"connector":connector.id,"source":"integration"});
+        if incoming["closed"] == true {
+            record["status"] = json!("done");
+        }
         let task = crate::write_request(
             c,
             &json!({"op":"create","kind":"task","title":title,"fields":record}),

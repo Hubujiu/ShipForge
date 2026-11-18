@@ -149,6 +149,7 @@ impl Remote {
                 | "get"
                 | "view.run"
                 | "dashboard"
+                | "iteration.timeline"
                 | "search"
                 | "space.list"
                 | "document.history"

@@ -367,7 +367,9 @@ fn resolved(c: &Context<'_>, id: &str) -> Result<Value> {
     }
     let mut value = json!({"runtime":"local-tool","directory_mode":"isolated","skills":[],"tools":[],"instructions":"","max_parallel":1,"chat_parallel":1});
     for item in chain.iter().rev() {
-        if item.fields["visibility"]=="private"{value["private_source"]=json!(true);}
+        if item.fields["visibility"] == "private" {
+            value["private_source"] = json!(true);
+        }
         for key in [
             "runtime",
             "directory_mode",
@@ -410,12 +412,16 @@ fn snapshot(c: &Context<'_>, handler: &str, kind: &str) -> Result<Value> {
         ("tools", "tool", "tool_grants"),
     ] {
         let mut entries = Vec::new();
-        let mut private=false;
+        let mut private = false;
         for id in array_ids(&data[field])? {
             let item = read(c, target, id)?;
-            private|=item.fields["visibility"]=="private";
-            if target=="tool" && let Some(doc)=item.fields["document"].as_str(){
-                private|=c.find("document",doc)?.is_some_and(|doc|doc.fields["visibility"]=="private");
+            private |= item.fields["visibility"] == "private";
+            if target == "tool"
+                && let Some(doc) = item.fields["document"].as_str()
+            {
+                private |= c
+                    .find("document", doc)?
+                    .is_some_and(|doc| doc.fields["visibility"] == "private");
             }
             let entry = if target == "skill" {
                 json!({"id":id,"title":item.title,"rev":item.rev,"instructions":item.fields["instructions"]})
@@ -425,7 +431,9 @@ fn snapshot(c: &Context<'_>, handler: &str, kind: &str) -> Result<Value> {
             entries.push(entry);
         }
         data[dest] = json!(entries);
-        if private{data["private_source"]=json!(true);}
+        if private {
+            data["private_source"] = json!(true);
+        }
     }
     Ok(data)
 }
@@ -451,7 +459,11 @@ fn enqueue(
     }
     let config = snapshot(c, handler, kind)?;
     let handler_record = read(c, kind, handler)?;
-    if handler_record.fields["visibility"] == "private" || config["private_source"]==true || fields["visibility"]=="private" || fields["task"]["private_context"]==true {
+    if handler_record.fields["visibility"] == "private"
+        || config["private_source"] == true
+        || fields["visibility"] == "private"
+        || fields["task"]["private_context"] == true
+    {
         fields["visibility"] = json!("private");
         fields["owner"] = json!(c.actor);
     }
@@ -518,10 +530,10 @@ fn task_context(c: &Context<'_>, task: &Record) -> Result<Value> {
         .collect::<Vec<_>>();
     comments.sort_by_key(|r| std::cmp::Reverse(r.created_at));
     let mut discussion = Vec::new();
-    let mut private=false;
+    let mut private = false;
     for r in comments.into_iter().take(15) {
         if c.visible(&r)? {
-            private|=r.fields["visibility"]=="private";
+            private |= r.fields["visibility"] == "private";
             discussion.push(json!({"title":r.title,"body":r.fields["body"]}));
         }
     }
@@ -1020,7 +1032,11 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
             return Err("delegation requires an initial crew run".into());
         }
         let allowed = array_ids(&run.fields["config"]["crew_members"])?;
-        let requester=Context{db:c.db,space:c.space,actor:req(&run.fields,"requested_by")?};
+        let requester = Context {
+            db: c.db,
+            space: c.space,
+            actor: req(&run.fields, "requested_by")?,
+        };
         requester.require_edit()?;
         let mut children = Vec::new();
         for (idx, d) in ds.iter().enumerate() {
@@ -1029,8 +1045,18 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
                 return Err("agent is not a member of this crew".into());
             }
             let instruction = req(d, "instruction")?;
-            let context=json!({"instruction":instruction,"visibility":run.fields["visibility"],"parent_id":run.id,"task_id":run.fields["task_id"],"task":run.fields["task_context"],"chat_id":run.fields["chat_id"]});
-            children.push(enqueue(&requester,&format!("delegate:{}:{idx}",run.id),target,"agent",instruction,context)?.id);
+            let context = json!({"instruction":instruction,"visibility":run.fields["visibility"],"parent_id":run.id,"task_id":run.fields["task_id"],"task":run.fields["task_context"],"chat_id":run.fields["chat_id"]});
+            children.push(
+                enqueue(
+                    &requester,
+                    &format!("delegate:{}:{idx}", run.id),
+                    target,
+                    "agent",
+                    instruction,
+                    context,
+                )?
+                .id,
+            );
         }
         f["children"] = json!(children);
         f["status"] = json!("waiting_children");

@@ -156,7 +156,7 @@ pub fn authorize(principal: &Principal, request: &Value) -> Result<(), String> {
                 && matches!(
                     (principal.resource.as_deref(), op),
                     (Some("automation"), "automation.fire")
-                        | (Some("connector"), "provider.ingest" | "connector.ingest")
+                        | (Some("connector"), "provider.ingest")
                 )
         }
         _ => false,

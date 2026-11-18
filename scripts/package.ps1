@@ -55,7 +55,14 @@ try {
         Get-ChildItem -LiteralPath (Join-Path $workspaceRoot $folder) | Copy-Item -Destination $destination -Recurse -Force
     }
     Copy-Item -LiteralPath (Join-Path $workspaceRoot 'Cargo.lock') -Destination (Join-Path $packageDirectory 'Cargo.lock') -Force
-    foreach ($relative in @('crates/shipforge-worker/README.md', 'crates/shipforge-core/PROVIDERS.md', 'crates/shipforge-core/tests/fixtures/inbound.json')) {
+    $connectorReferences = @(
+        'crates/shipforge-worker/README.md'
+        'crates/shipforge-core/PROVIDERS.md'
+        'crates/shipforge-core/tests/providers.rs'
+        'crates/shipforge-core/tests/fixtures/inbound.json'
+        'crates/shipforge-core/tests/fixtures/inbound-extended.json'
+    )
+    foreach ($relative in $connectorReferences) {
         $destination = Join-Path $packageDirectory $relative
         New-Item -ItemType Directory -Path ([IO.Path]::GetDirectoryName($destination)) -Force | Out-Null
         Copy-Item -LiteralPath (Join-Path $workspaceRoot $relative) -Destination $destination

@@ -120,6 +120,8 @@ impl Backend {
                                     json!({"op":"catalog.list","space":space})
                                 } else if kind == "space" {
                                     json!({"op":"space.list"})
+                                } else if kind == "iteration" {
+                                    json!({"op":"iteration.timeline","space":space,"as_of":chrono::Local::now().date_naive().to_string()})
                                 } else {
                                     json!({"op":"list","kind":kind,"space":space})
                                 };

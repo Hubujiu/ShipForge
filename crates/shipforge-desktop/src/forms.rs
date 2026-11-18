@@ -186,6 +186,7 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             body,
             item("start_date", "开始日期（YYYY-MM-DD）", Text, ""),
             item("end_date", "结束日期（YYYY-MM-DD）", Text, ""),
+            item("capacity", "容量（任务数）", Number, ""),
         ],
         "project" => vec![title, body, item("owner", "负责人", Ref("member"), "")],
         "view" => {

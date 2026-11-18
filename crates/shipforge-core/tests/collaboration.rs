@@ -13,6 +13,76 @@ fn add(db: &mut Store, kind: &str, id: &str, f: Value) -> Value {
         json!({"op":"create","kind":kind,"id":id,"title":id,"fields":f}),
     )
 }
+
+#[test]
+fn iteration_timeline_tracks_dates_capacity_and_visible_scope() {
+    let mut db = Store::memory().unwrap();
+    add(
+        &mut db,
+        "member",
+        "reader",
+        json!({"role":"viewer","actor":"reader"}),
+    );
+    add(
+        &mut db,
+        "iteration",
+        "spring",
+        json!({"start_date":"2027-03-01","end_date":"2027-03-30","capacity":4}),
+    );
+    add(
+        &mut db,
+        "iteration",
+        "april",
+        json!({"start":"2027-04-01","end":"2027-04-20"}),
+    );
+    add(
+        &mut db,
+        "task",
+        "shared",
+        json!({"iteration":"spring","status":"done"}),
+    );
+    add(
+        &mut db,
+        "task",
+        "personal",
+        json!({"iteration":"spring","visibility":"private"}),
+    );
+    let query = json!({"op":"iteration.timeline","as_of":"2027-03-10"});
+    let rows = ok(&mut db, "owner", query.clone());
+    assert_eq!(rows[0]["id"], "april");
+    assert_eq!(rows[0]["fields"]["planning"]["phase"], "upcoming");
+    let plan = &rows[1]["fields"]["planning"];
+    assert_eq!(plan["phase"], "active");
+    assert_eq!(plan["capacity"], 4);
+    assert_eq!(plan["completed"], 1);
+    assert_eq!(plan["total"], 2);
+    assert_eq!(
+        ok(&mut db, "reader", query)[1]["fields"]["planning"]["total"],
+        1
+    );
+    assert_eq!(
+        ok(
+            &mut db,
+            "owner",
+            json!({"op":"iteration.timeline","as_of":"2027-04-02"})
+        )[1]["fields"]["planning"]["phase"],
+        "overdue"
+    );
+    assert!(
+        db.execute(
+            "owner",
+            json!({"op":"update","kind":"iteration","id":"spring","fields":{"capacity":-1}})
+        )
+        .is_err()
+    );
+    assert!(
+        db.execute(
+            "owner",
+            json!({"op":"iteration.timeline","as_of":"March 1"})
+        )
+        .is_err()
+    );
+}
 #[test]
 fn attachments_follow_current_and_historical_ownership_without_exposing_content_on_lists() {
     let mut db = Store::memory().unwrap();

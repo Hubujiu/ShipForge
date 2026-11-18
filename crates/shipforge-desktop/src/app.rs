@@ -82,6 +82,7 @@ pub enum UiAction {
     RuleFire(Record),
     ViewAgentHistory(Record),
     IterationEnd(Record),
+    Probe,
     PendingDrafts,
     Grant,
     Tokens,
@@ -615,6 +616,12 @@ impl Workbench {
                 self.close_form(w, cx);
                 self.notify_text(s);
                 self.read(false);
+                if self.loc.page == Page::Settings && self.loc.section == "drafts" {
+                    self.send(json!({"op":"sync.pending"}), After::Drafts, false);
+                }
+                if self.loc.page == Page::Settings && self.loc.section == "tokens" {
+                    self.send(json!({"op":"access.list"}), After::Tokens, false);
+                }
             }
             After::Machine => {
                 self.close_form(w, cx);
@@ -833,38 +840,245 @@ impl Workbench {
     }
     pub fn act(&mut self, action: UiAction, w: &mut Window, cx: &mut Context<Self>) {
         use UiAction::*;
-        match action{
-            Go(p)=>self.navigate(p),Open(r)=>self.open(r,false),OpenSearch(r)=>{self.close_form(w,cx);self.open(r,true);}
-            Back=>self.history(false),Forward=>self.history(true),CloseDetail=>self.act_detail_close(),
-            Create(k)=>self.open_form(Mode::Create(k),w,cx),Edit(r)=>self.open_form(Mode::Edit(r),w,cx),
-            ToggleSidebar=>self.sidebar = !self.sidebar,Refresh=>{self.error=None;self.read(true);},
-            TaskType(t)=>{self.loc.task_type=t;self.revision+=1;self.read(false);},Layout(l)=>{self.loc.layout=l;self.revision+=1;self.read(false);},
-            Section(s)=>{self.loc.section=s;self.revision+=1;},Mine(v)=>{self.loc.mine_created=v;self.revision+=1;self.read(false);},
-            Filter=>self.open_form(Mode::Filter,w,cx),ResetFilter=>{self.loc.filter.clear();self.loc.task_type.clear();self.revision+=1;self.read(false);},
-            SaveView=>self.open_form(Mode::Create("view".into()),w,cx),Search=>self.open_form(Mode::Search,w,cx),
-            SelectSpace(r)=>self.switch_space(r),OpenView(v)=>{self.navigate(Page::Tasks);self.loc.layout=v.field("layout").to_owned();self.loc.view=Some(v);self.view_tasks.clear();self.read(true);}
-            Apply(mut cmd,msg)=>{cmd["space"]=json!(self.loc.space);self.send(cmd,After::Notice(msg),true);}
-            Form(mode)=>self.open_form(mode,w,cx),CloseForm=>self.close_form(w,cx),Submit=>if let Err(error)=self.submit(w,cx)&&let Some(f)=&mut self.form{f.error=error;},
-            Pick(i)=>if let Some(f)=&mut self.form{f.open_pick=if f.open_pick==Some(i){None}else{Some(i)};},
-            Choose(i,v)=>if let Some(f)=&mut self.form && let Some(e)=f.entries.get_mut(i) && let Control::Pick{value,focus}=&mut e.control{
-                if matches!(e.spec.format,crate::forms::Format::Many(_)){let mut a:Vec<&str>=value.split(',').map(str::trim).filter(|s|!s.is_empty()).collect();if a.contains(&v.as_str()){a.retain(|s|*s!=v);}else if !v.is_empty(){a.push(&v);}else{a.clear();}*value=a.join(", ");}else{*value=v;f.open_pick=None;}focus.focus(w,cx);
+        match action {
+            Go(p) => self.navigate(p),
+            Open(r) => self.open(r, false),
+            OpenSearch(r) => {
+                self.close_form(w, cx);
+                self.open(r, true);
             }
-            Delete(r)=>{let command=json!({"op":"delete","space":self.loc.space,"kind":r.kind,"id":r.id,"expected_rev":r.rev});self.open_form(Mode::Confirm{label:format!("删除「{}」",r.title),command},w,cx);}
-            AddTrigger=>{if let Some(f)=&mut self.form{f.add_trigger(&json!({"type":"status"}),w,cx);}},
-            RemoveTrigger(id)=>{if let Some(f)=&mut self.form{f.remove_trigger(id);}},
-            Browse{index,save}=>self.browse(index,save.as_deref(),w,cx),
-            Inspect(mut cmd,label)=>{cmd["space"]=json!(self.loc.space);self.send(cmd,After::Output(label),false);}
-            Connect=>self.open_form(Mode::Connect,w,cx),Disconnect=>{let ticket=self.register(After::Connected,true);let _=self.backend.sender.send(Request::Disconnect{ticket});}
-            Versions(r)=>self.send(json!({"op":"document.history","id":r.id,"space":self.loc.space}),After::Versions(r),false),
-            RestoreVersion(r,v)=>self.open_form(Mode::Confirm{label:format!("恢复「{}」版本 {v}",r.title),command:json!({"op":"document.restore","id":r.id,"space":self.loc.space,"version":v,"expected_rev":r.rev})},w,cx),
-            Copy(s)=>{cx.write_to_clipboard(ClipboardItem::new_string(s));self.notify_text("已复制");}
-            Export=>self.open_form(Mode::Export,w,cx),Import=>self.open_form(Mode::Import,w,cx),
-            RuleFire(r)=>{self.open_form(Mode::Confirm{label:format!("运行「{}」",r.title),command:json!({"op":"automation.fire","id":r.id,"space":self.loc.space,"event_id":format!("ui-{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos())})},w,cx);}
-            ViewAgentHistory(r)=>{self.drawer_tab="runs".into();self.loc.selected=Some(r);self.read(false);}
-            IterationEnd(r)=>self.open_form(Mode::IterationEnd(r),w,cx),
-            PendingDrafts=>self.send(json!({"op":"sync.pending"}),After::Drafts,false),
-            Grant=>self.open_form(Mode::Token,w,cx),Tokens=>self.send(json!({"op":"access.list","space":self.loc.space}),After::Tokens,false),
+
+            Back => self.history(false),
+            Forward => self.history(true),
+            CloseDetail => self.act_detail_close(),
+
+            Create(k) => self.open_form(Mode::Create(k), w, cx),
+            Edit(r) => self.open_form(Mode::Edit(r), w, cx),
+
+            ToggleSidebar => self.sidebar = !self.sidebar,
+            Refresh => {
+                self.error = None;
+                self.read(true);
+            }
+            TaskType(t) => {
+                self.loc.task_type = t;
+                self.revision += 1;
+                self.read(false);
+            }
+            Layout(l) => {
+                self.loc.layout = l;
+                self.revision += 1;
+                self.read(false);
+            }
+            Section(s) => {
+                self.loc.section = s;
+                self.revision += 1;
+            }
+            Mine(v) => {
+                self.loc.mine_created = v;
+                self.revision += 1;
+                self.read(false);
+            }
+            Filter => self.open_form(Mode::Filter, w, cx),
+            ResetFilter => {
+                self.loc.filter.clear();
+                self.loc.task_type.clear();
+                self.revision += 1;
+                self.read(false);
+            }
+            SaveView => self.open_form(Mode::Create("view".into()), w, cx),
+            Search => self.open_form(Mode::Search, w, cx),
+
+            SelectSpace(r) => self.switch_space(r),
+            OpenView(v) => {
+                self.navigate(Page::Tasks);
+                self.loc.layout = v.field("layout").to_owned();
+                self.loc.view = Some(v);
+                self.view_tasks.clear();
+                self.read(true);
+            }
+
+            Apply(mut cmd, msg) => {
+                cmd["space"] = json!(self.loc.space);
+                self.send(cmd, After::Notice(msg), true);
+            }
+
+            Form(mode) => self.open_form(mode, w, cx),
+            CloseForm => self.close_form(w, cx),
+            Submit => {
+                if let Err(error) = self.submit(w, cx)
+                    && let Some(f) = &mut self.form
+                {
+                    f.error = error;
+                }
+            }
+            Pick(i) => {
+                if let Some(f) = &mut self.form {
+                    f.open_pick = if f.open_pick == Some(i) {
+                        None
+                    } else {
+                        Some(i)
+                    };
+                }
+            }
+            Choose(i, v) => {
+                if let Some(f) = &mut self.form
+                    && let Some(e) = f.entries.get_mut(i)
+                    && let Control::Pick { value, focus } = &mut e.control
+                {
+                    if matches!(e.spec.format, crate::forms::Format::Many(_)) {
+                        let mut a: Vec<&str> = value
+                            .split(',')
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .collect();
+                        if a.contains(&v.as_str()) {
+                            a.retain(|s| *s != v);
+                        } else if !v.is_empty() {
+                            a.push(&v);
+                        } else {
+                            a.clear();
+                        }
+                        *value = a.join(", ");
+                    } else {
+                        *value = v;
+                        f.open_pick = None;
+                    }
+                    focus.focus(w, cx);
+                }
+            }
+
+            Delete(r) => {
+                let command = json!({
+                "op":"delete",
+                "space":self.loc.space,
+                "kind":r.kind,
+                "id":r.id,
+                "expected_rev":r.rev}
+                );
+                self.open_form(
+                    Mode::Confirm {
+                        label: format!("删除「{}」", r.title),
+                        command,
+                    },
+                    w,
+                    cx,
+                );
+            }
+
+            AddTrigger => {
+                if let Some(f) = &mut self.form {
+                    f.add_trigger(
+                        &json!({
+                        "type":"status"}
+                        ),
+                        w,
+                        cx,
+                    );
+                }
+            }
+            RemoveTrigger(id) => {
+                if let Some(f) = &mut self.form {
+                    f.remove_trigger(id);
+                }
+            }
+            Browse { index, save } => self.browse(index, save.as_deref(), w, cx),
+
+            Inspect(mut cmd, label) => {
+                cmd["space"] = json!(self.loc.space);
+                self.send(cmd, After::Output(label), false);
+            }
+
+            Connect => self.open_form(Mode::Connect, w, cx),
+            Disconnect => {
+                let ticket = self.register(After::Connected, true);
+                let _ = self.backend.sender.send(Request::Disconnect { ticket });
+            }
+
+            Versions(r) => self.send(
+                json!({
+                "op":"document.history",
+                "id":r.id,
+                "space":self.loc.space}
+                ),
+                After::Versions(r),
+                false,
+            ),
+
+            RestoreVersion(r, v) => self.open_form(
+                Mode::Confirm {
+                    label: format!("恢复「{}」版本 {v}", r.title),
+                    command: json!({
+                    "op":"document.restore",
+                    "id":r.id,
+                    "space":self.loc.space,
+                    "version":v,
+                    "expected_rev":r.rev}
+                    ),
+                },
+                w,
+                cx,
+            ),
+
+            Copy(s) => {
+                cx.write_to_clipboard(ClipboardItem::new_string(s));
+                self.notify_text("已复制");
+            }
+
+            Export => self.open_form(Mode::Export, w, cx),
+            Import => self.open_form(Mode::Import, w, cx),
+
+            RuleFire(r) => {
+                self.open_form(Mode::Confirm{
+label:format!("运行「{}」",
+r.title),
+command:json!({
+"op":"automation.fire","id":r.id,"space":self.loc.space,"event_id":format!("ui-{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos())}
+)}
+,
+w,
+cx);
+            }
+
+            ViewAgentHistory(r) => {
+                self.drawer_tab = "runs".into();
+                self.loc.selected = Some(r);
+                self.read(false);
+            }
+
+            IterationEnd(r) => self.open_form(Mode::IterationEnd(r), w, cx),
+
+            Probe => {
+                let ticket = self.register(After::Output("本机 Runtime 探测结果".into()), false);
+                let request = Request::Machine {
+                    ticket,
+                    space: self.loc.space.clone(),
+                    fields: json!({"probe":true}),
+                    stop: false,
+                };
+                if self.backend.sender.send(request).is_err() {
+                    self.error = Some("工作区服务已关闭".into());
+                }
+            }
+            PendingDrafts => self.send(
+                json!({
+                "op":"sync.pending"}
+                ),
+                After::Drafts,
+                false,
+            ),
+
+            Grant => self.open_form(Mode::Token, w, cx),
+            Tokens => self.send(
+                json!({
+                "op":"access.list",
+                "space":self.loc.space}
+                ),
+                After::Tokens,
+                false,
+            ),
         }
+
         cx.notify();
     }
     fn browse(&mut self, index: usize, save: Option<&str>, w: &mut Window, cx: &mut Context<Self>) {
@@ -932,36 +1146,282 @@ impl Workbench {
                 .trim()
                 .to_string()
         };
-        match mode{
-            Mode::Create(ref k)|Mode::Edit(Record{kind:ref k,..})=>{
-                let old=if let Mode::Edit(r)=&mode{Some(r)}else{None};let kind=if let Some(h)=values.get("assignee").and_then(Value::as_str){["agent","crew","member"].into_iter().find(|k|self.find(k,h).is_some())}else{None};
-                let(title,mut fields)=compile_record(k,values,kind,old.is_none())?;
-                if k=="automation" && let Some(id)=fields.get("handler_id").and_then(Value::as_str){let handler=if self.find("crew",id).is_some(){"crew"}else{"agent"};fields.insert("handler_kind".into(),json!(handler));}
-                let mut cmd=json!({"op":if old.is_some(){"update"}else{"create"},"kind":k,"space":self.loc.space,"title":title,"fields":fields});
-                if let Some(r)=old{cmd["id"]=json!(r.id);cmd["expected_rev"]=json!(r.rev);}self.send(cmd,After::Saved(k.clone()),true);
+        match mode {
+            Mode::Create(ref k) | Mode::Edit(Record { kind: ref k, .. }) => {
+                let old = if let Mode::Edit(r) = &mode {
+                    Some(r)
+                } else {
+                    None
+                };
+                let kind = if let Some(h) = values.get("assignee").and_then(Value::as_str) {
+                    ["agent", "crew", "member"]
+                        .into_iter()
+                        .find(|k| self.find(k, h).is_some())
+                } else {
+                    None
+                };
+
+                let (title, mut fields) = compile_record(k, values, kind, old.is_none())?;
+
+                if k == "automation"
+                    && let Some(id) = fields.get("handler_id").and_then(Value::as_str)
+                {
+                    let handler = if self.find("crew", id).is_some() {
+                        "crew"
+                    } else {
+                        "agent"
+                    };
+                    fields.insert("handler_kind".into(), json!(handler));
+                }
+
+                let mut cmd = json!({
+                "op":if old.is_some(){
+                "update"}
+                else{
+                "create"}
+                ,
+                "kind":k,
+                "space":self.loc.space,
+                "title":title,
+                "fields":fields}
+                );
+
+                if let Some(r) = old {
+                    cmd["id"] = json!(r.id);
+                    cmd["expected_rev"] = json!(r.rev);
+                }
+                self.send(cmd, After::Saved(k.clone()), true);
             }
-            Mode::Comment(ref r)|Mode::Message(ref r)=>{let body=val("body");if body.is_empty(){return Err("请输入内容。".into())}let(kind,key)=if matches!(mode,Mode::Comment(_)){("comment","task")}else{("message","chat")};
-                self.send(json!({"op":"create","kind":kind,"space":self.loc.space,"title":body.chars().take(60).collect::<String>(),"fields":{(key):r.id,"body":body}}),After::Saved(kind.into()),true);
+
+            Mode::Comment(ref r) | Mode::Message(ref r) => {
+                let body = val("body");
+                if body.is_empty() {
+                    return Err("请输入内容。".into());
+                }
+                let (kind, key) = if matches!(mode, Mode::Comment(_)) {
+                    ("comment", "task")
+                } else {
+                    ("message", "chat")
+                };
+
+                self.send(
+                    json!({
+                    "op":"create",
+                    "kind":kind,
+                    "space":self.loc.space,
+                    "title":body.chars().take(60).collect::<String>(),
+                    "fields":{
+                    (key):r.id,"body":body}
+                    }
+                    ),
+                    After::Saved(kind.into()),
+                    true,
+                );
             }
-            Mode::Filter=>{self.loc.filter=values;self.loc.filter.retain(|_,v|!v.is_null()&&v.as_str()!=Some(""));self.close_form(w,cx);self.read(false);}
-            Mode::Connect=>{let (url,token)=(val("url"),val("token"));if url.is_empty()||token.is_empty(){return Err("请输入服务地址和令牌。".into());}let ticket=self.register(After::Connected,true);let _=self.backend.sender.send(Request::Connect{url,token,ticket});}
-            Mode::Confirm{command,..}=>self.send(command,After::Notice("操作已完成".into()),true),
-            Mode::IterationEnd(r)=>self.send(json!({"op":"iteration.close","space":self.loc.space,"id":r.id,"target":values.get("target"),"expected_rev":r.rev}),After::Notice("迭代已结束".into()),true),
-            Mode::Export|Mode::Import=>{let path=PathBuf::from(val("path"));if !path.is_absolute(){return Err("请输入文件的完整路径。".into());}
-                let sp=self.loc.space.clone();let req=if matches!(mode,Mode::Export){let ticket=self.register(After::Notice("空间数据已导出".into()),true);Request::Export{ticket,command:json!({"op":"export","space":sp}),path}}
-                else{let confirmed=preview.as_ref().and_then(|p|p.get("path")).and_then(Value::as_str)==path.to_str();let after=if confirmed{After::Notice("导入已完成".into())}else{After::Preview(path.clone())};let ticket=self.register(after,true);Request::Import{ticket,command:json!({"op":if confirmed{"import"}else{"import.preview"},"space":sp}),path}};let _=self.backend.sender.send(req);}
-            Mode::Upload(_)|Mode::Download(_,_)=>{let path=PathBuf::from(val("path"));if !path.is_absolute(){return Err("请选择完整文件路径。".into())}
-                let(command,after)=match &mode{Mode::Upload(record)=>{let mut q=json!({"op":"attachment.upload","kind":"document","space":self.loc.space});if let Some(r)=record{q["id"]=json!(r.id);q["kind"]=json!(r.kind);q["expected_rev"]=json!(r.rev);}else{q["visibility"]=json!(val("visibility"));}(q,After::Saved(record.as_ref().map_or("document",|r|&r.kind).to_owned()))},Mode::Download(r,file)=>(json!({"op":"attachment.download","kind":r.kind,"id":r.id,"attachment_id":file["id"],"space":self.loc.space}),After::Notice(format!("已保存到 {}",path.display()))),_=>unreachable!()};
-                let ticket=self.register(after,true);self.backend.sender.send(Request::Attachment{ticket,command,path}).map_err(|e|e.to_string())?;}
-            Mode::Machine{stop}=>{let ticket=self.register(After::Machine,true);self.backend.sender.send(Request::Machine{ticket,space:self.loc.space.clone(),fields:Value::Object(values),stop}).map_err(|e|e.to_string())?;}
-            Mode::Workflow{op,record}=>{let mut q=Value::Object(values);q["op"]=json!(op);q["space"]=json!(self.loc.space);q["id"]=json!(record.id);
-                if op=="tool.authorize"{q["id"]=q["agent"].take();q["tool_id"]=json!(record.id);}
-                if op=="triage"{q["decision"]=json!("duplicate");q["expected_rev"]=json!(record.rev);}
-                let inspect=matches!(op,"tool.authorize"|"connector.export"|"provider.preview");let after=if inspect{After::Output(crate::forms::workflow_name(op).into())}else{After::Notice("已保存".into())};self.send(q,after,!inspect);}
-            Mode::ResolveDraft(draft)=>{let rev=values.get("expected_rev").and_then(Value::as_i64).filter(|v|*v>0).ok_or("请输入有效的服务器版本")?;self.send(json!({"op":"sync.resolve","id":draft["request_id"],"expected_rev":rev}),After::Notice("草稿已更新，可重新同步".into()),true);}
-            Mode::Token=>{if val("actor").is_empty(){return Err("请选择成员。".into());}self.send(json!({"op":"access.issue","actor":val("actor"),"scope":val("scope"),"space":self.loc.space}),After::Output("访问令牌（请妥善保存）".into()),true);}
-            Mode::Search=>self.search(val("query")),Mode::Output{..}=>self.close_form(w,cx),
+
+            Mode::Filter => {
+                self.loc.filter = values;
+                self.loc
+                    .filter
+                    .retain(|_, v| !v.is_null() && v.as_str() != Some(""));
+                self.close_form(w, cx);
+                self.read(false);
+            }
+
+            Mode::Connect => {
+                let (url, token) = (val("url"), val("token"));
+                if url.is_empty() || token.is_empty() {
+                    return Err("请输入服务地址和令牌。".into());
+                }
+                let ticket = self.register(After::Connected, true);
+                let _ = self
+                    .backend
+                    .sender
+                    .send(Request::Connect { url, token, ticket });
+            }
+
+            Mode::Confirm { command, .. } => {
+                self.send(command, After::Notice("操作已完成".into()), true)
+            }
+
+            Mode::IterationEnd(r) => self.send(
+                json!({
+                "op":"iteration.close",
+                "space":self.loc.space,
+                "id":r.id,
+                "target":values.get("target"),
+                "expected_rev":r.rev}
+                ),
+                After::Notice("迭代已结束".into()),
+                true,
+            ),
+
+            Mode::Export | Mode::Import => {
+                let path = PathBuf::from(val("path"));
+                if !path.is_absolute() {
+                    return Err("请输入文件的完整路径。".into());
+                }
+
+                let sp = self.loc.space.clone();
+                let req = if matches!(mode, Mode::Export) {
+                    let ticket = self.register(After::Notice("空间数据已导出".into()), true);
+                    Request::Export {
+                        ticket,
+                        command: json!({
+                        "op":"export","space":sp}
+                        ),
+                        path,
+                    }
+                } else {
+                    let confirmed = preview
+                        .as_ref()
+                        .and_then(|p| p.get("path"))
+                        .and_then(Value::as_str)
+                        == path.to_str();
+                    let after = if confirmed {
+                        After::Notice("导入已完成".into())
+                    } else {
+                        After::Preview(path.clone())
+                    };
+                    let ticket = self.register(after, true);
+                    Request::Import {
+                        ticket,
+                        command: json!({
+                        "op":if confirmed{
+                        "import"}
+                        else{
+                        "import.preview"}
+                        ,"space":sp}
+                        ),
+                        path,
+                    }
+                };
+                let _ = self.backend.sender.send(req);
+            }
+
+            Mode::Upload(_) | Mode::Download(_, _) => {
+                let path = PathBuf::from(val("path"));
+                if !path.is_absolute() {
+                    return Err("请选择完整文件路径。".into());
+                }
+
+                let (command, after) = match &mode {
+                    Mode::Upload(record) => {
+                        let mut q = json!({
+                        "op":"attachment.upload","kind":"document","space":self.loc.space}
+                        );
+                        if let Some(r) = record {
+                            q["id"] = json!(r.id);
+                            q["kind"] = json!(r.kind);
+                            q["expected_rev"] = json!(r.rev);
+                        } else {
+                            q["visibility"] = json!(val("visibility"));
+                        }
+                        (
+                            q,
+                            After::Saved(
+                                record.as_ref().map_or("document", |r| &r.kind).to_owned(),
+                            ),
+                        )
+                    }
+                    Mode::Download(r, file) => (
+                        json!({
+                        "op":"attachment.download","kind":r.kind,"id":r.id,"attachment_id":file["id"],"space":self.loc.space}
+                        ),
+                        After::Notice(format!("已保存到 {}", path.display())),
+                    ),
+                    _ => unreachable!(),
+                };
+
+                let ticket = self.register(after, true);
+                self.backend
+                    .sender
+                    .send(Request::Attachment {
+                        ticket,
+                        command,
+                        path,
+                    })
+                    .map_err(|e| e.to_string())?;
+            }
+
+            Mode::Machine { stop } => {
+                let ticket = self.register(After::Machine, true);
+                self.backend
+                    .sender
+                    .send(Request::Machine {
+                        ticket,
+                        space: self.loc.space.clone(),
+                        fields: Value::Object(values),
+                        stop,
+                    })
+                    .map_err(|e| e.to_string())?;
+            }
+
+            Mode::Workflow { op, record } => {
+                let mut q = Value::Object(values);
+                q["op"] = json!(op);
+                q["space"] = json!(self.loc.space);
+                q["id"] = json!(record.id);
+
+                if op == "tool.authorize" {
+                    q["id"] = q["agent"].take();
+                    q["tool_id"] = json!(record.id);
+                }
+
+                if op == "triage" {
+                    q["decision"] = json!("duplicate");
+                    q["expected_rev"] = json!(record.rev);
+                }
+
+                let inspect = matches!(
+                    op,
+                    "tool.authorize" | "connector.export" | "provider.preview"
+                );
+                let after = if inspect {
+                    After::Output(crate::forms::workflow_name(op).into())
+                } else {
+                    After::Notice("已保存".into())
+                };
+                self.send(q, after, !inspect);
+            }
+
+            Mode::ResolveDraft(draft) => {
+                let rev = values
+                    .get("expected_rev")
+                    .and_then(Value::as_i64)
+                    .filter(|v| *v > 0)
+                    .ok_or("请输入有效的服务器版本")?;
+                self.send(
+                    json!({
+                    "op":"sync.resolve",
+                    "id":draft["request_id"],
+                    "expected_rev":rev}
+                    ),
+                    After::Notice("草稿已更新，可重新同步".into()),
+                    true,
+                );
+            }
+
+            Mode::Token => {
+                if val("actor").is_empty() {
+                    return Err("请选择成员。".into());
+                }
+                self.send(
+                    json!({
+                    "op":"access.issue",
+                    "actor":val("actor"),
+                    "scope":val("scope"),
+                    "space":self.loc.space}
+                    ),
+                    After::Output("访问令牌（请妥善保存）".into()),
+                    true,
+                );
+            }
+
+            Mode::Search => self.search(val("query")),
+            Mode::Output { .. } => self.close_form(w, cx),
         }
+
         Ok(())
     }
     pub fn options(&self, source: &str) -> Vec<(String, String)> {

@@ -19,6 +19,7 @@ concurrency:
 jobs:
   release:
     name: Verify and attach Windows release
+    if: github.event_name == 'workflow_dispatch' || (github.event.release.draft == false && github.event.release.prerelease == false)
     runs-on: windows-latest
     timeout-minutes: 20
     permissions:
@@ -31,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          ref: ${{ github.event.release.tag_name || inputs.tag }}
+          ref: refs/tags/${{ github.event.release.tag_name || inputs.tag }}
           fetch-depth: 0
           persist-credentials: false
       - name: Find the verified main build for the tagged commit
@@ -39,6 +40,8 @@ jobs:
         shell: pwsh
         run: |
           if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'A stable vX.Y.Z tag is required.' }
+          $release = gh release view $env:RELEASE_TAG --json tagName,isDraft,isPrerelease | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $release.tagName -cne $env:RELEASE_TAG -or $release.isDraft -or $release.isPrerelease) { throw 'A published stable release is required.' }
           $version = python -c "import tomllib;print(tomllib.load(open('Cargo.toml','rb'))['workspace']['package']['version'])"
           if ("v$version" -ne $env:RELEASE_TAG) { throw 'Version mismatch.' }
           $commit = git rev-parse HEAD
@@ -62,5 +65,20 @@ jobs:
       - name: Publish verified binaries and checksums
         shell: pwsh
         run: |
-          $base="dist/shipforge-$($env:RELEASE_TAG.Substring(1))-windows-x64"
-          gh release upload $env:RELEASE_TAG "$base.zip" "$base.zip.sha256" "$base-setup.exe" "$base-setup.exe.sha256" --clobber
+          $base = "dist/shipforge-$($env:RELEASE_TAG.Substring(1))-windows-x64"
+          $release = gh release view $env:RELEASE_TAG --json assets | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Could not read published assets.' }
+          $downloadDir = Join-Path $env:RUNNER_TEMP "published-$env:RELEASE_TAG"
+          New-Item -ItemType Directory -Force -Path $downloadDir | Out-Null
+          foreach ($file in @("$base.zip", "$base.zip.sha256", "$base-setup.exe", "$base-setup.exe.sha256")) {
+            $name = Split-Path -Leaf $file
+            if ($release.assets.name -ccontains $name) {
+              gh release download $env:RELEASE_TAG --pattern $name --dir $downloadDir --clobber
+              if ($LASTEXITCODE -ne 0) { throw "Could not verify existing asset $name." }
+              $existing = Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $downloadDir $name)
+              if ($existing.Hash -ne (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash) { throw "Published bytes differ for $name." }
+            } else {
+              gh release upload $env:RELEASE_TAG $file
+              if ($LASTEXITCODE -ne 0) { throw "Could not attach $name." }
+            }
+          }

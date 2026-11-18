@@ -37,7 +37,7 @@ def verify(directory, version):
     for name in PROGRAMS:
         output = subprocess.run([str(binary(directory, name)), "--version"], check=True,
                                 capture_output=True, text=True, encoding="utf-8", timeout=12)
-        assert version in output.stdout, (name, output.stdout, output.stderr)
+        assert output.stdout.strip() == f"{name} {version}", (name, output.stdout, output.stderr)
     with tempfile.TemporaryDirectory(prefix="shipforge-release-") as tmp:
         data = Path(tmp) / "用户工作区"
         def call(op, **kw):
@@ -61,11 +61,34 @@ def verify(directory, version):
         assert run_cli(cli,data,"download","task",task["id"],file["id"],str(target),ok=False)["code"]=="storage"
         assert (data/"workspace.sqlite3").is_file()
         schema = run_cli(cli, data, "schema")
-        checked = json.loads((ROOT/"docs"/"protocol.schema.json").read_text(encoding="utf-8"))
+        schema_file = directory / "docs" / "protocol.schema.json"
+        if not schema_file.is_file():
+            schema_file = ROOT / "docs" / "protocol.schema.json"
+        checked = json.loads(schema_file.read_text(encoding="utf-8"))
         assert checked == schema
         for entry in ("iteration.close","document.restore","run.enqueue","sync.flush","access.whoami"):
             assert entry in schema["properties"]["op"]["enum"]
-    print(f"Verified four executables and local persistence, conflicts and CLI schema for {version}.")
+        machine = Path(tmp) / "工作机.json"
+        worker = binary(directory, "shipforge-worker")
+        worker_env = {k:v for k,v in os.environ.items() if k not in ("SHIPFORGE_SERVER","SHIPFORGE_TOKEN")}
+        worker_env["SHIPFORGE_DATA_DIR"] = str(data)
+        def machine_command(action, *extra):
+            output = subprocess.run([str(worker), action, "--config", str(machine), *extra],
+                                    env=worker_env, capture_output=True, text=True,
+                                    encoding="utf-8", timeout=40)
+            assert output.returncode == 0, (action, output.stderr)
+            return json.loads(output.stdout)
+        machine_command("init", "--example")
+        call("create", kind="agent", id="verify-worker", title="Example worker",
+             fields={"runtime":"inspect-context"})
+        call("create", kind="task", title="Verify packaged runtime",
+             fields={"status":"todo","assignee_kind":"agent","assignee":"verify-worker"})
+        result = machine_command("run", "--once")["runs"]
+        assert len(result) == 1 and result[0]["status"] == "done", result
+        run = call("get", kind="run", id=result[0]["id"])
+        assert run["fields"]["result"] == "Context received for Verify packaged runtime", run
+        assert not machine_command("run", "--once")["runs"]
+    print(f"Verified four executables, local tasks, attachments, CLI schema and an external runtime round trip for {version}.")
 
 
 if __name__=="__main__":

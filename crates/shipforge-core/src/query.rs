@@ -130,6 +130,7 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
             Ok(json!(matching(c, "task", &options)?))
         }
         "dashboard" => dashboard(c, q),
+        "iteration.timeline" => iteration_timeline(c, q),
         "iteration.preview" => {
             let it = c.readable("iteration", required(q, "id")?)?;
             Ok(json!(unfinished(c, &it.id)?))
@@ -356,6 +357,50 @@ pub(crate) fn unfinished(c: &Context<'_>, id: &str) -> Result<Vec<Record>> {
         }
     }
     Ok(pending)
+}
+fn iteration_timeline(c: &Context<'_>, q: &Value) -> Result<Value> {
+    let today = match q.get("as_of") {
+        Some(value) => NaiveDate::parse_from_str(value.as_str().unwrap_or(""), "%Y-%m-%d")
+            .map_err(|_| invalid("as_of must use YYYY-MM-DD"))?,
+        None => chrono::Utc::now().date_naive(),
+    };
+    let today = today.to_string();
+    let mut counts: BTreeMap<String, (usize, usize)> = BTreeMap::new();
+    for task in visible_records(c, "task")? {
+        if let Some(iteration) = task.fields["iteration"].as_str() {
+            let entry = counts.entry(iteration.to_owned()).or_default();
+            entry.0 += 1;
+            entry.1 += usize::from(c.status_category(&task)? == "done");
+        }
+    }
+    let mut rows = visible_records(c, "iteration")?;
+    for it in &mut rows {
+        let start = it.fields["start_date"]
+            .as_str()
+            .or(it.fields["start"].as_str());
+        let end = it.fields["end_date"].as_str().or(it.fields["end"].as_str());
+        let phase = if it.fields["status"] == "closed" {
+            "closed"
+        } else if start.is_some_and(|s| s > today.as_str()) {
+            "upcoming"
+        } else if end.is_some_and(|s| s < today.as_str()) {
+            "overdue"
+        } else if start.is_some() || it.fields["status"] == "active" {
+            "active"
+        } else {
+            "unscheduled"
+        };
+        let (total, completed) = counts.remove(&it.id).unwrap_or_default();
+        it.fields["planning"] = json!({"phase":phase,"start":start,"end":end,"total":total,
+            "completed":completed,"capacity":it.fields["capacity"].as_u64()});
+    }
+    rows.sort_by(|a, b| {
+        b.fields["planning"]["start"]
+            .as_str()
+            .cmp(&a.fields["planning"]["start"].as_str())
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    Ok(json!(rows))
 }
 fn dashboard(c: &Context<'_>, q: &Value) -> Result<Value> {
     let list = filtered(c, "task", q)?;

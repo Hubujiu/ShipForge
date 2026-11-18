@@ -189,7 +189,11 @@ fn handle(request: &mut Request, auth: &Auth, store: &mut Store) -> Result<Value
         let event = request
             .headers()
             .iter()
-            .find(|h| h.field.equiv("X-Gitlab-Event-UUID") || h.field.equiv("X-ShipForge-Event"))
+            .find(|h| {
+                h.field.equiv("X-Gitlab-Event-UUID")
+                    || h.field.equiv("X-ShipForge-Event")
+                    || h.field.equiv("X-Atlassian-Webhook-Identifier")
+            })
             .map(|h| h.value.as_str().to_owned());
         if body.get("payload").is_none() {
             body = json!({"payload":body});
@@ -203,6 +207,7 @@ fn handle(request: &mut Request, auth: &Auth, store: &mut Store) -> Result<Value
     } else if let Some(route) = path.strip_prefix("/v1/hooks/") {
         let (space, rule) = split_target(route)?;
         body["op"] = json!("automation.fire");
+        body["source"] = json!("webhook");
         body["space"] = json!(space);
         body["id"] = json!(rule);
     }
@@ -230,7 +235,9 @@ fn dispatch(
         return auth::execute(auth, p, &body);
     }
     auth::authorize(p, &body)?;
-    if op == "provider.ingest" && body.get("provider").is_none() {
+    if op == "automation.fire" && p.scope == "hook" {
+        body["source"] = json!("webhook");
+    } else if op == "provider.ingest" && body.get("provider").is_none() {
         let connector = store.execute(
             &p.actor,
             json!({"op":"get","kind":"connector","space":body["space"],"id":body["id"]}),

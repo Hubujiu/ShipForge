@@ -2,7 +2,12 @@ use serde_json::{Value, json};
 use shipforge_core::Store;
 
 fn cases() -> Vec<Value> {
-    serde_json::from_str(include_str!("fixtures/inbound.json")).unwrap()
+    let mut fixtures: Vec<Value> =
+        serde_json::from_str(include_str!("fixtures/inbound.json")).unwrap();
+    fixtures.extend(
+        serde_json::from_str::<Vec<Value>>(include_str!("fixtures/inbound-extended.json")).unwrap(),
+    );
+    fixtures
 }
 fn connector(db: &mut Store, provider: &str) {
     db.execute("owner",json!({"op":"create","kind":"connector","id":provider,"title":provider,"fields":{"provider":provider,"enabled":true}})).unwrap();
@@ -15,7 +20,7 @@ fn envelope(case: &Value, op: &str) -> Value {
     q
 }
 #[test]
-fn five_provider_fixtures_preview_apply_and_replay() {
+fn every_provider_fixture_previews_applies_and_replays() {
     let mut db = Store::memory().unwrap();
     for case in cases() {
         let provider = case["provider"].as_str().unwrap();
@@ -55,7 +60,12 @@ fn five_provider_fixtures_preview_apply_and_replay() {
 #[test]
 fn issue_updates_reconcile_source_order_and_manual_conflicts() {
     let fixtures = cases();
-    for case in &fixtures[..2] {
+    for case in fixtures.iter().filter(|c| {
+        matches!(
+            c["provider"].as_str(),
+            Some("gitlab" | "jira" | "linear" | "asana")
+        )
+    }) {
         let mut db = Store::memory().unwrap();
         let provider = case["provider"].as_str().unwrap();
         connector(&mut db, provider);
@@ -70,12 +80,23 @@ fn issue_updates_reconcile_source_order_and_manual_conflicts() {
             a["state"] = json!("closed");
             a["action"] = json!("close");
             a["title"] = json!("Revised issue");
-        } else {
+        } else if provider == "jira" {
             q["payload"]["webhookEvent"] = json!("jira:issue_updated");
             let f = &mut q["payload"]["issue"]["fields"];
             f["updated"] = json!("2026-01-10T13:00:00.003+0000");
             f["status"]["statusCategory"]["key"] = json!("done");
             f["summary"] = json!("Revised issue");
+        } else if provider == "linear" {
+            q["payload"]["action"] = json!("update");
+            let d = &mut q["payload"]["data"];
+            d["updatedAt"] = json!("2026-01-10T13:00:00.003Z");
+            d["state"]["type"] = json!("completed");
+            d["title"] = json!("Revised issue");
+        } else {
+            let d = &mut q["payload"]["task"]["data"];
+            d["modified_at"] = json!("2026-01-10T13:00:00.003Z");
+            d["completed"] = json!(true);
+            d["name"] = json!("Revised issue");
         }
         db.execute(
             "owner",
@@ -98,6 +119,92 @@ fn issue_updates_reconcile_source_order_and_manual_conflicts() {
         assert_eq!(row["title"], "Revised issue");
         assert_eq!(row["fields"]["status"], "done");
     }
+}
+
+#[test]
+fn six_extended_adapters_validate_native_shapes_and_origin_filters() {
+    let mut db = Store::memory().unwrap();
+    for case in cases().into_iter().skip(5) {
+        let name = case["provider"].as_str().unwrap();
+        connector(&mut db, name);
+        let original = envelope(&case, "provider.ingest");
+        let mut q = original.clone();
+        let scope = match name {
+            "linear" => {
+                q["payload"]["action"] = json!("remove");
+                json!({"team_id":"foreign-team"})
+            }
+            "asana" => {
+                q["payload"]["events"][0]["resource"]["gid"] = json!("wrong");
+                json!({"project_id":"foreign-project"})
+            }
+            "teams" => {
+                q["payload"]["from"]["role"] = json!("bot");
+                json!({"tenant_id":"foreign-tenant"})
+            }
+            "discord" => {
+                q["payload"]["d"]["webhook_id"] = json!("11");
+                json!({"channel_id":"foreign-channel"})
+            }
+            "wecom" => {
+                q["payload"]["Encrypt"] = json!("cipher-text");
+                json!({"corp_id":"another-corp"})
+            }
+            "dingtalk" => {
+                q["payload"]["headers"]["topic"] = json!("/other");
+                json!({"chat_id":"foreign-chat"})
+            }
+            other => panic!("missing test for {other}"),
+        };
+        assert!(
+            db.execute("owner", q).is_err(),
+            "{name} accepted unsupported event"
+        );
+        db.execute(
+            "owner",
+            json!({"op":"update","kind":"connector","id":name,"fields":scope}),
+        )
+        .unwrap();
+        assert!(
+            db.execute("owner", original).is_err(),
+            "{name} ignored source scope"
+        );
+    }
+    assert_eq!(
+        db.execute("owner", json!({"op":"list","kind":"task"}))
+            .unwrap(),
+        json!([])
+    );
+}
+
+#[test]
+fn asana_get_snapshot_and_dingtalk_sdk_inner_callback_are_accepted() {
+    let mut db = Store::memory().unwrap();
+    let fixtures = cases();
+    let asana = fixtures.iter().find(|c| c["provider"] == "asana").unwrap();
+    connector(&mut db, "asana");
+    let mut q = envelope(asana, "provider.ingest");
+    q["payload"] = asana["payload"]["task"].clone();
+    let a = db.execute("owner", q.clone()).unwrap();
+    assert_eq!(a["action"], "created");
+    let mut thin = q.clone();
+    thin["payload"] = json!({"events":asana["payload"]["events"]});
+    assert!(db.execute("owner", thin).is_err());
+    q["payload"]["data"]
+        .as_object_mut()
+        .unwrap()
+        .remove("notes");
+    assert!(db.execute("owner", q).is_err());
+    let ding = fixtures
+        .iter()
+        .find(|c| c["provider"] == "dingtalk")
+        .unwrap();
+    connector(&mut db, "dingtalk");
+    let stream = envelope(ding, "provider.ingest");
+    let mut inner = stream.clone();
+    inner["payload"] = serde_json::from_str(stream["payload"]["data"].as_str().unwrap()).unwrap();
+    let posted = db.execute("owner", inner).unwrap();
+    assert_eq!(db.execute("owner", stream).unwrap(), posted);
 }
 #[test]
 fn unsupported_and_out_of_scope_deliveries_roll_back() {

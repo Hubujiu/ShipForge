@@ -2,10 +2,12 @@
 import argparse
 import hashlib
 from pathlib import Path, PurePosixPath
+import re
 import subprocess
 import sys
 import tempfile
 import tomllib
+from urllib.parse import unquote, urlsplit
 import zipfile
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -14,6 +16,25 @@ ROOT=Path(__file__).resolve().parents[1]
 def digest(path):
     with path.open("rb") as stream:
         return hashlib.file_digest(stream, "sha256").hexdigest()
+
+
+def verify_manuals(payload):
+    required = (
+        "README.md", "LICENSE", "docs/windows.md", "docs/cli.md", "docs/protocol.schema.json",
+        "skills/shipforge/SKILL.md", "licenses/LUCIDE-LICENSE.txt",
+        "crates/shipforge-worker/README.md", "crates/shipforge-core/PROVIDERS.md",
+    )
+    for name in required:
+        assert (payload / name).is_file(), f"Missing packaged file: {name}"
+    for manual in payload.rglob("*.md"):
+        for target in re.findall(r"\]\(([^)]+)\)", manual.read_text(encoding="utf-8")):
+            url = urlsplit(target.strip("<>"))
+            if url.scheme or url.netloc or not url.path:
+                continue
+            dest = (manual.parent / unquote(url.path)).resolve()
+            assert dest.is_relative_to(payload) and dest.is_file(), (
+                f"{manual.relative_to(payload)} references missing packaged file {target}"
+            )
 
 
 def verify(dist, version):
@@ -43,8 +64,7 @@ def verify(dist, version):
             checked.add(name)
             assert digest(payload/name)==checksum
         assert checked=={"shipforge.exe","shipforge-desktop.exe","shipforge-server.exe","shipforge-worker.exe"}
-        for file in ("LICENSE","docs/cli.md","docs/protocol.schema.json","skills/shipforge/SKILL.md","licenses/LUCIDE-LICENSE.txt"):
-            assert (payload/file).is_file(), file
+        verify_manuals(payload)
         subprocess.run([sys.executable,str(ROOT/"scripts/verify-release.py"),str(payload),"--expected-version",version],check=True)
         subprocess.run([sys.executable,str(ROOT/"scripts/verify-team.py"),str(payload)],check=True)
     print(f"Verified {archive.name} and SHA-256 {digest(archive)}.")

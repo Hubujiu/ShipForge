@@ -3,7 +3,10 @@ mod extended;
 use crate::{Context, Result, invalid, required, worker};
 use chrono::{DateTime, NaiveDateTime};
 use serde_json::{Value, json};
-pub(crate) const NAMES:&[&str]=&["gitlab","jira","feishu","lark","slack","telegram","linear","asana","teams","discord","wecom","dingtalk"];
+pub(crate) const NAMES: &[&str] = &[
+    "gitlab", "jira", "feishu", "lark", "slack", "telegram", "linear", "asana", "teams", "discord",
+    "wecom", "dingtalk",
+];
 
 pub(crate) fn execute(c: &Context<'_>, q: &Value, preview: bool) -> Result<Value> {
     let id = required(q, "id")?;
@@ -105,7 +108,7 @@ fn issue_title(value: &Value) -> Result<String> {
 fn upstream_id(v: &Value, key: &str) -> Result<String> {
     let out = if let Some(id) = v[key].as_i64() {
         id.to_string()
-    } else if let Some(id)=v[key].as_u64() {
+    } else if let Some(id) = v[key].as_u64() {
         id.to_string()
     } else {
         required(v, key)?.to_owned()

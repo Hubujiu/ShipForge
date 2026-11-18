@@ -6066,6 +6066,7 @@ dependencies = [
 name = "shipforge-desktop"
 version = "0.6.0"
 dependencies = [
+ "chrono",
  "embed-resource",
  "gpui-kit",
  "resvg 0.45.1",

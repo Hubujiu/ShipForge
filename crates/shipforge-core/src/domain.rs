@@ -416,6 +416,15 @@ fn validate(c: &Context<'_>, old: Option<&Record>, row: &mut Record) -> Result<(
             }
         }
         "iteration" => {
+            // Timeline statistics are computed for the requesting member.
+            f.as_object_mut().expect("record fields").remove("planning");
+            if let Some(capacity) = f.get("capacity").filter(|v| !v.is_null())
+                && capacity.as_u64().is_none_or(|n| n == 0 || n > 1_000_000)
+            {
+                return Err(invalid(
+                    "iteration capacity must be a positive task count up to 1000000",
+                ));
+            }
             for key in ["start", "end", "start_date", "end_date"] {
                 if let Some(v) = f.get(key).filter(|v| !v.is_null()) {
                     valid_date(v)?;

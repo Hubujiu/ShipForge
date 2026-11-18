@@ -59,6 +59,7 @@ const READS: &[&str] = &[
     "view.run",
     "dashboard",
     "iteration.preview",
+    "iteration.timeline",
     "task.relations",
     "project.progress",
     "document.history",
@@ -90,7 +91,7 @@ pub fn schema() -> Value {
             "space":{"type":"string","default":"default"},"id":{"type":"string","minLength":1},
             "title":{"type":"string","minLength":1},"fields":{"type":"object"},
             "expected_rev":{"type":"integer","minimum":1},"request_id":{"type":"string","minLength":1,"maxLength":160},
-            "filter":{"type":"object"},"query":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":5000},"offset":{"type":"integer","minimum":0},
+            "filter":{"type":"object"},"query":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":5000},"offset":{"type":"integer","minimum":0},"as_of":{"type":"string","format":"date"},
             "after":{"type":"integer","minimum":0},"target":{"type":["string","null"]},"version":{"type":"integer","minimum":1},
             "provider":{"type":"string"},"payload":{"type":"object"},"event_id":{"type":"string","minLength":1,"maxLength":256},
             "filename":{"type":"string","minLength":1,"maxLength":255},"media_type":{"type":"string"},"attachment_id":{"type":"string"},"content_base64":{"type":"string","contentEncoding":"base64","maxLength":5592408}

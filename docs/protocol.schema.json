@@ -1,5 +1,282 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ShipForge workspace request",
+  "type": "object",
+  "required": [
+    "op"
+  ],
+  "properties": {
+    "op": {
+      "type": "string",
+      "enum": [
+        "schema",
+        "whoami",
+        "list",
+        "get",
+        "search",
+        "space.list",
+        "organization.list",
+        "events",
+        "view.run",
+        "dashboard",
+        "iteration.preview",
+        "iteration.timeline",
+        "task.relations",
+        "project.progress",
+        "document.history",
+        "export",
+        "import.preview",
+        "provider.preview",
+        "attachment.download",
+        "create",
+        "update",
+        "delete",
+        "iteration.close",
+        "triage",
+        "follow",
+        "notification.act",
+        "document.restore",
+        "artifact.save",
+        "import",
+        "provider.ingest",
+        "attachment.upload",
+        "agent.resolve",
+        "catalog.list",
+        "catalog.install",
+        "tool.authorize",
+        "machine.register",
+        "machine.heartbeat",
+        "machine.disable",
+        "machine.enable",
+        "run.enqueue",
+        "run.claim",
+        "run.heartbeat",
+        "run.report",
+        "run.cancel",
+        "run.retry",
+        "run.reply",
+        "run.tool",
+        "automation.fire",
+        "automation.tick",
+        "connector.ingest",
+        "connector.export",
+        "access.whoami",
+        "access.issue",
+        "access.list",
+        "access.revoke",
+        "sync.status",
+        "sync.pending",
+        "sync.enqueue",
+        "sync.flush",
+        "sync.resolve"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "space",
+        "organization",
+        "member",
+        "task",
+        "task_type",
+        "status",
+        "field",
+        "tag",
+        "relation",
+        "relation_type",
+        "view",
+        "iteration",
+        "project",
+        "comment",
+        "notification",
+        "chat",
+        "message",
+        "document",
+        "artifact",
+        "agent",
+        "crew",
+        "skill",
+        "machine",
+        "run",
+        "automation",
+        "connector",
+        "tool",
+        "settings",
+        "invitation",
+        "note"
+      ]
+    },
+    "space": {
+      "type": "string",
+      "default": "default"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fields": {
+      "type": "object"
+    },
+    "expected_rev": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "filter": {
+      "type": "object"
+    },
+    "query": {
+      "type": "string"
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5000
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "as_of": {
+      "type": "string",
+      "format": "date"
+    },
+    "after": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "target": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "provider": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "filename": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "media_type": {
+      "type": "string"
+    },
+    "attachment_id": {
+      "type": "string"
+    },
+    "content_base64": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "maxLength": 5592408
+    },
+    "machine_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "tool_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "call_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "handler_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "chat_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "external_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "source_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "lease": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "machine_key": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 256,
+      "writeOnly": true
+    },
+    "handler_kind": {
+      "enum": [
+        "agent",
+        "crew"
+      ]
+    },
+    "capacity": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64
+    },
+    "runtimes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 128
+    },
+    "scope": {
+      "enum": [
+        "read",
+        "write",
+        "worker",
+        "hook"
+      ]
+    },
+    "actor": {
+      "type": "string"
+    },
+    "allow_cached": {
+      "type": "boolean"
+    },
+    "queue_if_offline": {
+      "type": "boolean"
+    }
+  },
   "allOf": [
     {
       "if": {
@@ -76,6 +353,11 @@
         }
       },
       "then": {
+        "required": [
+          "id",
+          "provider",
+          "payload"
+        ],
         "properties": {
           "provider": {
             "enum": [
@@ -84,15 +366,16 @@
               "feishu",
               "lark",
               "slack",
-              "telegram"
+              "telegram",
+              "linear",
+              "asana",
+              "teams",
+              "discord",
+              "wecom",
+              "dingtalk"
             ]
           }
-        },
-        "required": [
-          "id",
-          "provider",
-          "payload"
-        ]
+        }
       }
     },
     {
@@ -104,6 +387,21 @@
         }
       },
       "then": {
+        "required": [
+          "kind",
+          "filename",
+          "content_base64"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "document",
+              "artifact",
+              "message",
+              "task"
+            ]
+          }
+        },
         "if": {
           "properties": {
             "kind": {
@@ -115,21 +413,6 @@
             }
           }
         },
-        "properties": {
-          "kind": {
-            "enum": [
-              "document",
-              "artifact",
-              "message",
-              "task"
-            ]
-          }
-        },
-        "required": [
-          "kind",
-          "filename",
-          "content_base64"
-        ],
         "then": {
           "required": [
             "id"
@@ -146,6 +429,11 @@
         }
       },
       "then": {
+        "required": [
+          "kind",
+          "id",
+          "attachment_id"
+        ],
         "properties": {
           "kind": {
             "enum": [
@@ -155,12 +443,7 @@
               "task"
             ]
           }
-        },
-        "required": [
-          "kind",
-          "id",
-          "attachment_id"
-        ]
+        }
       }
     },
     {
@@ -388,10 +671,6 @@
       },
       "then": {
         "properties": {
-          "artifacts": {
-            "maxItems": 100,
-            "type": "array"
-          },
           "status": {
             "enum": [
               "done",
@@ -399,6 +678,10 @@
               "cancelled",
               "waiting"
             ]
+          },
+          "artifacts": {
+            "type": "array",
+            "maxItems": 100
           }
         }
       }
@@ -460,277 +743,5 @@
         ]
       }
     }
-  ],
-  "properties": {
-    "actor": {
-      "type": "string"
-    },
-    "after": {
-      "minimum": 0,
-      "type": "integer"
-    },
-    "allow_cached": {
-      "type": "boolean"
-    },
-    "attachment_id": {
-      "type": "string"
-    },
-    "call_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "capacity": {
-      "maximum": 64,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "chat_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "content_base64": {
-      "contentEncoding": "base64",
-      "maxLength": 5592408,
-      "type": "string"
-    },
-    "event_id": {
-      "maxLength": 256,
-      "minLength": 1,
-      "type": "string"
-    },
-    "expected_rev": {
-      "minimum": 1,
-      "type": "integer"
-    },
-    "external_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "fields": {
-      "type": "object"
-    },
-    "filename": {
-      "maxLength": 255,
-      "minLength": 1,
-      "type": "string"
-    },
-    "filter": {
-      "type": "object"
-    },
-    "handler_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "handler_kind": {
-      "enum": [
-        "agent",
-        "crew"
-      ]
-    },
-    "id": {
-      "minLength": 1,
-      "type": "string"
-    },
-    "kind": {
-      "enum": [
-        "space",
-        "organization",
-        "member",
-        "task",
-        "task_type",
-        "status",
-        "field",
-        "tag",
-        "relation",
-        "relation_type",
-        "view",
-        "iteration",
-        "project",
-        "comment",
-        "notification",
-        "chat",
-        "message",
-        "document",
-        "artifact",
-        "agent",
-        "crew",
-        "skill",
-        "machine",
-        "run",
-        "automation",
-        "connector",
-        "tool",
-        "settings",
-        "invitation",
-        "note"
-      ],
-      "type": "string"
-    },
-    "lease": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "limit": {
-      "maximum": 5000,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "machine_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "machine_key": {
-      "maxLength": 256,
-      "minLength": 32,
-      "type": "string",
-      "writeOnly": true
-    },
-    "media_type": {
-      "type": "string"
-    },
-    "offset": {
-      "minimum": 0,
-      "type": "integer"
-    },
-    "op": {
-      "enum": [
-        "schema",
-        "whoami",
-        "list",
-        "get",
-        "search",
-        "space.list",
-        "organization.list",
-        "events",
-        "view.run",
-        "dashboard",
-        "iteration.preview",
-        "task.relations",
-        "project.progress",
-        "document.history",
-        "export",
-        "import.preview",
-        "provider.preview",
-        "attachment.download",
-        "create",
-        "update",
-        "delete",
-        "iteration.close",
-        "triage",
-        "follow",
-        "notification.act",
-        "document.restore",
-        "artifact.save",
-        "import",
-        "provider.ingest",
-        "attachment.upload",
-        "agent.resolve",
-        "catalog.list",
-        "catalog.install",
-        "tool.authorize",
-        "machine.register",
-        "machine.heartbeat",
-        "machine.disable",
-        "machine.enable",
-        "run.enqueue",
-        "run.claim",
-        "run.heartbeat",
-        "run.report",
-        "run.cancel",
-        "run.retry",
-        "run.reply",
-        "run.tool",
-        "automation.fire",
-        "automation.tick",
-        "connector.ingest",
-        "connector.export",
-        "access.whoami",
-        "access.issue",
-        "access.list",
-        "access.revoke",
-        "sync.status",
-        "sync.pending",
-        "sync.enqueue",
-        "sync.flush",
-        "sync.resolve"
-      ],
-      "type": "string"
-    },
-    "payload": {
-      "type": "object"
-    },
-    "provider": {
-      "type": "string"
-    },
-    "query": {
-      "type": "string"
-    },
-    "queue_if_offline": {
-      "type": "boolean"
-    },
-    "request_id": {
-      "maxLength": 160,
-      "minLength": 1,
-      "type": "string"
-    },
-    "runtimes": {
-      "items": {
-        "type": "string"
-      },
-      "maxItems": 128,
-      "type": "array"
-    },
-    "scope": {
-      "enum": [
-        "read",
-        "write",
-        "worker",
-        "hook"
-      ]
-    },
-    "source_version": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "space": {
-      "default": "default",
-      "type": "string"
-    },
-    "target": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "task_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "title": {
-      "minLength": 1,
-      "type": "string"
-    },
-    "tool_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "version": {
-      "minimum": 1,
-      "type": "integer"
-    }
-  },
-  "required": [
-    "op"
-  ],
-  "title": "ShipForge workspace request",
-  "type": "object"
+  ]
 }

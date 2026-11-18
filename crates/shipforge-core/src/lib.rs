@@ -136,9 +136,8 @@ impl Store {
             "create" | "update" | "delete" => write_request(&c, &request),
             "list" | "get" | "search" | "events" | "space.list" | "organization.list"
             | "view.run" | "dashboard" | "task.relations" | "project.progress"
-            | "iteration.preview" | "document.history" | "export" | "import.preview" => {
-                query::execute(&c, &request, op)
-            }
+            | "iteration.preview" | "iteration.timeline" | "document.history" | "export"
+            | "import.preview" => query::execute(&c, &request, op),
             "iteration.close" | "triage" | "follow" | "notification.act" | "document.restore"
             | "artifact.save" | "import" => actions::execute(&c, &request, op),
             _ => worker::dispatch(&c, &request).ok_or_else(|| invalid("unknown operation"))?,

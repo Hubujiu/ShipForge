@@ -49,8 +49,13 @@ def main() -> None:
             connection.commit()
         before = digest(database)
         for attempt in range(2):
+            setup_args = [str(setup), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/SP-", "/NORESTART",
+                    "/NOICONS", "/NOCLOSEAPPLICATIONS", "/VERIFYINSTALL=1",
+                    f"/DIR={install}", f"/LOG={base / f'install-{attempt}.log'}"]
+            if attempt == 0:
+                setup_args.append(f"/SHIPFORGEDATA={data}")
             subprocess.run(
-                [str(setup), "/VERYSILENT", "/SUPPRESSMSGBOXES", "/SP-", "/NORESTART", "/NOICONS", "/NOCLOSEAPPLICATIONS", "/VERIFYINSTALL=1", f"/DIR={install}", f"/SHIPFORGEDATA={data}", f"/LOG={base / f'install-{attempt}.log'}"],
+                setup_args,
                 check=True, timeout=120, env=os.environ | {"SHIPFORGE_DATA_DIR": str(data)},
                 creationflags=subprocess.CREATE_NO_WINDOW,
             )
@@ -74,7 +79,7 @@ def main() -> None:
             assert connection.execute("SELECT content FROM preserved").fetchone()[0] == "project/task/annotation sentinel"
             assert connection.execute("SELECT title FROM records WHERE kind='task' AND id=?", (reply["data"]["id"],)).fetchone()[0] == "installed-profile-check"
             assert connection.execute("SELECT count(*) FROM records WHERE kind='task' AND title='existing task'").fetchone()[0] == 1
-    print(f"Verified {setup.name}: custom Unicode directory, reinstall, payload hashes and untouched data")
+    print(f"Verified {setup.name}: custom Unicode directory, saved profile across reinstall, payload hashes and untouched data")
 
 
 if __name__ == "__main__":

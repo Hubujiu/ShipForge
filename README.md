@@ -10,6 +10,7 @@ ShipForge 是用 Rust 和 GPUI 编写的开源协作工作台。你可以在 Win
 
 | 文档 | 内容 |
 | --- | --- |
+| [Windows 功能对照](docs/windows-coverage.md) | 从参考能力定位到 Windows 实际入口，列明本机、团队及第三方接入范围。 |
 | [功能清单与验收条件](docs/features.md) | 对照 HiFox 官网、帮助中心和 Windows 实机梳理的 26 项能力。 |
 | [界面索引](docs/interfaces.md) | 36 个实机页面、面板和表单状态，含导航路径与可公开查看的官方参考。 |
 | [客户端与 REA 分析](docs/client-analysis.md) | HiFox 0.4.538 安装包、可读模块恢复结果和桌面桥接职责。 |

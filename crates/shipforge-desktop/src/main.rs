@@ -52,7 +52,7 @@ fn main() {
         }
         if arg == "--help" || arg == "-h" {
             print_information(
-                "ShipForge Windows 工作台\nshipforge-desktop [--data-dir <目录>] [--demo]\n--demo 使用内存示例数据。",
+                "ShipForge Windows 工作台\nshipforge-desktop [--data-dir <目录>] [--demo] [--smoke-test]\n--demo 使用内存示例数据。",
             );
             return;
         }

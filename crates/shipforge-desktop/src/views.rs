@@ -7,6 +7,8 @@ use crate::{
 };
 use gpui_kit::{prelude::*, *};
 use serde_json::{Value, json};
+#[path = "planning.rs"]
+mod planning;
 
 #[derive(Clone)]
 struct DraggedTask(Record);
@@ -80,6 +82,10 @@ impl Workbench {
             );
         }
         if p == Page::Machines && self.mode != "demo" {
+            header = header.child(
+                outlined(self.button("machine-probe", "扫描本机 Runtime", UiAction::Probe, cx))
+                    .child("探测 Runtime"),
+            );
             header = header
                 .child(
                     outlined(self.button(
@@ -145,6 +151,7 @@ impl Workbench {
                 .child(self.task_page(f32::from(w.viewport_size().width), cx))
                 .into_any_element(),
             Page::Settings => root.child(self.settings_page(cx)).into_any_element(),
+            Page::Iterations => root.child(self.iteration_page(cx)).into_any_element(),
             Page::Transfer => root.child(self.transfer_page(cx)).into_any_element(),
             Page::Market => root.child(self.market_page(cx)).into_any_element(),
             _ => root.child(self.record_page(cx)).into_any_element(),
@@ -786,7 +793,12 @@ impl Workbench {
                 ("failed", "失败"),
             ],
             Page::Machines => &[("", "全部机器")],
-            Page::Iterations => &[("", "全部迭代"), ("active", "进行中"), ("closed", "已结束")],
+            Page::Iterations => &[
+                ("", "全部迭代"),
+                ("upcoming", "即将开始"),
+                ("active", "进行中"),
+                ("closed", "已结束"),
+            ],
             _ => &[],
         };
         for (v, l) in pairs {
@@ -1214,7 +1226,8 @@ impl Workbench {
             } else {
                 0.
             };
-        let width = (if r.kind == "task" { 854_f32 } else { 550_f32 }).min(available.max(250.));
+        let width = (if r.kind == "task" { 920_f32 } else { 550_f32 }).min(available.max(250.));
+        let side_properties = r.kind == "task" && width >= 680.;
         let info = Page::from_kind(&r.kind).map(|p| p.info());
         let mut body = col()
             .w_full()
@@ -1285,7 +1298,10 @@ impl Workbench {
                         .child("评论"),
                     );
                 }
-                body = body.child(actions).child(self.task_properties(r, cx));
+                body = body.child(actions);
+                if !side_properties {
+                    body = body.child(self.task_properties(r, cx));
+                }
                 body = body
                     .child(headline("评论与活动", 14.))
                     .child(self.thread_items("comment", "task", &r.id));
@@ -1635,6 +1651,23 @@ impl Workbench {
                     .child(text("删除", 12., MUTED)),
             );
         }
+        let detail_content = if side_properties {
+            row()
+                .w_full()
+                .items_start()
+                .child(body.flex_1().min_w_0())
+                .child(
+                    col()
+                        .w(px((width * 0.32).clamp(230., 300.)))
+                        .flex_shrink_0()
+                        .pr(px(16.))
+                        .pt(px(18.))
+                        .child(self.task_properties(r, cx)),
+                )
+                .into_any_element()
+        } else {
+            body.into_any_element()
+        };
         col()
             .id("object-detail")
             .absolute()
@@ -1655,7 +1688,7 @@ impl Workbench {
                     .flex_1()
                     .min_h_0()
                     .overflow_y_scroll()
-                    .child(body),
+                    .child(detail_content),
             )
             .into_any_element()
     }
@@ -1664,8 +1697,11 @@ impl Workbench {
             .w_full()
             .p(px(12.))
             .rounded(px(8.))
-            .bg(rgb(PALE))
-            .gap(px(6.));
+            .bg(rgb(BG))
+            .border_1()
+            .border_color(rgb(LINE))
+            .gap(px(8.))
+            .child(headline("属性", 13.));
         let entries = [
             ("当前状态", label_value("status", r.field("status"))),
             ("类型", label_value("type", r.field("type"))),

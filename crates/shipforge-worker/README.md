@@ -1,6 +1,6 @@
 # ShipForge 机器执行器
 
-`shipforge-worker.exe` 把空间中的任务交给本机安装的程序。它与桌面、CLI 共用工作区协议。单机模式使用 `SHIPFORGE_DATA_DIR` 下的数据库；团队模式读取已保存的团队连接，或同时设置 `SHIPFORGE_SERVER` 和 `SHIPFORGE_TOKEN`。机器令牌需要所属空间的 worker 范围。运行、回复、产物及关联任务可以从客户端的执行历史中打开。
+`shipforge-worker.exe` 把空间中的任务交给本机安装的程序。它与桌面、CLI 共用工作区协议。单机模式使用当前用户的 ShipForge 数据目录，可用 `SHIPFORGE_DATA_DIR` 指定独立配置。团队模式读取该配置中保存的连接，也可同时设置 `SHIPFORGE_SERVER` 和 `SHIPFORGE_TOKEN`。持续领任务的进程可使用 `worker` 范围令牌，执行身份还需目标空间的编辑权限。运行、回复、产物及关联任务可以从客户端的执行历史中打开。
 
 ## 第一次运行
 
@@ -51,7 +51,7 @@
 
 机器容量取 1–64。个人机器执行归属本人的工作。空间管理员可注册共享机器。Agent 的 `runtime`、`machine_id`、`profile`、`max_parallel`、`chat_parallel`、`working_hours` 决定匹配范围。时段示例 `{"start":9,"end":18,"utc_offset_minutes":480}`。工作时段支持跨午夜。变体通过 `parent_id` 继承，字段设为 `null` 时重新采用上级设置。
 
-隔离模式会针对绑定的 Git 仓库从 `HEAD` 创建独立分离工作树。工作树及产物保存在配置文件旁的 `.state/work`，数据库记录机器路径。未绑定仓库时创建单独的空目录。使用已有目录需要同时设置机器 `allow_direct: true` 和 Agent `directory_mode: "direct"`；相同路径通过系统文件锁串行访问。[Git worktree 文档](https://git-scm.com/docs/git-worktree)
+隔离模式会针对绑定的 Git 仓库从 `HEAD` 创建独立分离工作树，也可省略 `workspace` 让每次运行使用空目录。工作树及产物保存在配置文件旁，例如 `machine.json.state/work`，数据库记录机器路径。直接使用已有目录时，同时设置机器 `allow_direct: true` 和 Agent `directory_mode: "direct"`。涉及同一规范化路径的直接运行通过系统文件锁串行访问。[Git worktree 文档](https://git-scm.com/docs/git-worktree)
 
 ## 输入、回复与产物
 
@@ -75,9 +75,21 @@ Runtime 提交 `{"tool_calls":[{"tool_id":"reference-search","arguments":{"query
 
 ## 自动化与外部同步
 
-空间规则使用 `handler_id`、`handler_kind`、`instruction`、`enabled`、`notify`、`triggers`。触发器有 `schedule`（`interval_minutes`）、`status`（可选 `status`）、`comment`（可选 `keyword`）和 `webhook`，可逐个设置 `enabled`。正在运行的机器每二十秒检查周期规则，同一个周期、评论、状态变更或 Webhook 事件只生成一次运行。
+空间规则使用 `handler_id`、`handler_kind`、`instruction`、`enabled`、`notify` 和 `triggers`。`notify` 是结束时接收通知的成员 ID 数组。每个触发器可以单独启停。类型为 `status` 时可指定具体状态，`comment` 可指定 `keyword`，`webhook` 接受绑定该规则的回调。
 
-GitHub 连接器的字段为 `{"provider":"github","repository":"OWNER/REPO","enabled":true}`。空间管理员可以拉取单个 Issue 或分页拉取全部 Issue。拉取会跳过 Pull Request。显式回写支持已映射 Issue 的标题、正文与打开或关闭状态。Worker 在回写前核对上次同步的远端修订和本地变更。私有库读取及回写需要操作者在运行命令的本机进程环境中提供相应仓库权限的 `GITHUB_TOKEN`。[GitHub Issues REST API](https://docs.github.com/en/rest/issues/issues)
+定时触发器均使用 `type:"schedule"`。日历计划按 IANA 时区计算，`weekdays` 中 1 代表周一，7 代表周日。以下三个 JSON 对象各自可作为规则的一个触发器。
+
+```json
+[
+  {"type":"schedule","interval_minutes":120},
+  {"type":"schedule","frequency":"daily","local_time":"17:45","timezone":"Asia/Shanghai"},
+  {"type":"schedule","frequency":"weekly","weekdays":[1,4],"local_time":"09:15","timezone":"America/Los_Angeles"}
+]
+```
+
+运行中的 Worker 约每 20 秒扫描到期计划。游标保存在工作区，重新连接后每次为每个触发器补算最多 64 个错过的时间点。夏令时跳过指定时刻时选当天随后第一个有效分钟，时钟回拨造成同一时刻出现两次时选较早的那次。规则记录每次派发的来源和计划执行时间。[授权回调及 CLI 规则示例](../../docs/cli.md)
+
+GitHub 连接器的字段为 `{"provider":"github","repository":"OWNER/REPO","enabled":true}`。用具有空间管理权的 ShipForge 身份运行以下同步命令。在团队模式可为这次操作单独使用管理员的 `write` 范围令牌。可拉取单个 Issue 或分页拉取仓库的全部 Issue，拉取时跳过 Pull Request。显式回写支持已映射 Issue 的标题、正文与打开或关闭状态，写前核对上次同步的远端修订。读取私有库及远端写入还需在执行命令的进程环境中提供具备相应仓库权限的 `GITHUB_TOKEN`。[GitHub Issues REST API](https://docs.github.com/en/rest/issues/issues)
 
 ```powershell
 .\shipforge-worker.exe github-sync --config D:\ShipForge\machine.json --connector github-team --issue 42
@@ -85,4 +97,4 @@ GitHub 连接器的字段为 `{"provider":"github","repository":"OWNER/REPO","en
 .\shipforge-worker.exe github-push --config D:\ShipForge\machine.json --connector github-team --task <任务ID>
 ```
 
-外部数据通过 `connector.ingest` 传入 `id`（连接器）、`external_id`、`event_id`、`source_version`、`title`、`description` 和 `closed`。修订号应使用可排序的 UTC 时间或补零编号。系统按来源和外部 ID 映射任务，逐字段合并独立变更。同一字段在两端同时修改时返回 `action: "conflict"`，可由管理员明确指定 `resolve: "source"` 或 `"local"`。启用分拣的空间将新开 Issue 放入分拣台。服务端的供应商 Webhook 格式与授权方式见 CLI 手册。
+外部数据通过 `connector.ingest` 传入 `id`（连接器）、`external_id`、`event_id`、`source_version`、`title`、`description` 和 `closed`。修订号应使用可按字典序比较的同格式 UTC 时间或补零编号。系统按连接器和外部 ID 映射任务，逐字段合并独立变更。同一字段在两端同时修改时返回 `action: "conflict"`，可由管理员明确指定 `resolve: "source"` 或 `"local"`。命中空间分拣来源与类型要求的外部任务会进入分拣台。GitLab 等十一种专用输入由服务端和 CLI 的 `provider.ingest` 处理。[入站供应商对照](../shipforge-core/PROVIDERS.md)

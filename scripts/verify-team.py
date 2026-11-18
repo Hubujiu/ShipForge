@@ -85,6 +85,19 @@ def verify(bin_dir):
             assert code==200 and replayed["data"]["task"]==body["data"]["task"],replayed
             assert webhook("/v1/integrations/default/other",payload,headers)[0]==403
             assert webhook("/v1/command",{"op":"list","kind":"task"},{"Authorization":"Bearer "+hook["token"]})[0]==403
+            command(admin,"create",kind="agent",id="hook-agent",title="Hook agent",fields={})
+            rule_fields={"handler_kind":"agent","handler_id":"hook-agent","instruction":"Record this event","enabled":True,
+                         "triggers":[{"type":"webhook","enabled":False}]}
+            command(admin,"create",kind="automation",id="qa-rule",title="Hook QA",fields=rule_fields)
+            auth_hook=command(admin,"access.issue",actor="owner",scope="hook",space="default",resource="automation",binding="qa-rule")
+            hook_headers={"Authorization":"Bearer "+auth_hook["token"]}
+            event={"source":"manual","event_id":"delivery-a","payload":{"build":1}}
+            assert webhook("/v1/hooks/default/qa-rule",event,hook_headers)[0]>=400
+            assert webhook("/v1/command",dict(event,op="automation.fire",space="default",id="qa-rule"),hook_headers)[0]>=400
+            command(admin,"update",kind="automation",id="qa-rule",fields={"triggers":[{"type":"webhook","enabled":True}]})
+            code,started=webhook("/v1/hooks/default/qa-rule",event,hook_headers)
+            assert code==200 and started["data"]["fields"]["source"]=="webhook",started
+            assert webhook("/v1/hooks/default/qa-rule",event,hook_headers)[1]["data"]["id"]==started["data"]["id"]
             command(admin,"create",kind="member",id="qa-reader",title="QA reader",fields={"actor":"qa-reader","role":"viewer"})
             token=command(admin,"access.issue",actor="qa-reader",scope="read")
             connect(cli,reader,address,token["token"])

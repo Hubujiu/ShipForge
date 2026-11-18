@@ -221,9 +221,17 @@ fn rule_dedup_and_connector_three_way_merge() {
         "r",
         json!({"handler_id":"a","instruction":"Summarize", "enabled":true,"triggers":[{"type":"webhook"},{"type":"schedule","interval_minutes":60}]}),
     );
-    let request = json!({"op":"automation.fire","id":"r","source":"webhook","event_id":"ev1"});
+    let request = json!({"op":"automation.fire","id":"r","source":"webhook","event_id":"ev1","payload":{"channel":"release"}});
     let one = execute(&mut db, request.clone());
-    assert_eq!(one["id"], execute(&mut db, request)["id"]);
+    assert_eq!(one["fields"]["webhook_payload"]["channel"], "release");
+    assert_eq!(one["id"], execute(&mut db, request.clone())["id"]);
+    let mut changed = request;
+    changed["payload"] = json!({"channel":"other"});
+    assert!(
+        db.execute("owner", changed)
+            .unwrap_err()
+            .contains("different content")
+    );
     let first = execute(&mut db, json!({"op":"automation.tick"}));
     let second = execute(&mut db, json!({"op":"automation.tick"}));
     assert_eq!(first, second);
