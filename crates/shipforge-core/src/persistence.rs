@@ -42,11 +42,13 @@ pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(storage)?;
     tx.execute_batch(V1).map_err(storage)?;
+    crate::spaces::init(&tx)?;
     tx.pragma_update(None, "application_id", APP_ID)
         .map_err(storage)?;
     tx.pragma_update(None, "user_version", 1).map_err(storage)?;
     crate::worker::init(&tx)?;
     crate::chat::init(&tx)?;
+    crate::iterations::init(&tx)?;
     crate::onboarding::initialize(&tx)?;
     crate::invitations::initialize(&tx)?;
     if tables == 0 {
@@ -100,6 +102,7 @@ pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
         })?;
     }
     crate::onboarding::backfill(&tx)?;
+    crate::tags::upgrade(&tx)?;
     tx.commit().map_err(storage)
 }
 
@@ -180,7 +183,7 @@ impl Context<'_> {
             .unwrap_or_else(|| Uuid::new_v4().to_string());
         let at = now();
         let rev = self.first_revision(kind, &id)?;
-        let row = Record {
+        let mut row = Record {
             space: self.space.to_owned(),
             kind: kind.to_owned(),
             id,
@@ -190,6 +193,9 @@ impl Context<'_> {
             created_at: at,
             updated_at: at,
         };
+        if kind == "task" && row.fields.get("iteration").is_none() {
+            crate::iterations::auto_assign(self, None, &mut row)?;
+        }
         self.insert(&row)?;
         Ok(row)
     }
@@ -202,12 +208,22 @@ impl Context<'_> {
         }
     }
     pub(crate) fn insert(&self, row: &Record) -> Result<()> {
+        if row.kind != "space" {
+            crate::spaces::ensure_active(self)?;
+        }
         let data = row.fields.to_string();
         self.db.execute("INSERT INTO records(space,kind,id,title,fields,rev,created_at,updated_at) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![row.space,row.kind,row.id,row.title,data,row.rev,row.created_at,row.updated_at]).map_err(store_constraint)?;
         self.event(row, "create")?;
         crate::onboarding::observe(self, row, None)
     }
     pub(crate) fn update(&self, old: &Record, title: &str, fields: Value) -> Result<Record> {
+        if old.kind == "task" && fields["iteration"].is_null() && old.fields["iteration"].is_null()
+        {
+            let mut row = old.clone();
+            row.fields = fields;
+            crate::iterations::auto_assign(self, Some(old), &mut row)?;
+            return self.update_mode(old, title, row.fields, true);
+        }
         self.update_mode(old, title, fields, true)
     }
     pub(crate) fn update_mode(
@@ -218,6 +234,12 @@ impl Context<'_> {
         notify: bool,
     ) -> Result<Record> {
         let mut row = old.clone();
+        if !(old.kind == "space"
+            && old.fields["deactivated"] == true
+            && fields["deactivated"] == false)
+        {
+            crate::spaces::ensure_active(self)?;
+        }
         row.title = title.to_owned();
         row.fields = fields;
         row.rev = old.rev + 1;
@@ -234,6 +256,9 @@ impl Context<'_> {
         Ok(row)
     }
     pub(crate) fn remove(&self, old: &Record) -> Result<()> {
+        if old.kind != "member" {
+            crate::spaces::ensure_active(self)?;
+        }
         let n = self
             .db
             .execute(

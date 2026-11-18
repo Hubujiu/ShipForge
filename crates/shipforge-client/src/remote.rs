@@ -166,6 +166,7 @@ impl Remote {
                     | "iteration.timeline"
                     | "search"
                     | "space.list"
+                    | "space.navigation"
                     | "document.history"
             );
         if queue && request.get("request_id").is_none() {

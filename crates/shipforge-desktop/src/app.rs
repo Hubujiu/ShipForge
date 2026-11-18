@@ -9,6 +9,8 @@ use gpui_kit::{prelude::*, *};
 pub(crate) mod onboarding;
 #[path = "personal.rs"]
 pub(crate) mod personal;
+#[path = "space_ui.rs"]
+pub(crate) mod space_ui;
 use serde_json::{Map, Value, json};
 use std::{
     collections::{BTreeMap, HashMap},
@@ -45,6 +47,7 @@ impl Default for Location {
 }
 #[derive(Clone)]
 pub enum UiAction {
+    Space(space_ui::Action),
     CopyInvitation(String),
     Guide(onboarding::Action),
     Personal(crate::personal::Action),
@@ -96,6 +99,8 @@ pub enum UiAction {
     Tokens,
 }
 enum After {
+    SpacePreview(Record),
+    SpaceMembership,
     ChatShareCreated,
     ChatShareOpened,
     InvitationLink,
@@ -285,7 +290,7 @@ impl Workbench {
         self.pos + 1 < self.history.len()
     }
     pub fn writable(&self) -> bool {
-        !matches!(self.role.as_str(), "viewer" | "read")
+        !matches!(self.role.as_str(), "viewer" | "read") && !self.current_archived()
     }
     pub fn notify_text(&mut self, s: impl Into<String>) {
         let message = s.into();
@@ -330,6 +335,7 @@ impl Workbench {
         let mut kinds = vec![self.loc.page.info().kind, "space", "member"];
         if self.loc.page.is_tasks() || self.loc.view.is_some() {
             kinds.extend([
+                "tag",
                 "task",
                 "task_type",
                 "status",
@@ -344,7 +350,8 @@ impl Workbench {
             Page::Members if matches!(self.role.as_str(), "admin" | "owner") => {
                 kinds.push("member_invitation")
             }
-            Page::Dashboard | Page::Projects | Page::Iterations | Page::Views => kinds.push("task"),
+            Page::Iterations => kinds.extend(["task", "iteration_settings"]),
+            Page::Dashboard | Page::Projects | Page::Views => kinds.push("task"),
             Page::Assistant | Page::Chats => kinds.extend(["agent", "chat", "chat_invitation"]),
             Page::Market => kinds.extend(["skill", "agent"]),
             Page::Inbox => kinds.push("task"),
@@ -381,6 +388,8 @@ impl Workbench {
         }
         if self.form.is_some() {
             kinds.extend([
+                "tag",
+                "tag_group",
                 "agent",
                 "crew",
                 "status",
@@ -403,6 +412,9 @@ impl Workbench {
             {
                 kinds.push("task");
             }
+        }
+        if self.module_disabled(Page::Iterations) && self.loc.page != Page::Iterations {
+            kinds.retain(|k| *k != "iteration");
         }
         kinds.sort_unstable();
         kinds.dedup();
@@ -537,8 +549,14 @@ impl Workbench {
                         cx.quit();
                         self.smoke = false;
                     }
-                    if self.find("space", &self.loc.space).is_none()
-                        && let Some(first) = self.list("space").first().cloned()
+                    if self
+                        .find("space", &self.loc.space)
+                        .is_none_or(|s| s.fields.get("joined") == Some(&Value::Bool(false)))
+                        && let Some(first) = self
+                            .list("space")
+                            .iter()
+                            .find(|s| s.fields.get("joined") == Some(&Value::Bool(true)))
+                            .cloned()
                     {
                         self.switch_space(first);
                     }
@@ -647,6 +665,19 @@ impl Workbench {
             return;
         }
         match after {
+            After::SpacePreview(mut space) => {
+                space.rev = value["rev"].as_i64().unwrap_or(space.rev);
+                self.open_form(
+                    Mode::DeactivateSpace {
+                        space,
+                        unfinished: value["unfinished"].as_u64().unwrap_or_default(),
+                        token: value["preview_token"].as_str().unwrap_or_default().into(),
+                    },
+                    w,
+                    cx,
+                );
+            }
+            After::SpaceMembership => self.space_membership_reply(&value, w, cx),
             After::RunConversation => {
                 if let Ok(chat) = serde_json::from_value::<Record>(value["chat"].clone()) {
                     self.open(chat, true);
@@ -698,8 +729,15 @@ impl Workbench {
                     && !r.id.is_empty()
                     && !matches!(kind.as_str(), "message" | "comment")
                 {
-                    if r.kind == "space" && self.loc.page == Page::Spaces {
+                    if r.kind == "space"
+                        && self.loc.page == Page::Spaces
+                        && !self
+                            .find("space", &r.id)
+                            .is_some_and(|s| s.fields.get("joined") == Some(&Value::Bool(false)))
+                    {
                         self.switch_space(r);
+                    } else if r.kind == "space" {
+                        self.loc.selected = None;
                     } else {
                         self.loc.selected = Some(r);
                     }
@@ -940,6 +978,21 @@ impl Workbench {
         if next == self.pos {
             return;
         }
+        if self.history[next].space != self.loc.space {
+            if !self.rows.contains_key("space") {
+                return;
+            }
+            if !self
+                .find("space", &self.history[next].space)
+                .is_some_and(|s| s.fields.get("joined") == Some(&Value::Bool(true)))
+            {
+                self.history.remove(next);
+                if next < self.pos {
+                    self.pos -= 1;
+                }
+                return;
+            }
+        }
         self.history[self.pos] = self.loc.clone();
         let oldspace = self.loc.space.clone();
         self.loc = self.history[next].clone();
@@ -985,13 +1038,27 @@ impl Workbench {
         self.error = None;
         let mut value = Map::new();
         match &mode {
-            Mode::FindInView => value = self.loc.filter.clone(),
+            Mode::FindInView | Mode::FindLabels => value = self.loc.filter.clone(),
             Mode::MoveTask => {
                 if let Some(task) = self.loc.selected.as_ref().filter(|r| r.kind == "task") {
                     value.insert("task".into(), json!(task.id));
                 }
             }
             Mode::Edit(r) => value = initial_record(r),
+            Mode::BulkTags => {
+                if let Some(task) = self.loc.selected.as_ref().filter(|r| r.kind == "task") {
+                    value.insert("tasks".into(), json!([task.id]));
+                }
+            }
+            Mode::MergeTags => {
+                if let Some(tag) = self.loc.selected.as_ref().filter(|r| r.kind == "tag") {
+                    value.insert("source".into(), json!(tag.id));
+                }
+            }
+            Mode::Workflow {
+                op: "iteration.configure",
+                record,
+            } => value = record.fields.clone(),
             Mode::Create(k) if k == "agent" => {
                 if let Some(default) = self
                     .find("space", &self.loc.space)
@@ -1076,7 +1143,13 @@ impl Workbench {
     }
     pub fn act(&mut self, action: UiAction, w: &mut Window, cx: &mut Context<Self>) {
         use UiAction::*;
+        if self.archived_action(&action) {
+            self.notify_text("该空间已停用，历史记录为只读。");
+            cx.notify();
+            return;
+        }
         match action {
+            Space(action) => self.space_action(action, w, cx),
             CopyInvitation(id) => self.send(
                 json!({"op":"invitation.copy","space":self.loc.space,"id":id}),
                 After::InvitationLink,
@@ -1089,7 +1162,7 @@ impl Workbench {
                 self.loc.section = "settings".into();
                 self.history[self.pos] = self.loc.clone();
             }
-            Go(p) => self.navigate(p),
+            Go(p) => self.navigate_space_page(p),
             Open(r) => self.open(r, false),
             OpenSearch(r) => {
                 self.close_form(w, cx);
@@ -1167,11 +1240,24 @@ impl Workbench {
             }
             Pick(i) => {
                 if let Some(f) = &mut self.form {
-                    f.open_pick = if f.open_pick == Some(i) {
-                        None
-                    } else {
-                        Some(i)
-                    };
+                    f.open_pick = (f.open_pick != Some(i)).then_some(i);
+                    f.picker_search = f
+                        .open_pick
+                        .and_then(|index| f.entries.get(index))
+                        .filter(|entry| entry.spec.format.label_picker())
+                        .map(|_| {
+                            crate::controls::Field::new(
+                                "",
+                                crate::locale::label("搜索标签"),
+                                false,
+                                false,
+                                w,
+                                cx,
+                            )
+                        });
+                    if let Some(search) = &f.picker_search {
+                        search.handle(cx).focus(w, cx);
+                    }
                 }
             }
             Choose(i, v) => {
@@ -1186,33 +1272,24 @@ impl Workbench {
                                 .is_some_and(|e| e.spec.key == "work_type" && e.raw(cx) != v)
                     })
                     .then_some(if matches!(v.as_str(), "software" | "project") {
-                        "requirement, bug"
+                        vec!["requirement".to_string(), "bug".to_string()]
                     } else {
-                        "task"
+                        vec!["task".to_string()]
                     });
                 if let Some(f) = &mut self.form
                     && let Some(e) = f.entries.get_mut(i)
                     && let Control::Pick { value, focus } = &mut e.control
                 {
-                    if matches!(e.spec.format, crate::forms::Format::Many(_)) {
-                        let mut a: Vec<&str> = value
-                            .split(',')
-                            .map(str::trim)
-                            .filter(|s| !s.is_empty())
-                            .collect();
-                        if a.contains(&v.as_str()) {
-                            a.retain(|s| *s != v);
-                        } else if !v.is_empty() {
-                            a.push(&v);
-                        } else {
-                            a.clear();
-                        }
-                        *value = a.join(", ");
-                    } else {
-                        *value = v;
+                    value.choose(v);
+                    if !matches!(value, crate::forms::Selection::Many(_)) {
                         f.open_pick = None;
+                        f.picker_search = None;
                     }
-                    focus.focus(w, cx);
+                    if let Some(search) = &f.picker_search {
+                        search.handle(cx).focus(w, cx);
+                    } else {
+                        focus.focus(w, cx);
+                    }
                 }
                 if let Some(defaults) = setup_defaults
                     && let Some(entry) = self
@@ -1221,14 +1298,14 @@ impl Workbench {
                         .and_then(|f| f.entries.iter_mut().find(|e| e.spec.key == "task_types"))
                     && let Control::Pick { value, .. } = &mut entry.control
                 {
-                    *value = defaults.into();
+                    *value = crate::forms::Selection::Many(defaults);
                 }
             }
 
             Delete(r) => {
                 let command = json!({
                 "op":"delete",
-                "space":self.loc.space,
+                "space":if matches!(r.kind.as_str(),"tag"|"tag_group"){&r.space}else{&self.loc.space},
                 "kind":r.kind,
                 "id":r.id,
                 "expected_rev":r.rev}
@@ -1429,6 +1506,28 @@ cx);
                 .to_string()
         };
         match mode {
+            Mode::DeactivateSpace {
+                space,
+                unfinished,
+                token,
+            } => {
+                let mut command = json!({"op":"space.deactivate","space":space.id,"expected_rev":space.rev,"preview_token":token});
+                if unfinished > 0 {
+                    let choice = val("unfinished");
+                    if !matches!(choice.as_str(), "move" | "cancel") {
+                        return Err(crate::locale::label("请选择未完成任务的处理方式。").into());
+                    }
+                    command["unfinished"] = json!(choice);
+                    if choice == "move" {
+                        let target = val("target");
+                        if target.is_empty() {
+                            return Err(crate::locale::label("请选择目标空间。").into());
+                        }
+                        command["target"] = json!(target);
+                    }
+                }
+                self.send(command, After::SpaceMembership, true);
+            }
             Mode::Invite { email } => {
                 let mut q = json!({"op":"invitation.issue","space":self.loc.space,"channel":if email{"email"}else{"link"},"role":val("role"),"spaces":values["spaces"]});
                 if email {
@@ -1466,6 +1565,19 @@ cx);
                 self.close_form(w, cx);
                 self.guide_action(onboarding::Action::Start("connect_machine"), w, cx);
             }
+            Mode::BulkTags => {
+                let mut cmd = Value::Object(values);
+                cmd["op"] = json!("tag.apply");
+                cmd["space"] = json!(self.loc.space);
+                self.send(cmd, After::Notice("标签已更新".into()), true);
+            }
+            Mode::MergeTags => {
+                let source = self.find("tag", &val("source")).ok_or("请选择待合并标签")?;
+                let target = self.find("tag", &val("target")).ok_or("请选择目标标签")?;
+                let label = format!("{} → {}", source.title, target.title);
+                let command = json!({"op":"tag.merge","id":source.id,"target":target.id,"space":source.space,"expected_rev":source.rev});
+                self.open_form(Mode::Confirm { label, command }, w, cx);
+            }
             Mode::GuideTarget { step, kind } => {
                 let record = self
                     .find(kind, &val("target"))
@@ -1473,7 +1585,7 @@ cx);
                     .ok_or("请先选择对象")?;
                 self.guide_target(step, record, w, cx);
             }
-            Mode::FindInView => {
+            Mode::FindInView | Mode::FindLabels => {
                 let query = val("query");
                 if query.is_empty() {
                     self.loc.filter.remove("query");
@@ -1499,6 +1611,14 @@ cx);
                     None
                 };
                 let (title, mut fields) = compile_record(k, values, old.is_none())?;
+                if k == "task"
+                    && old.is_some_and(|r| {
+                        r.fields.get("iteration").unwrap_or(&Value::Null)
+                            == fields.get("iteration").unwrap_or(&Value::Null)
+                    })
+                {
+                    fields.remove("iteration");
+                }
 
                 if k == "automation"
                     && let Some(id) = fields.get("handler_id").and_then(Value::as_str)
@@ -1526,6 +1646,29 @@ cx);
                 if let Some(r) = old {
                     cmd["id"] = json!(r.id);
                     cmd["expected_rev"] = json!(r.rev);
+                    if k == "space" {
+                        cmd["space"] = json!(r.id);
+                    }
+                } else if k == "space" {
+                    let organization = cmd["fields"]["organization"]
+                        .as_str()
+                        .or_else(|| {
+                            self.find("space", &self.loc.space)
+                                .map(|s| s.field("organization"))
+                        })
+                        .unwrap_or("default");
+                    cmd["space"] = json!(organization);
+                }
+                if matches!(k.as_str(), "tag" | "tag_group") {
+                    if let Some(r) = old {
+                        cmd["space"] = json!(r.space);
+                    } else if cmd["fields"]["scope"] == "organization" {
+                        let org = self
+                            .find("space", &self.loc.space)
+                            .ok_or("请先选择所属空间")?
+                            .field("organization");
+                        cmd["space"] = json!(org);
+                    }
                 }
                 self.send(cmd, After::Saved(k.clone()), true);
             }
@@ -1571,9 +1714,11 @@ cx);
 
             Mode::Filter => {
                 self.loc.filter = values;
-                self.loc
-                    .filter
-                    .retain(|_, v| !v.is_null() && v.as_str() != Some(""));
+                self.loc.filter.retain(|_, v| {
+                    !v.is_null()
+                        && v.as_str() != Some("")
+                        && !v.as_array().is_some_and(Vec::is_empty)
+                });
                 self.close_form(w, cx);
                 self.read(false);
             }
@@ -1591,7 +1736,15 @@ cx);
             }
 
             Mode::Confirm { command, .. } => {
-                self.send(command, After::Notice("操作已完成".into()), true)
+                let after = if matches!(
+                    command["op"].as_str(),
+                    Some("space.restore" | "space.leave")
+                ) {
+                    After::SpaceMembership
+                } else {
+                    After::Notice("操作已完成".into())
+                };
+                self.send(command, after, true)
             }
 
             Mode::IterationEnd(r) => self.send(
@@ -1709,6 +1862,25 @@ cx);
 
             Mode::Workflow { op, record } => {
                 let mut q = Value::Object(values);
+                if op == "iteration.configure" {
+                    q = json!({"fields":q,"expected_rev":record.rev});
+                }
+                if op == "iteration.configure"
+                    && q["fields"]["mode"] == "disabled"
+                    && record.field("mode") != "disabled"
+                {
+                    q["op"] = json!(op);
+                    q["space"] = json!(self.loc.space);
+                    self.open_form(
+                        Mode::Confirm {
+                            label: "关闭迭代、结束当前期并移除未开始的期".into(),
+                            command: q,
+                        },
+                        w,
+                        cx,
+                    );
+                    return Ok(());
+                }
                 q["op"] = json!(op);
                 q["space"] = json!(self.loc.space);
                 q["id"] = json!(record.id);
@@ -1792,6 +1964,23 @@ cx);
                 .collect::<Vec<_>>()
         };
         match source {
+            "$tag_choices" => {
+                let current = self.form.as_ref().and_then(|form| match &form.mode {
+                    Mode::Edit(task) if task.kind == "task" => {
+                        task.fields.get("labels")?.as_array()
+                    }
+                    _ => None,
+                });
+                self.list("tag")
+                    .iter()
+                    .filter(|tag| {
+                        tag.fields.get("archived") != Some(&Value::Bool(true))
+                            || current.is_some_and(|ids| ids.iter().any(|id| id == &tag.id))
+                    })
+                    .map(|tag| (tag.id.clone(), tag.title.clone()))
+                    .collect()
+            }
+            "$deactivation_targets" => self.space_move_targets(),
             "$chat_messages" => {
                 let room = self.loc.selected.as_ref().map(|s| s.id.as_str());
                 self.list("message")
@@ -1823,14 +2012,15 @@ cx);
                     .unwrap_or("default");
                 self.list("space")
                     .iter()
-                    .filter(|s| s.field("organization") == org && s.id != org)
+                    .filter(|s| {
+                        s.field("organization") == org
+                            && s.id != org
+                            && s.fields.get("deactivated") != Some(&Value::Bool(true))
+                    })
                     .map(|s| (s.id.clone(), s.title.clone()))
                     .collect()
             }
-            "$other_spaces" => from("space")
-                .into_iter()
-                .filter(|(id, _)| id != &self.loc.space)
-                .collect(),
+            "$other_spaces" => self.space_move_options(&self.loc.space),
             "$weekdays" => ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
                 .iter()
                 .enumerate()
@@ -1929,6 +2119,20 @@ cx);
                         return false;
                     }
                 }
+                if let Some(wanted) = self
+                    .loc
+                    .filter
+                    .get("filter_labels")
+                    .and_then(Value::as_array)
+                    && !wanted.iter().all(|id| {
+                        r.fields
+                            .get("labels")
+                            .and_then(Value::as_array)
+                            .is_some_and(|a| a.contains(id))
+                    })
+                {
+                    return false;
+                }
                 let q = self
                     .loc
                     .filter
@@ -1940,6 +2144,13 @@ cx);
                 q.is_empty()
                     || r.title.to_lowercase().contains(&q)
                     || r.code().to_lowercase().contains(&q)
+                    || r.fields
+                        .get("labels")
+                        .and_then(Value::as_array)
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                        .any(|id| self.name("tag", id).to_lowercase().contains(&q))
             })
             .cloned()
             .collect();
@@ -1961,8 +2172,13 @@ cx);
         let mods = e.keystroke.modifiers;
         let action = if key == "escape" {
             if let Some(f) = &mut self.form
-                && f.open_pick.take().is_some()
+                && let Some(index) = f.open_pick.take()
             {
+                f.picker_search = None;
+                if let Some(entry) = f.entries.get(index) {
+                    entry.handle(cx).focus(w, cx);
+                }
+                cx.stop_propagation();
                 cx.notify();
                 return;
             }
@@ -2010,3 +2226,9 @@ fn overlay_options(defaults: &mut Vec<(String, String)>, records: Vec<(String, S
 #[cfg(all(test, windows))]
 #[path = "onboarding_ui.rs"]
 pub(crate) mod onboarding_ui;
+#[cfg(all(test, windows))]
+#[path = "space_ui_test.rs"]
+mod space_ui_test;
+#[cfg(all(test, windows))]
+#[path = "tag_ui.rs"]
+mod tag_ui;

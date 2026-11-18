@@ -1,4 +1,5 @@
 //! Thread bindings, inbox receipts and outbox rows share the transaction that writes the task.
+mod cards;
 mod origin;
 mod outbox;
 mod replies;
@@ -11,6 +12,7 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 pub(crate) fn init(db: &Connection) -> Result<()> {
+    cards::init(db)?;
     db.execute_batch("
         CREATE TABLE IF NOT EXISTS sf_im_threads (
             space TEXT NOT NULL, connector TEXT NOT NULL, route TEXT NOT NULL, task TEXT NOT NULL,
@@ -172,12 +174,15 @@ pub(crate) fn receive(
             .ok_or_else(|| invalid("connector ingestion unavailable"))??
     };
     let task = required(&response, "task")?;
-    shared_task(c, task)?;
-    c.db.execute(
+    let shared = shared_task(c, task)?;
+    let added=c.db.execute(
         "INSERT OR IGNORE INTO sf_im_threads(space,connector,route,task,active) VALUES(?,?,?,?,1)",
         params![c.space, id, route, task],
     )
     .map_err(storage)?;
+    if added == 1 {
+        cards::initial(c, connector, &route, &shared)?;
+    }
     c.db.execute("INSERT INTO sf_im_messages(space,connector,message,route,hash,response,comment) VALUES(?,?,?,?,?,?,?)",
         params![c.space,id,message,route,hash,response.to_string(),comment_id]).map_err(storage)?;
     record_event(c, id, event, &message)?;
@@ -235,6 +240,8 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value) -> Result<Value> {
                 params![c.space,connector.id,route,task.id,bind]).map_err(storage)?;
             if !bind {
                 outbox::cancel_route(c, &connector.id, &route)?;
+            } else if bound.as_ref().is_none_or(|(_, active)| !*active) {
+                cards::initial(c, &connector, &route, &task)?;
             }
             Ok(
                 json!({"task":task.id,"active":bind,"thread":serde_json::from_str::<Value>(&route).map_err(storage)?}),
@@ -244,10 +251,12 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value) -> Result<Value> {
     }
 }
 
+pub(crate) use cards::click;
 pub(crate) use outbox::{changed, echo, removed};
 
 pub(crate) fn extend_schema(schema: &mut Value) {
     let clauses = schema["allOf"].as_array_mut().unwrap();
+    clauses.push(json!({"if":{"required":["kind"],"properties":{"op":{"enum":["create","update"]},"kind":{"const":"connector"}}},"then":{"properties":{"fields":{"properties":{"slack_assignment":{"type":"boolean"},"assignee_map":{"type":"object","additionalProperties":{"type":"string"}}}}}}}));
     for (ops, fields) in [
         (
             vec!["im.bind", "im.unbind"],

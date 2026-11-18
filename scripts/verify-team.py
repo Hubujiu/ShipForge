@@ -19,7 +19,7 @@ release = import_module("verify-release")
 
 def start(server, data, address, *, extra=(), env=None):
     if env is None:
-        env = {k: v for k, v in os.environ.items() if k not in ("SHIPFORGE_SLACK_CONFIG","SHIPFORGE_GITHUB_WEBHOOKS")}
+        env = {k: v for k, v in os.environ.items() if k not in ("SHIPFORGE_SLACK_CONFIG","SHIPFORGE_GITHUB_WEBHOOKS","SHIPFORGE_JIRA_ORGANIZATION","SHIPFORGE_JIRA_BASE_URL")}
     p = subprocess.Popen([str(server), "--data-dir", str(data), "serve", "--listen", address, *extra],
                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8", env=env)
     ready = queue.Queue()
@@ -137,7 +137,9 @@ def verify(bin_dir):
     import_module("verify-slack").verify(bin_dir, start, stop)
     import_module("verify-vcs").verify(bin_dir, start, stop)
     import_module("verify-chat").verify(bin_dir, start, stop)
+    import_module("verify-iterations").verify(bin_dir, start, stop)
     import_module("verify-invitations").verify(bin_dir, start, stop, connect)
+    import_module("verify-jira").verify(bin_dir, start, stop)
 
 
 if __name__=="__main__":

@@ -2,6 +2,51 @@ use super::*;
 use std::thread;
 use tiny_http::{Header, Response as Reply, Server};
 
+#[test]
+fn posts_assignment_card_for_a_new_bound_thread_when_enabled() {
+    let mut client = Client::memory().unwrap();
+    client.execute(json!({"op":"create","kind":"connector","id":"cards","title":"QA cards",
+        "fields":{"provider":"slack","enabled":true,"outbound":true,"workspace_id":"T1","channel_id":"C1","app_id":"A1","bot_id":"B1","slack_assignment":true,"assignee_map":{"U1":"owner"}}})).unwrap();
+    let event = json!({"op":"provider.ingest","id":"cards","provider":"slack","payload":{"type":"event_callback","team_id":"T1","event_id":"E1","event":{"type":"message","channel":"C1","user":"U1","ts":"1.000001","text":"Review the draft"}}});
+    client.execute(event.clone()).unwrap();
+    client.execute(event).unwrap();
+    let (url, worker) = mock(vec![
+        identity(),
+        (
+            "chat.postMessage",
+            200,
+            json!({"ok":true,"channel":"C1","ts":"2.000003"}),
+        ),
+    ]);
+    let result = batch(
+        &mut client,
+        "default",
+        "cards",
+        &Slack::new(&url, "synthetic-token"),
+    )
+    .unwrap();
+    let requests = worker.join().unwrap();
+    let message = &requests[1];
+    assert_eq!(message["thread_ts"], "1.000001");
+    assert_eq!(message["blocks"][0]["text"]["type"], "plain_text");
+    assert!(
+        message["blocks"][0]["text"]["text"]
+            .as_str()
+            .unwrap()
+            .contains("Review the draft")
+    );
+    let block = &message["blocks"][1];
+    assert_eq!(
+        block["block_id"],
+        format!(
+            "shipforge-assignee-{}",
+            result["deliveries"][0]["delivery_id"].as_str().unwrap()
+        )
+    );
+    assert_eq!(block["elements"][0]["type"], "users_select");
+    assert_eq!(block["elements"][0]["action_id"], "shipforge.assign");
+}
+
 // The adapter's production URL is fixed. Only these tests inject a loopback URL.
 fn mock(replies: Vec<(&'static str, u16, Value)>) -> (String, thread::JoinHandle<Vec<Value>>) {
     let http = Server::http("127.0.0.1:0").unwrap();

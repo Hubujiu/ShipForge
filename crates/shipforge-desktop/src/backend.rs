@@ -125,11 +125,18 @@ impl Backend {
                                 } else if kind == "space" {
                                     json!({"op":"space.list"})
                                 } else if kind == "iteration" {
-                                    json!({"op":"iteration.timeline","space":space,"as_of":chrono::Local::now().date_naive().to_string()})
+                                    json!({"op":"iteration.timeline","space":space})
+                                } else if kind == "iteration_settings" {
+                                    json!({"op":"iteration.settings","space":space})
                                 } else {
                                     json!({"op":"list","kind":kind,"space":space})
                                 };
                                 let result = execute(&mut client, command).and_then(|value| {
+                                    let value = if kind == "iteration_settings" {
+                                        json!([value])
+                                    } else {
+                                        value
+                                    };
                                     serde_json::from_value::<Vec<Record>>(value)
                                         .map_err(|e| e.to_string())
                                 });

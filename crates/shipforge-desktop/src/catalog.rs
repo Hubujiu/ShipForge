@@ -42,6 +42,7 @@ pub fn value_text(v: &Value) -> String {
 pub enum Page {
     GettingStarted,
     Tags,
+    TagGroups,
     Tasks,
     Mine,
     Triage,
@@ -55,6 +56,8 @@ pub enum Page {
     Docs,
     Members,
     Spaces,
+    SpaceModules,
+    CustomerRequests,
     Agents,
     Crews,
     Skills,
@@ -98,6 +101,13 @@ impl Page {
                 "tag",
                 "标签",
                 "创建标签，按主题和来源整理任务。",
+            ),
+            TagGroups => (
+                "标签分组",
+                "layers",
+                "tag_group",
+                "标签分组",
+                "将互斥的标签归入一组。",
             ),
             Tasks => (
                 "任务",
@@ -189,6 +199,20 @@ impl Page {
                 "space",
                 "空间",
                 "创建空间以独立管理成员、任务和资料。",
+            ),
+            SpaceModules => (
+                "更多",
+                "boxes",
+                "space",
+                "空间功能",
+                "选择要打开或固定的空间功能。",
+            ),
+            CustomerRequests => (
+                "客户请求",
+                "inbox",
+                "customer_request",
+                "客户请求",
+                "记录客户反馈和请求的处理进度。",
             ),
             Agents => (
                 "Agents",
@@ -328,6 +352,7 @@ impl Page {
     pub fn from_kind(kind: &str) -> Option<Self> {
         const PAGES: &[Page] = &[
             Page::Tags,
+            Page::TagGroups,
             Page::Tasks,
             Page::Iterations,
             Page::Projects,
@@ -337,6 +362,7 @@ impl Page {
             Page::Docs,
             Page::Members,
             Page::Spaces,
+            Page::CustomerRequests,
             Page::Agents,
             Page::Crews,
             Page::Skills,
@@ -366,6 +392,7 @@ impl Page {
             self,
             Self::Market
                 | Self::GettingStarted
+                | Self::SpaceModules
                 | Self::Artifacts
                 | Self::Inbox
                 | Self::Machines

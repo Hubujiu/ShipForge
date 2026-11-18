@@ -211,7 +211,7 @@ pub(crate) fn observe(c: &Context<'_>, row: &Record, previous: Option<&Record>) 
         }
         "crew" if new => ids.push("create_crew"),
         "skill" if new && f["template_id"].is_string() => ids.push("install_skill"),
-        "tag" if new => ids.push("label_task"),
+        "tag" if new && f["imported_label"] != true => ids.push("label_task"),
         "connector"
             if (changed("link_tasks") || changed("enabled") || changed("repository"))
                 && f["link_tasks"] == true

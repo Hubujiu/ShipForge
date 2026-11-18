@@ -588,6 +588,82 @@
       "if": {
         "properties": {
           "op": {
+            "const": "jira.read"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "method": {
+            "const": "GET"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "jira.read",
+              "jira.write"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "api_version": {
+            "enum": [
+              2,
+              3
+            ]
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "params": {
+            "type": "object"
+          },
+          "resource": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "space",
+          "api_version",
+          "resource"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "jira.write"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "method": {
+            "enum": [
+              "POST",
+              "PUT",
+              "DELETE"
+            ]
+          }
+        },
+        "required": [
+          "method"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "const": "invitation.issue"
           }
         }
@@ -685,6 +761,99 @@
         "required": [
           "link"
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "iteration.configure"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "additionalProperties": false,
+            "minProperties": 1,
+            "properties": {
+              "anchor_date": {
+                "format": "date",
+                "type": "string"
+              },
+              "auto_join_active": {
+                "type": "boolean"
+              },
+              "auto_join_completed": {
+                "type": "boolean"
+              },
+              "auto_join_in_progress": {
+                "type": "boolean"
+              },
+              "cooldown_days": {
+                "maximum": 56,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "future_count": {
+                "maximum": 26,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "mode": {
+                "enum": [
+                  "manual",
+                  "automatic",
+                  "disabled"
+                ]
+              },
+              "timezone": {
+                "minLength": 1,
+                "type": "string"
+              },
+              "weeks": {
+                "maximum": 8,
+                "minimum": 1,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          }
+        },
+        "required": [
+          "fields"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "iteration.start"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "iteration.timeline"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "owner": {
+            "minLength": 1,
+            "type": "string"
+          }
+        }
       }
     },
     {
@@ -864,6 +1033,41 @@
         "required": [
           "id"
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "connector"
+          },
+          "op": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "properties": {
+              "assignee_map": {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              "slack_assignment": {
+                "type": "boolean"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -1059,6 +1263,299 @@
         "required": [
           "preferences"
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "space.pin"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "module": {
+            "enum": [
+              "iterations",
+              "triage",
+              "views",
+              "projects",
+              "customer_requests"
+            ]
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "space",
+          "module",
+          "pinned"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "space.join",
+              "space.leave",
+              "space.deactivate",
+              "space.deactivate.preview",
+              "space.restore"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "space"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "space.deactivate"
+          }
+        }
+      },
+      "then": {
+        "if": {
+          "properties": {
+            "unfinished": {
+              "const": "move"
+            }
+          },
+          "required": [
+            "unfinished"
+          ]
+        },
+        "properties": {
+          "preview_token": {
+            "pattern": "^[0-9a-f]{64}$",
+            "type": "string"
+          },
+          "unfinished": {
+            "enum": [
+              "cancel",
+              "move"
+            ]
+          }
+        },
+        "then": {
+          "required": [
+            "target"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "customer_request"
+          },
+          "op": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "properties": {
+              "contact": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "open",
+                  "in_progress",
+                  "resolved"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "space"
+          },
+          "op": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "properties": {
+              "customer_requests_enabled": {
+                "type": "boolean"
+              },
+              "iterations_enabled": {
+                "type": "boolean"
+              },
+              "triage_enabled": {
+                "type": "boolean"
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "tag.merge"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "target": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "target"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "tag",
+              "tag_group"
+            ]
+          },
+          "op": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "properties": {
+              "archived": {
+                "type": "boolean"
+              },
+              "color": {
+                "pattern": "^$|^#[0-9a-fA-F]{6}$",
+                "type": [
+                  "null",
+                  "string"
+                ]
+              },
+              "group": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "scope": {
+                "enum": [
+                  "organization",
+                  "space"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "tag.apply"
+          }
+        }
+      },
+      "then": {
+        "else": {
+          "required": [
+            "labels"
+          ]
+        },
+        "if": {
+          "properties": {
+            "action": {
+              "const": "clear_group"
+            }
+          }
+        },
+        "properties": {
+          "action": {
+            "enum": [
+              "add",
+              "remove",
+              "replace",
+              "clear_group"
+            ]
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "tasks": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 1000,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "tasks",
+          "action"
+        ],
+        "then": {
+          "required": [
+            "group"
+          ]
+        }
       }
     },
     {
@@ -1376,10 +1873,12 @@
         "organization",
         "member",
         "task",
+        "customer_request",
         "task_type",
         "status",
         "field",
         "tag",
+        "tag_group",
         "relation",
         "relation_type",
         "view",
@@ -1435,6 +1934,9 @@
     },
     "op": {
       "enum": [
+        "space.deactivate.preview",
+        "space.navigation",
+        "jira.read",
         "invitation.list",
         "chat.info",
         "chat.invitations",
@@ -1454,6 +1956,8 @@
         "dashboard",
         "iteration.preview",
         "iteration.timeline",
+        "iteration.settings",
+        "iteration.history",
         "task.relations",
         "project.progress",
         "document.history",
@@ -1463,6 +1967,14 @@
         "im.outbox",
         "im.threads",
         "attachment.download",
+        "space.join",
+        "space.leave",
+        "space.deactivate",
+        "space.restore",
+        "space.pin",
+        "tag.apply",
+        "tag.merge",
+        "jira.write",
         "invitation.issue",
         "invitation.copy",
         "invitation.revoke",
@@ -1482,6 +1994,8 @@
         "update",
         "delete",
         "iteration.close",
+        "iteration.configure",
+        "iteration.start",
         "triage",
         "follow",
         "notification.act",

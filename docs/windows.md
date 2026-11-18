@@ -33,6 +33,8 @@ CLI 也可从标准输入接收令牌，例如 `$teamToken | .\shipforge.exe con
 
 在「对话」中新建群聊后，可从详情选择真人或 Agent、转让群主和管理个人提醒。私有会话的受邀成员从「对话」接受邀请。所有者可选择已发送的消息生成分享，或撤销同一选区的分享链接。团队模式生成基于当前服务地址的链接。本机模式的分享码在同一工作区读取。[对话和分享使用说明](conversations.md)
 
+在空间「迭代」页打开「迭代设置」选择手动或自动节奏。自动模式按空间时区维护当前和未来迭代，手动模式可同时开始多期并按负责人筛选。结项时的任务范围可从迭代详情查看。[迭代周期、自动加入和结项](iterations.md)
+
 团队组织 Guest 只能打开获邀加入的下属空间。组织管理员能查看私有空间名称等元数据，打开任务与成员清单需要该空间的成员身份。部署时用于运维的安装主体 `owner` 保留跨空间权限。为日常团队成员签发各自身份的令牌。
 
 ## 接入第一台执行机器
@@ -64,6 +66,10 @@ $config = "$env:LOCALAPPDATA\ShipForgeExample\machine.json"
 服务端的入站地址为 `POST /v1/integrations/{space}/{connector}`，可用绑定到该空间和连接器的 hook 令牌。GitLab Issue Webhook 可以将该令牌作为 Secret token。GitHub Issues 使用机器端的 `github-sync` 拉取，以及 `github-push` 回写已经映射的单条 Issue。读取私有仓库和写入远端需给执行命令的用户配置适当的 GitHub 仓库权限。
 
 机器手册列出 GitHub、MCP、本机运行目录及小队回报的参数。入站连接器手册说明每个平台的载荷、重复事件标识和中继前提。[执行机器手册](../crates/shipforge-worker/README.md) · [入站连接器和样例](../crates/shipforge-core/PROVIDERS.md)
+
+## 使用 Jira 客户端
+
+已有 Jira 客户端可连接团队服务的组织专属站点。启动时通过 `--jira-organization` 指定组织，用成员个人令牌验证。[配置 Jira 客户端、查询和流转](jira-api.md)
 
 ## 备份及恢复
 

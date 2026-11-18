@@ -59,9 +59,12 @@ impl<'a> Slack<'a> {
     }
     fn send(&self, item: &Value) -> Value {
         let channel = &item["thread"]["channel"];
-        let body = json!({"channel":channel,"thread_ts":item["thread"]["thread"],"text":item["text"],
+        let mut body = json!({"channel":channel,"thread_ts":item["thread"]["thread"],"text":item["text"],
             "mrkdwn":false,"parse":"none","link_names":false,"unfurl_links":false,"unfurl_media":false,
             "metadata":{"event_type":"shipforge_delivery","event_payload":{"delivery_id":item["delivery_id"],"thread_ts":item["thread"]["thread"]}}});
+        if let Some(blocks) = item.get("blocks") {
+            body["blocks"] = blocks.clone();
+        }
         let uncertain =
             || json!({"outcome":"uncertain","error":"Slack acceptance could not be verified"});
         let Ok(mut response) = self.post("chat.postMessage", body) else {
@@ -165,6 +168,9 @@ fn batch(client: &mut Client, space: &str, id: &str, api: &Slack<'_>) -> Result<
             && current["outbound"] == true
             && current["workspace_id"] == f["workspace_id"]
             && current["channel_id"] == f["channel_id"]
+            && (item.get("blocks").is_none()
+                || current["slack_assignment"] == true
+                    && current["assignee_map"] == f["assignee_map"])
         {
             api.send(&item)
         } else {

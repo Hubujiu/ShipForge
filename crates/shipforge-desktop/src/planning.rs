@@ -3,6 +3,33 @@ use super::*;
 impl Workbench {
     pub(super) fn iteration_page(&self, cx: &Context<Self>) -> AnyElement {
         let mut page = col().flex_1().min_h_0().w_full().child(self.list_tabs(cx));
+        if let Some(settings) = self.list("iteration_settings").first() {
+            let mut controls = row().px(px(18.)).py(px(5.)).gap(px(9.));
+            if settings.field("mode") == "manual" {
+                controls = controls.child(self.pill(
+                    "iteration-mine".into(),
+                    "我负责的",
+                    UiAction::Section("mine".into()),
+                    self.loc.section == "mine",
+                    cx,
+                ));
+            }
+            if matches!(self.role.as_str(), "admin" | "owner") {
+                controls = controls.child(
+                    outlined(self.button(
+                        "cadence-settings",
+                        "空间迭代设置",
+                        UiAction::Form(Mode::Workflow {
+                            op: "iteration.configure",
+                            record: settings.clone(),
+                        }),
+                        cx,
+                    ))
+                    .child("迭代设置"),
+                );
+            }
+            page = page.child(controls);
+        }
         let mut timeline = col()
             .id("iteration-timeline")
             .flex_1()
@@ -16,13 +43,21 @@ impl Workbench {
                 continue;
             };
             let phase = plan["phase"].as_str().unwrap_or("unscheduled");
-            if !self.loc.section.is_empty() && self.loc.section != phase {
+            let responsible = item
+                .fields
+                .get("owner")
+                .map_or_else(|| item.field("creator"), |v| v.as_str().unwrap_or_default());
+            if self.loc.section == "mine" && responsible != self.actor
+                || !matches!(self.loc.section.as_str(), "" | "mine") && self.loc.section != phase
+            {
                 continue;
             }
             let (status, color) = match phase {
                 "active" => ("进行中", GREEN),
                 "upcoming" => ("即将开始", VIOLET),
                 "closed" => ("已结束", MUTED),
+                "planned" => ("已计划", DIM),
+                "cancelled" => ("已取消", MUTED),
                 "overdue" => ("待结项", ERROR),
                 _ => ("待排期", DIM),
             };
@@ -46,6 +81,9 @@ impl Workbench {
                 .gap(px(10.))
                 .child(mark(color))
                 .child(headline(item.title.clone(), 14.).truncate())
+                .when(!responsible.is_empty(), |line| {
+                    line.child(text(self.name("member", responsible), 11., MUTED))
+                })
                 .child(div().flex_1())
                 .child(chip(status, PALE, color))
                 .when_some(plan["estimate"].as_f64(), |line, estimate| {

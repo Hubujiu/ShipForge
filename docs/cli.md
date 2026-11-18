@@ -4,6 +4,14 @@
 
 ## 建单、修改和重新打开
 
+### 空间成员、停用与侧栏
+
+`space.list` 返回当前身份可发现的空间，以及 `joined`、`can_join`、`can_leave` 和管理权限。组织成员使用 `space.join` 自主加入公开空间，`space.leave` 退出。两者都需要明确的 `space`，操作对象始终是当前身份。私有空间和访客通过成员邀请加入。
+
+`space.navigation` 返回自己的模块、启用状态和固定状态。`space.pin` 接收 `space`、`module` 和布尔值 `pinned`。模块 ID 为 `iterations`、`triage`、`views`、`projects`、`customer_requests`。空间管理员通过 `update` 修改空间的 `iterations_enabled`、`triage_enabled`、`customer_requests_enabled`。客户请求记录使用 `customer_request` 类型，支持标题、说明、联系人和 `open`、`in_progress`、`resolved` 三种状态。
+
+先用 `space.deactivate.preview` 获取空间的 `rev`、未完成任务数和 `preview_token`。再调用 `space.deactivate`，传入 `space`、`expected_rev` 及该 `preview_token`。预览后新增或修改未完成任务时，操作会报告冲突。有未完成任务时须提供 `unfinished:"cancel"`，或 `unfinished:"move"` 和组织内可写的目标空间 `target`。转移时沿用单项任务迁移规则，整批成功才生效。停用会保留历史记录并停止待执行和运行中的工作。空间管理员可用 `space.restore` 恢复写入。已取消的任务保留终态。[空间操作与界面](space-lifecycle.md)
+
 在 PowerShell 中可用对象转换 JSON，复杂描述可直接保存成 UTF-8 文件。下面的操作在临时独立目录创建一项工作，并显示更新后的标题。
 
 ```powershell
@@ -18,6 +26,10 @@ $task = (.\shipforge.exe --data-dir $workspace create task '发布前检查' | C
 
 ## 业务操作
 
+标签和分组分别使用 `tag`、`tag_group`。标签支持 `fields.color`、`fields.group`、`fields.archived`。组织标签由组织管理员在根空间管理，设置 `fields.scope` 为 `organization`。子空间的列表会同时列出可用的组织标签。空间标签用于当前空间。旧任务的文本标签在升级时补入目录。
+
+`tag.apply` 在一个事务中处理 `tasks` 的全部任务。`action` 可选 `add`、`remove`、`replace` 或 `clear_group`。前三种提供 `labels`，清除分组提供 `group`。同组最后选择的标签生效。归档保留已有任务和历史筛选。多标签筛选要求同时匹配每个标签。`tag.merge` 提供源 `id` 和同范围的目标 `target`，同时迁移任务和保存视图的条件；删除标签会清除其当前引用。任务跨空间移动时保留组织标签。[标签行为与验收](https://help.hifox.com/docs/task/task-labels)
+
 `onboarding.catalog` 返回六个分组及每项的稳定 ID、说明、行动和分值。`onboarding.get` 按登录身份返回当前组织的完成项、积分、名次、首次设置状态和侧栏选项。`onboarding.display` 接受布尔字段 `sidebar_visible` 或 `sidebar_expanded`。`onboarding.setup` 在新库中保存 `organization_name`、`organization_slug`、`work_type` 与非空的 `task_types`。初始化可使用 `request_id` 重试。得分来自真实业务操作。[新手指引与完成条件](onboarding.md)
 
 | 操作 | 用法 |
@@ -25,10 +37,13 @@ $task = (.\shipforge.exe --data-dir $workspace create task '发布前检查' | C
 | `invitation.issue`、`invitation.list` | 组织管理员创建或查看邀请。通用链接设置 `channel: "link"`，角色可选 `member`、`guest`。邮箱邀请设置 `channel: "email"` 和 `email`，也可邀请 `admin`。可指定组织下的 `spaces`、毫秒时间戳 `expires_at` 及重试标识 `request_id`。 |
 | `invitation.copy`、`invitation.revoke`、`invitation.accept` | 管理员按 ID 复制或停用邀请。复制已停用的通用邀请会开启新的链接，使旧链接继续失效。收件人以已认证身份提交 `link`，邮箱邀请还要求身份与目标邮箱匹配。重复接受不会提升角色或创建第二份成员记录。 |
 | `schema`、`whoami`、`organization.list`、`space.list` | 查看接口、当前业务身份、可访问的组织和空间。CLI 快捷命令为 `shipforge schema`。 |
+| `jira.read`、`jira.write` | 传组织 ID 到 `space`，选择 `api_version` 2 或 3，`resource` 例如 `issue/OPS-42` 或 `search`。读取用 `params` 传 `jql`、`fields` 或分页。写入提供 `method`（POST、PUT、DELETE）及 Jira 格式的 `payload`。结果含 HTTP 状态 `status` 和文档 `body`。[客户端与服务配置](jira-api.md) |
 | `create`、`list`、`get`、`update`、`delete` | `kind` 指定资源。创建提供标题与 `fields`；更新合并提供的字段。返回记录包含空间、ID、标题、字段、修订号与时间。 |
 | `search`、`events`、`dashboard` | 搜索允许访问的对象、按游标恢复增量事件及获取任务统计。搜索使用 `query`，事件使用 `after`。 |
 | `view.run`、`task.relations`、`project.progress` | 用对象 ID 执行已保存的筛选、读取任务关系或计算专项进度。 |
-| `iteration.timeline` | `{"op":"iteration.timeline","as_of":"2026-11-18"}` 返回可见的迭代数组。不传 `as_of` 时取当前 UTC 日期。按开始日期倒序，无开始日期的迭代排在最后。`fields.planning` 包含起止日期 `start`、`end`，阶段 `phase`（`active`、`upcoming`、`overdue`、`closed` 或 `unscheduled`），可见任务数 `total`、完成数 `completed` 及可空的任务容量 `capacity`。 |
+| `iteration.timeline` | `{"op":"iteration.timeline","owner":"@me"}` 返回本人负责的可见迭代。可省略负责人或传其他成员 ID。可用 `as_of` 指定展示日期，默认取空间迭代时区的今天。返回按开始日期倒序排列，`fields.planning` 包含起止日期、阶段、可见任务数、完成数和容量。开启估算时包括点数。 |
+| `iteration.settings`、`iteration.configure` | 读取空间的迭代设置与修订号。空间管理员传 `fields` 局部更新 `mode`、IANA 时区、起始日、周期、冷却、未来期数及三项自动加入规则。支持 `expected_rev`。[配置字段与日期边界](iterations.md) |
+| `iteration.start`、`iteration.history` | 前者用迭代 `id` 启动未开始的手动迭代，或由管理员提前启动自动节奏的下一期。后者读结项时冻结的范围，结果按成员的任务访问权限过滤。 |
 | `iteration.preview`、`iteration.close`、`triage` | 用迭代 ID 预览及结项。结项的 `target` 为接收未完成任务的开放迭代 ID，省略或传 `null` 退回待规划。分拣用任务 ID 和 `decision`，可取 `accept`、`defer`、`reject` 或 `duplicate`。重复项的 `target` 为原任务 ID。 |
 | `follow`、`notification.act` | 指定任务 ID 和布尔值 `enabled` 切换关注。处理本人的提醒时指定通知 ID 和 `action`，可取 `read`、`unread`、`clear`、`restore` 或 `snooze`。稍后提醒的 `until` 为未来的 Unix 毫秒时间戳。 |
 | `preferences.get`、`preferences.update` | 读取或更改当前账号的桌面主题、窗口外边框颜色、语言、任务会话偏好、发送方式与三个应用快捷键。更新可带 `expected_rev`，并按字段合并。[值域与示例](personal-settings.md) |
@@ -104,6 +119,8 @@ Agent 的 `fields.working_hours` 可设每周排班。例如对已有 Agent 提�
 令牌范围可选 `read`、`write`、`worker` 和 `hook`。空间成员权限另行校验。只有持有写令牌的安装所有者 `owner` 能通过 API 管理令牌。签发回调凭据时同时指定 `space`、`resource`（`connector` 或 `automation`）与 `binding`（目标记录 ID）。例如，`{"op":"access.issue","actor":"owner","scope":"hook","space":"default","resource":"automation","binding":"weekday-report"}` 签发只可触发该规则的令牌。
 
 ## 任务的人员与执行者
+
+Slack 连接器管理员可用 `update` 设置布尔值 `fields.slack_assignment`、`fields.outbound` 和 `fields.assignee_map`。点击者与目标 Slack 用户均需映射到本空间成员。已绑定话题内的任务卡片可用单选框替换整组人员。[卡片配置与回调](../crates/shipforge-core/PROVIDERS.md)
 
 空间设置中的「允许多个处理人」默认关闭。通过 `update` 将空间的 `fields.allow_multiple_assignees` 设为 `true` 可开启。每位处理人共享同一任务状态。「我的任务」和人员筛选会命中集合中的每位成员。按人员分组的看板在每位成员的列显示任务，页面任务总数只计一次。关闭设置会保留原有的多人任务，仍可编辑其人员集合。
 

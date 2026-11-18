@@ -80,6 +80,16 @@ shipforge --data-dir $workspace list task
 5. 在有该空间写入凭据与管理员角色的工作机，将 Slack bot token 设置为 `SHIPFORGE_SLACK_BOT_TOKEN`。确认工作机指向同一团队服务，运行 `shipforge-worker slack-deliver --space default --connector support` 执行一批。持续处理可增加 `--watch`，其他工作区令牌可用 `--token-env <变量名>` 指定。机器先调用 `auth.test` 检查工作区与 bot 身份，再调用 `chat.postMessage`，将共享任务的标题和状态变动发到原 `thread_ts`。每条消息最多 3,999 个字符，使用纯文本并关闭链接预览。[Slack chat.postMessage](https://docs.slack.dev/reference/methods/chat.postMessage/)
 6. 在任务详情使用“添加评论”进行团队内部讨论。发送到 Slack 时选择“回复到 Slack 话题”及具体话题。CLI 先提交 `{"op":"im.threads","task_id":"<任务 ID>"}` 查看可写目标，再传 `{"op":"im.reply","id":"<连接器 ID>","task_id":"<任务 ID>","thread":<上一步返回的 thread 对象>,"body":"已收到，明天交付。","request_id":"reply-001"}`。需要当前任务的编辑权限。相同请求重放只写一条评论和一次投递，并只发往选中的话题。[HiFox 的渠道评论](https://help.hifox.com/docs/integration/github)
 
+7. 需要从卡片改派人员时，在 Slack App 的 Interactivity & Shortcuts 启用 Interactivity，Request URL 填事件订阅使用的同一公开地址。然后在 ShipForge 的 Slack 连接器启用「将任务活动回写 Slack 线程」和「允许从 Slack 卡片改派处理人」，并在「外部账号到空间成员映射」填写 Slack 用户 ID 与本空间成员 ID 的对应关系。操作人和候选处理人都需要映射。新建话题绑定后，工作机会投递带原生人员单选框的任务卡片。已有绑定会在后续标题、状态或人员变更时收到新卡片。[Slack 交互回调](https://docs.slack.dev/reference/interaction-payloads/block_actions-payload/) · [Slack 单选框](https://docs.slack.dev/reference/block-kit/block-elements/select-menu-element/)
+
+卡片操作按实际点击者的空间权限执行。选一人替换整组人员，原有 Agent 或小队继续执行。服务仅接受授权应用发给已绑定话题且已确认送达的卡片，核对工作区、频道、消息、话题、机器人及点击者。成员被移除、改派已由他人完成、关闭卡片或解绑时，旧操作无法改写任务。同一点击重试保持同一任务修订。[HiFox 的 Slack 任务卡片](https://help.hifox.com/docs/integration/slack)
+
+管理员可从 CLI 设置卡片。以下示例假设连接器已配置 Slack 原始标识，并且 `alex` 和 `mei` 已加入当前空间。
+
+```json
+{"op":"update","space":"default","kind":"connector","id":"support","fields":{"outbound":true,"slack_assignment":true,"assignee_map":{"U01ALEX":"alex","U02MEI":"mei"}}}
+```
+
 出站与任务修改使用同一 SQLite 事务。同一话题按顺序投递。HTTP 429 按 `Retry-After` 延后，明确的拒绝记为 `failed`。超时、5xx、工作进程领走消息后异常退出都可能发生在 Slack 接收成功之后，此时记录进入 `uncertain`。已签名的本应用消息或元数据回执与应用、机器人、工作区、频道、话题和投递 ID 匹配后，会自动核销。[Slack 限流规则](https://docs.slack.dev/apis/web-api/rate-limits/) · [Slack 元数据回执](https://docs.slack.dev/reference/events/message_metadata_posted/)
 
 管理员可用 `{"op":"im.outbox","id":"support"}` 查看队列。检查原话题发现消息已发出时，使用 `{"op":"im.retry","id":"support","delivery_id":"<投递 ID>","decision":"confirm","remote_id":"<Slack 消息 ts>"}`。在频道确认尚未送达并修复权限或连接后，使用同一操作的 `decision:"resend"` 解锁重投。`im.claim` 每次领取一条返回 60 秒租约，`im.ack` 需要相同的 `delivery_id`、`lease` 与 `outcome`。`sent` 需要 `remote_id`，`retry` 需要 1–86,400 秒的 `retry_after`，另外支持 `failed` 与 `uncertain`。核销前该话题后来的消息保留在队列，其他话题继续工作。

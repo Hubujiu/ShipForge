@@ -6,10 +6,12 @@ pub(crate) const KINDS: &[&str] = &[
     "organization",
     "member",
     "task",
+    "customer_request",
     "task_type",
     "status",
     "field",
     "tag",
+    "tag_group",
     "relation",
     "relation_type",
     "view",
@@ -34,6 +36,14 @@ pub(crate) const KINDS: &[&str] = &[
     "note",
 ];
 const WRITES: &[&str] = &[
+    "space.join",
+    "space.leave",
+    "space.deactivate",
+    "space.restore",
+    "space.pin",
+    "tag.apply",
+    "tag.merge",
+    "jira.write",
     "invitation.issue",
     "invitation.copy",
     "invitation.revoke",
@@ -53,6 +63,8 @@ const WRITES: &[&str] = &[
     "update",
     "delete",
     "iteration.close",
+    "iteration.configure",
+    "iteration.start",
     "triage",
     "follow",
     "notification.act",
@@ -69,6 +81,9 @@ const WRITES: &[&str] = &[
     "attachment.upload",
 ];
 const READS: &[&str] = &[
+    "space.deactivate.preview",
+    "space.navigation",
+    "jira.read",
     "invitation.list",
     "chat.info",
     "chat.invitations",
@@ -88,6 +103,8 @@ const READS: &[&str] = &[
     "dashboard",
     "iteration.preview",
     "iteration.timeline",
+    "iteration.settings",
+    "iteration.history",
     "task.relations",
     "project.progress",
     "document.history",
@@ -142,10 +159,18 @@ pub fn schema() -> Value {
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"onboarding.setup"}}},"then":{"required":["organization_name","organization_slug","work_type","task_types"],"properties":{"organization_name":{"type":"string","minLength":1,"maxLength":100},"organization_slug":{"type":"string","pattern":"^[a-z0-9]+(-[a-z0-9]+)*$","maxLength":63}}}}));
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"onboarding.display"}}},"then":{"anyOf":[{"required":["sidebar_visible"]},{"required":["sidebar_expanded"]}]}}));
     worker::extend_schema(&mut schema);
+    crate::jira::schema(&mut schema);
     crate::invitations::extend_schema(&mut schema);
+    crate::iterations::extend_schema(&mut schema);
     crate::chat::extend_schema(&mut schema);
     crate::im::extend_schema(&mut schema);
     crate::preferences::extend_schema(&mut schema);
+    crate::spaces::schema(&mut schema);
+    schema["allOf"].as_array_mut().unwrap().extend([
+        json!({"if":{"properties":{"op":{"const":"tag.merge"}}},"then":{"required":["id","target"],"properties":{"target":{"type":"string"}}}}),
+        json!({"if":{"required":["kind"],"properties":{"op":{"enum":["create","update"]},"kind":{"enum":["tag","tag_group"]}}},"then":{"properties":{"fields":{"type":"object","properties":{"scope":{"enum":["organization","space"]},"archived":{"type":"boolean"},"color":{"type":["null","string"],"pattern":"^$|^#[0-9a-fA-F]{6}$"},"group":{"type":["string","null"]}}}}}}),
+        json!({"if":{"properties":{"op":{"const":"tag.apply"}}},"then":{"required":["tasks","action"],"properties":{"tasks":{"type":"array","minItems":1,"maxItems":1000,"uniqueItems":true,"items":{"type":"string"}},"action":{"enum":["add","remove","replace","clear_group"]},"labels":{"type":"array","items":{"type":"string"}}},"if":{"properties":{"action":{"const":"clear_group"}}},"then":{"required":["group"]},"else":{"required":["labels"]}}})
+    ]);
     crate::task_commands::assignees::schema(&mut schema);
     schema["allOf"].as_array_mut().unwrap().extend([json!({"if":{"properties":{"op":{"const":"task.move"}}},"then":{"required":["id","target"],"properties":{"target":{"type":"string","minLength":1}}}}),json!({"if":{"properties":{"op":{"enum":["task.conversation","task.command"]}}},"then":{"required":["id"]}})]);
     schema

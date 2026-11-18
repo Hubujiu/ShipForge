@@ -143,6 +143,7 @@ impl Workbench {
         let accent = cx.theme().accent;
         Button::new(id)
             .accessibility_label(label.display_text())
+            .disabled(self.archived_action(&action))
             .h(px(30.))
             .px(px(8.))
             .gap(px(6.))

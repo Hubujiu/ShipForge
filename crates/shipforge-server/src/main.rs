@@ -1,5 +1,6 @@
 mod auth;
 mod github;
+mod jira;
 mod slack;
 
 use auth::{Auth, Principal};
@@ -37,6 +38,12 @@ enum Action {
         /// JSON routes for signed GitHub push and pull_request webhooks.
         #[arg(long, env = "SHIPFORGE_GITHUB_WEBHOOKS")]
         github_config: Option<PathBuf>,
+        /// Organization exposed at /rest/api/2 and /rest/api/3 to Jira clients.
+        #[arg(long, env = "SHIPFORGE_JIRA_ORGANIZATION")]
+        jira_organization: Option<String>,
+        /// Canonical HTTP(S) address of this Jira-compatible site (including a reverse proxy prefix).
+        #[arg(long, env = "SHIPFORGE_JIRA_BASE_URL", requires = "jira_organization")]
+        jira_base_url: Option<String>,
     },
     /// Manage bearer tokens on the server's own machine.
     Token {
@@ -103,11 +110,15 @@ fn run(args: Args) -> Result<(), String> {
             listen,
             slack_config,
             github_config,
+            jira_organization,
+            jira_base_url,
         } => serve(
             &args.data_dir,
             listen,
             slack::Routes::load(slack_config.as_deref())?,
             github::Routes::load(github_config.as_deref())?,
+            jira_organization,
+            jira_base_url,
         ),
     }
 }
@@ -117,9 +128,28 @@ fn serve(
     addr: SocketAddr,
     routes: slack::Routes,
     github: github::Routes,
+    jira_organization: Option<String>,
+    jira_base_url: Option<String>,
 ) -> Result<(), String> {
     let database = dir.join("workspace.sqlite3");
     let server = Server::http(addr).map_err(|e| format!("server: {e}"))?;
+    let mut scheduler = Store::open(&database)?;
+    std::thread::Builder::new()
+        .name("shipforge-iteration-clock".into())
+        .spawn(move || {
+            loop {
+                if let Err(error) = scheduler.maintain_iterations() {
+                    eprintln!("Iteration maintenance: {error}");
+                }
+                std::thread::sleep(std::time::Duration::from_secs(30));
+            }
+        })
+        .map_err(|e| format!("server: {e}"))?;
+    let jira = jira::Site::new(
+        jira_organization,
+        jira_base_url,
+        &server.server_addr().to_string(),
+    )?;
     // Migrate once, before accepting requests; use one connection per serving thread.
     let mut workers = Vec::new();
     for _ in 0..4 {
@@ -135,8 +165,13 @@ fn serve(
             let server = &server;
             let routes = &routes;
             let github = &github;
+            let jira = &jira;
             scope.spawn(move||{
                 for mut request in server.incoming_requests() {
+                    if request.url().starts_with("/rest/api/") {
+                        jira.respond(request, &auth, &mut store);
+                        continue;
+                    }
                     let native_slack=request.url().starts_with("/v1/slack/");
                     let share=request.url().starts_with("/share/");
                     let answer=handle(&mut request,&auth,&mut store,routes,github);
@@ -151,7 +186,7 @@ fn serve(
                             (status,json!({"protocol":1,"ok":false,"error":{"code":code,"message":client_message}}))
                         }
                     };
-                    let (text,content_type)=if share && status==200 {(shipforge_core::share_text(&body),"text/plain; charset=utf-8")}else{(body.to_string(),"application/json; charset=utf-8")};
+                    let (text,content_type)=if share && status==200 {(shipforge_core::share_text(&body),"text/plain; charset=utf-8")}else if native_slack && status==200 && body.is_null() {(String::new(),"text/plain; charset=utf-8")}else{(body.to_string(),"application/json; charset=utf-8")};
                     let response=Response::from_string(text).with_status_code(StatusCode(status))
                         .with_header(Header::from_bytes("Content-Type",content_type).unwrap())
                         .with_header(Header::from_bytes("Referrer-Policy","no-referrer").unwrap())

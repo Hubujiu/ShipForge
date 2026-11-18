@@ -9,6 +9,7 @@ const PORTABLE: &[&str] = &[
     "status",
     "task_type",
     "relation_type",
+    "tag_group",
     "tag",
     "project",
     "iteration",
@@ -16,6 +17,7 @@ const PORTABLE: &[&str] = &[
     "relation",
     "view",
     "document",
+    "customer_request",
     "note",
     "chat",
     "message",
@@ -28,6 +30,7 @@ pub(crate) fn export(c: &Context<'_>) -> Result<Value> {
         records.extend(
             visible_records(c, kind)?
                 .into_iter()
+                .filter(|row| row.space == c.space)
                 .map(|mut row| {
                     if row.kind == "task"
                         && let Some(f) = row.fields.as_object_mut()
@@ -289,6 +292,12 @@ fn apply(c: &Context<'_>, input: &[Value]) -> Result<Value> {
                 {
                     f[key] = json!(mapped);
                 }
+            }
+            if kind == "iteration"
+                && let Some(owner) = f["owner"].as_str()
+                && c.find("member", owner)?.is_none()
+            {
+                f["owner"] = json!(c.actor);
             }
             if kind == "task" {
                 crate::task_commands::source_members::imported(c, f)?;

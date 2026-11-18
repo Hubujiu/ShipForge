@@ -16,6 +16,7 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
     }
 }
 pub(crate) fn after(c: &Context<'_>, old: Option<&Record>, row: &Record) -> Result<()> {
+    crate::iterations::module_changed(c, old, row)?;
     if row.kind == "space"
         && old.is_some_and(|r| r.fields["triage_enabled"] == true)
         && row.fields["triage_enabled"] != true
@@ -154,15 +155,22 @@ fn finish_iteration(c: &Context<'_>, q: &Value) -> Result<Value> {
     c.require_edit()?;
     let it = c.readable("iteration", required(q, "id")?)?;
     check_rev(q, &it)?;
-    if it.fields["status"] == "closed" {
-        return Err(conflict("iteration already closed"));
+    if it.fields["cadence"] == true {
+        return Err(invalid(
+            "automatic iterations end on their space clock or when the next iteration is started",
+        ));
+    }
+    if matches!(it.fields["status"].as_str(), Some("closed" | "cancelled")) {
+        return Err(conflict("iteration already closed or cancelled"));
     }
     let target = ref_record(c, q, "target", "iteration")?;
     if let Some(next) = &target
-        && (next.id == it.id || next.fields["status"] == "closed")
+        && (next.id == it.id
+            || matches!(next.fields["status"].as_str(), Some("closed" | "cancelled")))
     {
         return Err(invalid("choose a different open iteration"));
     }
+    crate::iterations::capture(c, &it)?;
     let mut moved = Vec::new();
     for task in c.records("task")? {
         if task.fields["iteration"] != it.id

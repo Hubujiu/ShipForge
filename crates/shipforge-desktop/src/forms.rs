@@ -21,6 +21,14 @@ pub enum Format {
     Ref(&'static str),
     Many(&'static str),
 }
+impl Format {
+    pub fn label_picker(self) -> bool {
+        matches!(
+            self,
+            Self::Ref("tag" | "tag_group" | "$tag_choices") | Self::Many("tag" | "$tag_choices")
+        )
+    }
+}
 #[derive(Clone, Copy)]
 pub struct Spec {
     pub key: &'static str,
@@ -54,6 +62,14 @@ const TRIGGERS: &[(&str, &str)] = &[
 ];
 #[derive(Clone)]
 pub enum Mode {
+    DeactivateSpace {
+        space: Record,
+        unfinished: u64,
+        token: String,
+    },
+    BulkTags,
+    FindLabels,
+    MergeTags,
     OpenChatShare,
     Invite {
         email: bool,
@@ -115,6 +131,7 @@ impl Mode {
     pub fn heading(&self) -> String {
         use Mode::*;
         match self {
+            DeactivateSpace { .. } => "停用空间".into(),
             OpenChatShare => "打开已分享的对话".into(),
             SetupOrganization => "创建你的组织".into(),
             Invite { email: true } => "通过邮箱邀请成员".into(),
@@ -137,6 +154,9 @@ impl Mode {
             Create(k) => crate::locale::new_title(noun(k)),
             Edit(r) => crate::locale::edit_title(noun(&r.kind)),
             Filter => "筛选任务".into(),
+            BulkTags => "批量处理标签".into(),
+            FindLabels => "查找标签".into(),
+            MergeTags => "合并标签".into(),
             Connect => "连接团队服务".into(),
             Comment(_) => "添加评论".into(),
             ThreadReply { target, .. } => format!(
@@ -158,6 +178,7 @@ impl Mode {
     }
     pub fn submit_label(&self) -> &'static str {
         match self {
+            Self::DeactivateSpace { .. } => "停用空间",
             Self::OpenChatShare => "打开",
             Self::SetupOrganization => "继续",
             Self::Invite { .. } => "生成邀请链接",
@@ -179,6 +200,9 @@ impl Mode {
             Self::Workflow { .. } => "确认",
             Self::Create(_) => "创建",
             Self::Filter => "应用筛选",
+            Self::BulkTags => "应用到所选任务",
+            Self::FindLabels => "查找",
+            Self::MergeTags => "合并至目标标签",
             Self::Connect => "连接",
             Self::Comment(_) | Self::Message(_) | Self::ThreadReply { .. } => "发送",
             Self::Search => "搜索",
@@ -199,6 +223,7 @@ pub fn noun(kind: &str) -> &'static str {
         .unwrap_or(match kind {
             "relation_type" => "关联类型",
             "tag" => "标签",
+            "tag_group" => "标签分组",
             "invitation" => "成员邀请",
             "artifact" => "产物",
             _ => "记录",
@@ -218,6 +243,7 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             item("filter_priority", "优先级", Ref("$priorities"), ""),
             item("filter_assignee", "处理人", Ref("$handlers"), ""),
             item("filter_project", "专项", Ref("project"), ""),
+            item("filter_labels", "同时含有标签", Many("tag"), ""),
         ]
     };
     match kind {
@@ -238,13 +264,14 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             item("iteration", "迭代", Ref("iteration"), ""),
             item("project", "专项", Ref("project"), ""),
             item("due_date", "截止日期（YYYY-MM-DD）", Text, ""),
-            item("labels", "标签（用逗号分隔）", Csv, ""),
+            item("labels", "任务标签", Many("$tag_choices"), ""),
             item("estimate", "预估工作量", Decimal, ""),
             item("parent", "父任务", Ref("task"), ""),
             item("custom", "自定义字段值（JSON 对象）", Json, "{}"),
         ],
         "iteration" => vec![
             title,
+            item("owner", "迭代负责人", Ref("member"), ""),
             body,
             item("start_date", "开始日期（YYYY-MM-DD）", Text, ""),
             item("end_date", "结束日期（YYYY-MM-DD）", Text, ""),
@@ -287,6 +314,7 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             title,
             body,
             item("organization", "所属组织", Ref("organization"), ""),
+            item("key", "任务编号前缀", Text, "SF"),
             item(
                 "visibility",
                 "空间可见性",
@@ -294,6 +322,8 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 "private",
             ),
             item("triage_enabled", "空间分拣台", Bool, "false"),
+            item("iterations_enabled", "迭代模块", Bool, "true"),
+            item("customer_requests_enabled", "客户请求模块", Bool, "false"),
             item("allow_multiple_assignees", "允许多个处理人", Bool, "false"),
             item("estimates_enabled", "任务估时", Bool, "false"),
             item(
@@ -313,6 +343,21 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 "分拣时要求优先级",
                 Bool,
                 "false",
+            ),
+        ],
+        "customer_request" => vec![
+            title,
+            body,
+            item("contact", "客户或联系人", Text, ""),
+            item(
+                "status",
+                "处理状态",
+                Choice(&[
+                    ("open", "待处理"),
+                    ("in_progress", "进行中"),
+                    ("resolved", "已解决"),
+                ]),
+                "open",
             ),
         ],
         "document" => vec![title, item("body", "正文", Body, ""), visibility],
@@ -455,6 +500,12 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             item("app_id", "Slack 应用 ID", Text, ""),
             item("bot_id", "Slack 机器人 ID", Text, ""),
             item("outbound", "将任务活动回写 Slack 线程", Bool, "false"),
+            item(
+                "slack_assignment",
+                "允许从 Slack 卡片改派处理人",
+                Bool,
+                "false",
+            ),
             item("chat_id", "飞书或 Telegram 会话 ID", Text, ""),
             item("enabled", "启用", Bool, "true"),
             body,
@@ -479,6 +530,26 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             item("default", "默认显示", Bool, "false"),
             item("order", "顺序", Number, ""),
         ],
+        "tag" | "tag_group" => {
+            let mut fields = vec![
+                title,
+                body,
+                item(
+                    "scope",
+                    "标签作用范围",
+                    Choice(&[("space", "当前空间"), ("organization", "整个组织")]),
+                    "space",
+                ),
+            ];
+            if kind == "tag" {
+                fields.extend([
+                    item("color", "标签颜色（#RRGGBB）", Text, ""),
+                    item("group", "标签分组", Ref("tag_group"), ""),
+                    item("archived", "归档标签", Bool, "false"),
+                ]);
+            }
+            fields
+        }
         "status" => vec![title, item("category", "状态类别", Choice(STATUS), "todo")],
         "task_type" => vec![
             title,
@@ -502,6 +573,7 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
 }
 pub fn workflow_name(op: &str) -> &'static str {
     match op {
+        "iteration.configure" => "空间迭代设置",
         "chat.share.create" => "分享已选消息",
         "chat.manage" => "管理对话成员",
         "chat.agents" => "管理群内 Agent",
@@ -519,6 +591,20 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
     use Format::*;
     use Mode::*;
     match mode {
+        DeactivateSpace { unfinished, .. } if *unfinished > 0 => vec![
+            item(
+                "unfinished",
+                "未完成任务的处理方式",
+                Choice(&[
+                    ("", "请选择处理方式"),
+                    ("move", "移动到其他空间"),
+                    ("cancel", "取消未完成任务"),
+                ]),
+                "",
+            ),
+            item("target", "目标空间", Ref("$deactivation_targets"), ""),
+        ],
+        DeactivateSpace { .. } => vec![],
         OpenChatShare => vec![item("share", "分享链接或分享码", Secret, "")],
         Invite { email } => {
             let mut entries = Vec::new();
@@ -537,6 +623,27 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             entries
         }
         JoinInvite => vec![item("link", "邀请链接", Secret, "")],
+        FindLabels => vec![item("query", "标签名称", Text, "")],
+        BulkTags => vec![
+            item("tasks", "所选任务", Many("task"), ""),
+            item(
+                "action",
+                "标签操作",
+                Choice(&[
+                    ("add", "添加"),
+                    ("remove", "移除"),
+                    ("replace", "替换全部"),
+                    ("clear_group", "清除分组"),
+                ]),
+                "add",
+            ),
+            item("labels", "标签", Many("tag"), ""),
+            item("group", "要清除的分组", Ref("tag_group"), ""),
+        ],
+        MergeTags => vec![
+            item("source", "待合并标签", Ref("tag"), ""),
+            item("target", "目标标签", Ref("$tag_choices"), ""),
+        ],
         SetupOrganization => vec![
             item("organization_name", "组织名称", Text, ""),
             item("organization_slug", "组织地址标识", Text, ""),
@@ -592,6 +699,15 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             fields
         }
         Create(k) => record_specs(k),
+        Edit(r)
+            if r.kind == "space"
+                && r.fields.get("can_manage_content") == Some(&Value::Bool(false)) =>
+        {
+            record_specs("space")
+                .into_iter()
+                .filter(|s| matches!(s.key, "title" | "description"))
+                .collect()
+        }
         Edit(r) => record_specs(&r.kind),
         Machine { stop } => {
             let mut s = vec![item("config", "工作机配置文件（完整路径）", Text, "")];
@@ -614,6 +730,41 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
         }
         Download(..) => vec![item("path", "保存到新文件", Text, "")],
         Workflow { op, record } => match *op {
+            "iteration.configure" => vec![
+                item(
+                    "mode",
+                    "迭代模式",
+                    Choice(&[
+                        ("manual", "手动"),
+                        ("automatic", "自动节奏"),
+                        ("disabled", "禁用迭代"),
+                    ]),
+                    "manual",
+                ),
+                item("timezone", "空间时区（IANA）", Text, "UTC"),
+                item("anchor_date", "节奏起始日（YYYY-MM-DD）", Text, ""),
+                item("weeks", "迭代时长（周）", Number, "2"),
+                item("cooldown_days", "冷却天数", Number, "0"),
+                item("future_count", "预创建的未来迭代数", Number, "2"),
+                item(
+                    "auto_join_active",
+                    "自动加入活跃或有截止日期的任务",
+                    Bool,
+                    "false",
+                ),
+                item(
+                    "auto_join_in_progress",
+                    "自动加入进入进行中的任务",
+                    Bool,
+                    "false",
+                ),
+                item(
+                    "auto_join_completed",
+                    "自动加入本期完成的任务",
+                    Bool,
+                    "false",
+                ),
+            ],
             "chat.share.create" => vec![
                 item(
                     "message_ids",
@@ -686,6 +837,7 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             item("token", "访问令牌", Secret, ""),
         ],
         Filter => vec![
+            item("filter_labels", "同时含有标签", Many("tag"), ""),
             item("query", "标题或编号", Text, ""),
             item("filter_status", "状态", Ref("$statuses"), ""),
             item("filter_priority", "优先级", Ref("$priorities"), ""),
@@ -729,9 +881,33 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
     }
 }
 #[derive(Clone)]
+pub enum Selection {
+    One(String),
+    Many(Vec<String>),
+}
+impl Selection {
+    pub fn contains(&self, id: &str) -> bool {
+        match self {
+            Self::One(value) => value == id,
+            Self::Many(values) => values.iter().any(|value| value == id),
+        }
+    }
+    pub fn choose(&mut self, id: String) {
+        match self {
+            Self::One(value) => *value = id,
+            Self::Many(values) if id.is_empty() => values.clear(),
+            Self::Many(values) if values.contains(&id) => values.retain(|value| value != &id),
+            Self::Many(values) => values.push(id),
+        }
+    }
+}
+#[derive(Clone)]
 pub enum Control {
     Text(Field),
-    Pick { value: String, focus: FocusHandle },
+    Pick {
+        value: Selection,
+        focus: FocusHandle,
+    },
 }
 #[derive(Clone)]
 pub struct Editor {
@@ -759,7 +935,26 @@ impl Editor {
             .unwrap_or_else(|| spec.default.to_owned());
         let control = match spec.format {
             Format::Choice(_) | Format::Ref(_) | Format::Many(_) | Format::Bool => Control::Pick {
-                value,
+                value: if matches!(spec.format, Format::Many(_)) {
+                    let values =
+                        if let Some(items) = initial.get(spec.key).and_then(Value::as_array) {
+                            items
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_owned)
+                                .collect()
+                        } else {
+                            value
+                                .split([',', '，'])
+                                .map(str::trim)
+                                .filter(|s| !s.is_empty())
+                                .map(str::to_owned)
+                                .collect()
+                        };
+                    Selection::Many(values)
+                } else {
+                    Selection::One(value)
+                },
                 focus: cx.focus_handle().tab_stop(true),
             },
             _ => Control::Text(Field::new(
@@ -780,7 +975,14 @@ impl Editor {
     pub fn raw(&self, cx: &App) -> String {
         match &self.control {
             Control::Text(f) => f.value(cx),
-            Control::Pick { value, .. } => value.clone(),
+            Control::Pick {
+                value: Selection::One(value),
+                ..
+            } => value.clone(),
+            Control::Pick {
+                value: Selection::Many(values),
+                ..
+            } => values.join(", "),
         }
     }
     pub fn handle(&self, cx: &App) -> FocusHandle {
@@ -791,6 +993,13 @@ impl Editor {
     }
     fn parsed(&self, cx: &App) -> Result<Value, String> {
         use Format::*;
+        if let Control::Pick {
+            value: Selection::Many(values),
+            ..
+        } = &self.control
+        {
+            return Ok(json!(values));
+        }
         let raw = self.raw(cx);
         let t = raw.trim();
         Ok(match self.spec.format {
@@ -820,7 +1029,7 @@ impl Editor {
                 }
             }
             Bool => json!(t == "true"),
-            Csv | Many(_) => json!(
+            Csv => json!(
                 t.split([',', '，'])
                     .map(str::trim)
                     .filter(|s| !s.is_empty())
@@ -834,6 +1043,7 @@ impl Editor {
                 }
             }
             Text | Body | Secret => json!(t),
+            Many(_) => unreachable!("multi-select controls store an array"),
         })
     }
 }
@@ -848,6 +1058,7 @@ pub struct Form {
     pub mode: Mode,
     pub entries: Vec<Editor>,
     pub open_pick: Option<usize>,
+    pub picker_search: Option<Field>,
     pub error: String,
     pub origin: Option<FocusHandle>,
     pub search_results: Vec<Record>,
@@ -873,6 +1084,7 @@ impl Form {
             triggers: vec![],
             next_trigger: 0,
             open_pick: None,
+            picker_search: None,
             error: String::new(),
             origin,
             search_results: vec![],
@@ -1025,7 +1237,9 @@ pub fn connector_field_visible(key: &str, provider: &str) -> bool {
         "link_tasks" | "repository" | "review_rule_id" => matches!(provider, "github" | "gitlab"),
         "repository_host" | "project_id" => provider == "gitlab",
         "project_key" => provider == "jira",
-        "workspace_id" | "channel_id" | "app_id" | "bot_id" | "outbound" => provider == "slack",
+        "workspace_id" | "channel_id" | "app_id" | "bot_id" | "outbound" | "slack_assignment" => {
+            provider == "slack"
+        }
         "chat_id" => matches!(
             provider,
             "telegram" | "feishu" | "lark" | "teams" | "dingtalk"
@@ -1099,7 +1313,9 @@ pub fn compile_record(
     }
     if kind == "view" {
         let mut filter = Map::new();
-        for key in ["type", "status", "priority", "assignee", "project"] {
+        for key in [
+            "type", "status", "priority", "assignee", "project", "labels",
+        ] {
             if let Some(v) = fields.remove(&format!("filter_{key}"))
                 && !v.is_null()
             {

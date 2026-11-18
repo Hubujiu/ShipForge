@@ -216,7 +216,7 @@ impl Workbench {
             ))
         })
     }
-    fn nav_group(&self, label: &str, pages: &[Page], cx: &Context<Self>) -> Div {
+    pub(crate) fn nav_group(&self, label: &str, pages: &[Page], cx: &Context<Self>) -> Div {
         let mut group = col()
             .gap(px(2.))
             .mb(px(14.))
@@ -245,7 +245,7 @@ impl Workbench {
                 | Tools
         );
         let setting = setting
-            || self.loc.page == Tags
+            || matches!(self.loc.page, Tags | TagGroups)
             || (self.loc.page == GettingStarted && self.loc.section == "settings");
         let mut list = col().w_full().px(px(8.)).pt(px(6.));
         if setting {
@@ -301,19 +301,17 @@ impl Workbench {
                             .child(icon("chevrons-up-down", 12.)),
                         )
                         .child(div().flex_1())
-                        .child(self.tool_button(
-                            "add-space-item",
-                            "在此新建任务",
-                            "plus",
-                            UiAction::Create("task".into()),
-                            cx,
-                        )),
+                        .when(self.writable(), |d| {
+                            d.child(self.tool_button(
+                                "add-space-item",
+                                "在此新建任务",
+                                "plus",
+                                UiAction::Create("task".into()),
+                                cx,
+                            ))
+                        }),
                 )
-                .child(self.nav_group(
-                    "空间工作",
-                    &[Tasks, Iterations, Projects, Triage, Views],
-                    cx,
-                ))
+                .child(self.space_sidebar(cx))
                 .child(self.nav_group(
                     "协作",
                     &[Agents, Crews, Automations, Docs, Skills, Runs, Artifacts],
@@ -345,17 +343,19 @@ impl Workbench {
                         UiAction::ToggleSidebar,
                         cx,
                     ))
-                    .child(
-                        primary(self.button(
-                            "quick-add",
-                            "新建任务",
-                            UiAction::Create("task".into()),
-                            cx,
-                        ))
-                        .size(px(24.))
-                        .px_0()
-                        .child(icon("plus", 14.)),
-                    ),
+                    .when(self.writable(), |d| {
+                        d.child(
+                            primary(self.button(
+                                "quick-add",
+                                "新建任务",
+                                UiAction::Create("task".into()),
+                                cx,
+                            ))
+                            .size(px(24.))
+                            .px_0()
+                            .child(icon("plus", 14.)),
+                        )
+                    }),
             )
             .child(
                 div()
@@ -449,18 +449,24 @@ impl Workbench {
                 if allow_empty {
                     options.insert(0, (String::new(), crate::locale::label("未设置").into()));
                 }
-                let selected: Vec<&str> = value.split(',').map(str::trim).collect();
+                if let crate::forms::Selection::Many(values) = &value {
+                    for id in values {
+                        if !options.iter().any(|(v, _)| v == id) {
+                            options.push((id.clone(), id.clone()));
+                        }
+                    }
+                }
                 let display = if multi {
                     options
                         .iter()
-                        .filter(|(v, _)| !v.is_empty() && selected.contains(&v.as_str()))
+                        .filter(|(v, _)| !v.is_empty() && value.contains(v))
                         .map(|(_, l)| l.as_str())
                         .collect::<Vec<_>>()
                         .join("、")
                 } else {
                     options
                         .iter()
-                        .find(|(v, _)| v == &raw)
+                        .find(|(v, _)| value.contains(v))
                         .map(|(_, l)| l.clone())
                         .unwrap_or(raw)
                 };
@@ -495,12 +501,31 @@ impl Workbench {
                         .rounded(px(6.))
                         .p(px(3.))
                         .bg(rgb(PALE));
+                    let search = self
+                        .form
+                        .as_ref()
+                        .and_then(|form| form.picker_search.clone());
+                    let query = search
+                        .as_ref()
+                        .map(|field| field.value(cx).trim().to_owned())
+                        .unwrap_or_default();
+                    let folded = query.to_lowercase();
+                    if let Some(search) = search {
+                        field = field.child(self.field(
+                            &format!("choice-search-{i}"),
+                            crate::locale::label("搜索标签"),
+                            &search,
+                            w,
+                            cx,
+                        ));
+                    }
                     for (index, (v, l)) in options.iter().enumerate() {
-                        let active = if multi {
-                            selected.contains(&v.as_str())
-                        } else {
-                            v == &value
-                        };
+                        if !folded.is_empty()
+                            && (v.is_empty() || !l.to_lowercase().contains(&folded))
+                        {
+                            continue;
+                        }
+                        let active = value.contains(v);
                         menu = menu.child(
                             self.button(
                                 format!("field-{i}-option-{index}"),
@@ -514,6 +539,31 @@ impl Workbench {
                             .child(l.clone())
                             .child(div().flex_1())
                             .when(active, |b| b.child(icon("check", 13.))),
+                        );
+                    }
+                    if matches!(e.spec.format, Format::Many("$tag_choices"))
+                        && !query.is_empty()
+                        && !options
+                            .iter()
+                            .any(|(id, title)| id == &query || title.to_lowercase() == folded)
+                        && !self
+                            .list("tag")
+                            .iter()
+                            .any(|tag| tag.title.to_lowercase() == folded)
+                    {
+                        let label =
+                            format!("{}「{}」", crate::locale::label("创建并选中标签"), query);
+                        menu = menu.child(
+                            self.button(
+                                format!("field-{i}-create"),
+                                label.clone(),
+                                UiAction::Choose(i, query),
+                                cx,
+                            )
+                            .w_full()
+                            .justify_start()
+                            .child(icon("plus", 13.))
+                            .child(label),
                         );
                     }
                     field = field.child(menu);
@@ -593,6 +643,24 @@ impl Workbench {
         }
         if let Mode::Confirm { .. } = &mode {
             body = body.child(text("请确认本次操作。", 14., MUTED));
+        }
+        if let Mode::DeactivateSpace {
+            space, unfinished, ..
+        } = &mode
+        {
+            body = body
+                .child(headline(space.title.clone(), 14.))
+                .child(text(
+                    "停用后，空间中的历史记录仍可查看。恢复后可继续编辑。",
+                    13.,
+                    MUTED,
+                ))
+                .child(
+                    row()
+                        .gap(px(6.))
+                        .child(text("未完成任务", 13., MUTED))
+                        .child(text(unfinished.to_string(), 13., INK)),
+                );
         }
         if let Mode::IterationEnd(r) = &mode {
             let unfinished = self
@@ -705,7 +773,17 @@ impl Workbench {
             } else {
                 None
             };
+            let move_tasks = entries
+                .iter()
+                .find(|e| e.spec.key == "unfinished")
+                .is_some_and(|e| e.raw(cx) == "move");
             for (i, e) in entries.into_iter().enumerate().filter(|(_, e)| {
+                if matches!(mode, Mode::DeactivateSpace { .. })
+                    && e.spec.key == "target"
+                    && !move_tasks
+                {
+                    return false;
+                }
                 connector_provider
                     .as_deref()
                     .is_none_or(|p| crate::forms::connector_field_visible(e.spec.key, p))
