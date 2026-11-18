@@ -8,8 +8,8 @@
 
 ```powershell
 .\shipforge-worker.exe init --config D:\ShipForge\machine.json --space default --example
-.\shipforge.exe create agent 验收助手 --id inspector --fields '{"runtime":"inspect-context"}'
-.\shipforge.exe create task 验证任务 --id acceptance --fields '{"status":"todo","assignee_kind":"agent","assignee":"inspector"}'
+'{"op":"create","kind":"agent","id":"inspector","title":"Inspector","fields":{"runtime":"inspect-context"}}' | .\shipforge.exe request
+'{"op":"create","kind":"task","id":"acceptance","title":"Check worker","fields":{"status":"todo","assignee_kind":"agent","assignee":"inspector"}}' | .\shipforge.exe request
 .\shipforge-worker.exe run --config D:\ShipForge\machine.json --once
 .\shipforge.exe list run
 ```
@@ -58,6 +58,8 @@
 外部 Runtime 从标准输入读取一条 JSON 运行记录，可在 `fields` 下读取 `config`、`task_context`、`instruction`、`reply`、`child_results` 和 `tool_results`。技能内容和配置版本在排队时记录。程序在批准的目录内运行，默认继承系统基础环境，额外变量从本机 `inherit_env` 清单读取。
 
 程序向标准输出写一条 JSON，退出码用于判定进程失败。正常文本输出也会作为结果保存。产物路径应是当前工作目录内已经存在的文件。每个输出流最多记录 96 KiB。
+
+需要显示运行进度时，将 `{"message":"正在整理报告","percent":60}` 写入 `fields.progress_file` 提供的当前运行专用路径。Worker 会通过租约心跳上报进展。明确列入产物的文件每个最多 256 KiB、每份回报合计最多 1 MiB 时，原始内容会随回报保存到工作区，可按附件下载。更大的文件可通过所属机器的产物路径读取。
 
 ```json
 {"status":"done","result":"已生成变更报告","artifacts":[{"name":"报告","path":"report.md"}]}

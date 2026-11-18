@@ -28,6 +28,14 @@ pub(crate) fn export(c: &Context<'_>) -> Result<Value> {
         records.extend(
             visible_records(c, kind)?
                 .into_iter()
+                .map(|mut row| {
+                    if row.kind == "task"
+                        && let Some(f) = row.fields.as_object_mut()
+                    {
+                        f.remove("following");
+                    }
+                    row
+                })
                 .filter(|r| !(crate::defaults::builtin(kind, &r.id) && r.rev == 1)),
         );
     }

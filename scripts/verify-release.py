@@ -51,6 +51,14 @@ def verify(directory, version):
         listed = call("list",kind="task")
         assert [r["title"] for r in listed if r["id"]==task["id"]]==["已编辑标题"]
         assert call("get",kind="task",id=task["id"])["rev"]==saved["rev"]
+        source=Path(tmp)/"附件.bin"
+        source.write_bytes(bytes(range(256))*4)
+        uploaded=run_cli(cli,data,"upload",str(source),"--kind","task","--id",task["id"])
+        file=uploaded["fields"]["attachments"][0]
+        target=Path(tmp)/"下载.bin"
+        downloaded=run_cli(cli,data,"download","task",task["id"],file["id"],str(target))
+        assert target.read_bytes()==source.read_bytes() and file["sha256"]==downloaded["sha256"]
+        assert run_cli(cli,data,"download","task",task["id"],file["id"],str(target),ok=False)["code"]=="storage"
         assert (data/"workspace.sqlite3").is_file()
         schema = run_cli(cli, data, "schema")
         checked = json.loads((ROOT/"docs"/"protocol.schema.json").read_text(encoding="utf-8"))

@@ -142,6 +142,7 @@ fn agent_executes_an_approved_mcp_stdio_call_and_reads_its_result_in_the_same_wo
         &runtime,
         r#"import json, pathlib, sys
 r = json.load(sys.stdin)
+pathlib.Path(r["fields"]["progress_file"]).write_text(json.dumps({"message":"tool step","percent":75}))
 marker = pathlib.Path("same-workdir.txt")
 if r["fields"].get("tool_results"):
     value = r["fields"]["tool_results"][0]["result"]["content"][0]["text"]
@@ -192,6 +193,7 @@ reply(call,{"content":[{"type":"text","text":call["params"]["arguments"]["phrase
         .unwrap();
     assert_eq!(run["fields"]["status"], "done", "{run}");
     assert_eq!(run["fields"]["result"], "verified");
+    assert_eq!(run["fields"]["progress"]["percent"], 75);
     assert_eq!(run["fields"]["tool_calls"][0]["tool"], "lookup");
     assert_eq!(run["fields"]["artifacts"][0]["path"], "same-workdir.txt");
     let files = client
@@ -267,4 +269,84 @@ print(json.dumps({"status":"done","result":"completed"}))
     let lines = std::fs::read_to_string(repo.join("finished.txt")).unwrap();
     assert_eq!(lines.lines().count(), 2);
     assert!(!repo.join("in-use.txt").exists());
+}
+
+#[test]
+fn progress_arrives_while_running_then_cancellation_and_supervisor_stop_finish_cleanly() {
+    use std::time::{Duration, Instant};
+    let temp = tempfile::tempdir().unwrap();
+    let data = temp.path().join("data");
+    let config = temp.path().join("machine.json");
+    let cfg = config.to_str().unwrap();
+    let script = temp.path().join("long.py");
+    std::fs::write(&script,r#"import json, pathlib, sys, time
+r=json.load(sys.stdin)
+pathlib.Path(r["fields"]["progress_file"]).write_text(json.dumps({"message":"stage started","percent":20}))
+time.sleep(30)
+print(json.dumps({"status":"done","result":"completed"}))
+"#).unwrap();
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    worker(
+        &data,
+        &[
+            "init",
+            "--config",
+            cfg,
+            "--runtime",
+            "slow",
+            "--program",
+            python,
+            "--arg",
+            script.to_str().unwrap(),
+        ],
+    );
+    let mut cli = Client::local(&data).unwrap();
+    cli.execute(
+        json!({"op":"create","kind":"agent","id":"a","title":"A","fields":{"runtime":"slow"}}),
+    )
+    .unwrap();
+    cli.execute(json!({"op":"create","kind":"task","id":"t","title":"T","fields":{"status":"todo","assignee":"a","assignee_kind":"agent"}})).unwrap();
+    let mut service = Command::new(env!("CARGO_BIN_EXE_shipforge-worker"))
+        .args(["run", "--config", cfg])
+        .env_remove("SHIPFORGE_SERVER")
+        .env_remove("SHIPFORGE_TOKEN")
+        .env("SHIPFORGE_DATA_DIR", &data)
+        .stdout(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    let until = Instant::now() + Duration::from_secs(20);
+    let id = loop {
+        let runs = cli.execute(json!({"op":"list","kind":"run"})).unwrap();
+        let run = &runs[0];
+        if run["fields"]["status"] == "running" && run["fields"]["progress"]["percent"] == 20 {
+            break run["id"].as_str().unwrap().to_string();
+        }
+        if Instant::now() > until {
+            let _ = service.kill();
+            let _ = service.wait();
+            panic!("no live progress, last record {run}");
+        }
+        std::thread::sleep(Duration::from_millis(120));
+    };
+    cli.execute(json!({"op":"run.cancel","id":id})).unwrap();
+    assert_eq!(worker(&data, &["stop", "--config", cfg])["stopping"], true);
+    let until = Instant::now() + Duration::from_secs(16);
+    loop {
+        if let Some(status) = service.try_wait().unwrap() {
+            assert!(status.success());
+            break;
+        }
+        if Instant::now() > until {
+            let _ = service.kill();
+            let _ = service.wait();
+            panic!("supervisor did not shut down");
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let run = cli
+        .execute(json!({"op":"get","kind":"run","id":id}))
+        .unwrap();
+    assert_eq!(run["fields"]["status"], "cancelled", "{run}");
+    assert_eq!(run["fields"]["progress"]["message"], "stage started");
+    assert_eq!(worker(&data, &["stop", "--config", cfg])["running"], false);
 }

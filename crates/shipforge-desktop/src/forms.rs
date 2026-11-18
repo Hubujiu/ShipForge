@@ -60,9 +60,11 @@ pub enum Mode {
     Comment(Record),
     Message(Record),
     IterationEnd(Record),
-    Upload(Option<Record>), Download(Record, Value),
+    Upload(Option<Record>),
+    Download(Record, Value),
     Machine { stop: bool },
     Workflow { op: &'static str, record: Record },
+    ResolveDraft(Value),
     Confirm { label: String, command: Value },
     Export,
     Import,
@@ -71,6 +73,11 @@ pub enum Mode {
     Output { heading: String, content: String },
 }
 impl Mode {
+    pub fn automation(&self) -> bool {
+        matches!(self,Self::Create(k) if k=="automation")
+            || matches!(self,Self::Edit(r) if r.kind=="automation")
+    }
+
     pub fn heading(&self) -> String {
         use Mode::*;
         match self {
@@ -80,7 +87,8 @@ impl Mode {
                 "启动本机工作机"
             }
             .into(),
-            Upload(_)=>"上传附件".into(), Download(..)=>"下载附件".into(),
+            Upload(_) => "上传附件".into(),
+            Download(..) => "下载附件".into(),
             Workflow { op, .. } => workflow_name(op).into(),
             Create(k) => format!("新建{}", noun(k)),
             Edit(r) => format!("编辑{}", noun(&r.kind)),
@@ -89,6 +97,7 @@ impl Mode {
             Comment(_) => "添加评论".into(),
             Message(_) => "发送消息".into(),
             IterationEnd(_) => "结束迭代".into(),
+            ResolveDraft(_) => "处理同步冲突".into(),
             Confirm { label, .. } => label.clone(),
             Export => "导出空间".into(),
             Import => "导入空间".into(),
@@ -106,7 +115,8 @@ impl Mode {
                     "启动"
                 }
             }
-            Self::Upload(_)=>"上传", Self::Download(..)=>"保存",
+            Self::Upload(_) => "上传",
+            Self::Download(..) => "保存",
             Self::Workflow { .. } => "确认",
             Self::Create(_) => "创建",
             Self::Filter => "应用筛选",
@@ -114,6 +124,7 @@ impl Mode {
             Self::Comment(_) | Self::Message(_) => "发送",
             Self::Search => "搜索",
             Self::Token => "签发令牌",
+            Self::ResolveDraft(_) => "更新草稿",
             Self::Export => "导出",
             Self::Import => "预检",
             Self::Confirm { .. } => "确认",
@@ -141,6 +152,7 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
     let visibility = item("visibility", "可见范围", Choice(VIS), "space");
     let filter = || {
         vec![
+            item("query", "搜索关键词", Text, ""),
             item("filter_type", "任务类型", Ref("$types"), ""),
             item("filter_status", "状态", Ref("$statuses"), ""),
             item("filter_priority", "优先级", Ref("$priorities"), ""),
@@ -220,6 +232,18 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             ),
             item("triage_enabled", "空间分拣台", Bool, "false"),
             item(
+                "triage_sources",
+                "需要分拣的来源",
+                Many("$sources"),
+                "guest, external",
+            ),
+            item(
+                "triage_types",
+                "需要分拣的任务类型",
+                Many("$types"),
+                "task, requirement, bug",
+            ),
+            item(
                 "triage_priority_required",
                 "分拣时要求优先级",
                 Bool,
@@ -262,6 +286,9 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             ),
             item("skills", "技能", Many("skill"), ""),
             item("tools", "授权工具", Many("tool"), ""),
+            item("max_parallel", "任务并发数", Number, ""),
+            item("chat_parallel", "对话并发数", Number, ""),
+            item("timeout_seconds", "超时秒数", Number, ""),
             item("working_hours", "工作时段（JSON）", Json, ""),
             visibility,
         ],
@@ -299,11 +326,8 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             title,
             item("instruction", "执行指令", Body, ""),
             item("handler_id", "执行者", Ref("$agents"), ""),
+            item("notify", "通知成员", Many("member"), ""),
             item("enabled", "规则状态", Bool, "true"),
-            item("trigger_type", "触发方式", Choice(TRIGGERS), "status"),
-            item("trigger_status", "目标状态", Ref("$statuses"), "todo"),
-            item("interval_minutes", "定时间隔（分钟）", Number, "60"),
-            item("extra_triggers", "其他触发器（JSON 数组）", Json, "[]"),
         ],
         "connector" => vec![
             title,
@@ -314,11 +338,30 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                     ("github", "GitHub Issues"),
                     ("jira", "Jira"),
                     ("gitlab", "GitLab"),
+                    ("linear", "Linear"),
+                    ("asana", "Asana"),
+                    ("teams", "Microsoft Teams"),
+                    ("discord", "Discord"),
+                    ("wecom", "企业微信"),
+                    ("dingtalk", "钉钉"),
+                    ("feishu", "飞书"),
+                    ("slack", "Slack"),
+                    ("telegram", "Telegram"),
                     ("custom", "自定义来源"),
                 ]),
                 "github",
             ),
-            item("repository", "GitHub 仓库（owner/repository）", Text, ""),
+            item(
+                "repository",
+                "GitHub 或 GitLab 仓库（owner/repository）",
+                Text,
+                "",
+            ),
+            item("project_id", "GitLab 项目 ID", Text, ""),
+            item("project_key", "Jira 项目标识", Text, ""),
+            item("workspace_id", "Slack 工作区 ID", Text, ""),
+            item("channel_id", "Slack 频道 ID", Text, ""),
+            item("chat_id", "飞书或 Telegram 会话 ID", Text, ""),
             item("enabled", "启用", Bool, "true"),
             body,
             item("mapping", "字段映射（JSON）", Json, "{}"),
@@ -338,6 +381,8 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 "text",
             ),
             item("options", "可用选项（用逗号分隔）", Csv, ""),
+            item("default", "默认显示", Bool, "false"),
+            item("order", "顺序", Number, ""),
         ],
         "status" => vec![title, item("category", "状态类别", Choice(STATUS), "todo")],
         "task_type" => vec![
@@ -361,6 +406,8 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
 }
 pub fn workflow_name(op: &str) -> &'static str {
     match op {
+        "provider.preview" => "预览平台事件",
+        "provider.ingest" => "接收平台事件",
         "tool.authorize" => "验证 Agent 工具权限",
         "run.reply" => "回复工作机",
         "connector.ingest" => "导入外部事项",
@@ -387,9 +434,19 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             }
             s
         }
-        Upload(record)=>{let mut s=vec![item("path","文件路径（最大 4 MiB）",Text,"")];if record.is_none(){s.push(item("visibility","文档可见范围",Choice(VIS),"private"));}s}
-        Download(..)=>vec![item("path","保存到新文件",Text,"")],
+        Upload(record) => {
+            let mut s = vec![item("path", "文件路径（最大 4 MiB）", Text, "")];
+            if record.is_none() {
+                s.push(item("visibility", "文档可见范围", Choice(VIS), "private"));
+            }
+            s
+        }
+        Download(..) => vec![item("path", "保存到新文件", Text, "")],
         Workflow { op, .. } => match *op {
+            "provider.preview" | "provider.ingest" => vec![
+                item("payload", "平台原始事件（JSON 对象）", Json, "{}"),
+                item("event_id", "GitLab 或 Jira 上游投递 ID", Text, ""),
+            ],
             "run.reply" => vec![item("text", "回复内容", Body, "")],
             "tool.authorize" => vec![item("agent", "Agent", Ref("agent"), "")],
             "connector.ingest" => vec![
@@ -421,6 +478,12 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             Ref("iteration"),
             "",
         )],
+        ResolveDraft(_) => vec![item(
+            "expected_rev",
+            "用来重新提交的服务器版本号",
+            Number,
+            "",
+        )],
         Export | Import => vec![item("path", "JSON 文件完整路径", Text, "")],
         Token => vec![
             item("actor", "成员账号", Ref("member"), ""),
@@ -444,8 +507,46 @@ pub enum Control {
 pub struct Editor {
     pub spec: Spec,
     pub control: Control,
+    pub trigger: Option<u64>,
 }
 impl Editor {
+    fn new(
+        spec: Spec,
+        initial: &Map<String, Value>,
+        trigger: Option<u64>,
+        window: &mut Window,
+        cx: &mut Context<Workbench>,
+    ) -> Self {
+        let value = initial
+            .get(spec.key)
+            .map(|v| {
+                if spec.format == Format::Json && !v.is_null() {
+                    serde_json::to_string_pretty(v).unwrap_or_default()
+                } else {
+                    value_text(v)
+                }
+            })
+            .unwrap_or_else(|| spec.default.to_owned());
+        let control = match spec.format {
+            Format::Choice(_) | Format::Ref(_) | Format::Many(_) | Format::Bool => Control::Pick {
+                value,
+                focus: cx.focus_handle().tab_stop(true),
+            },
+            _ => Control::Text(Field::new(
+                &value,
+                spec.label,
+                matches!(spec.format, Format::Body | Format::Json),
+                spec.format == Format::Secret,
+                window,
+                cx,
+            )),
+        };
+        Self {
+            spec,
+            control,
+            trigger,
+        }
+    }
     pub fn raw(&self, cx: &App) -> String {
         match &self.control {
             Control::Text(f) => f.value(cx),
@@ -499,7 +600,14 @@ impl Editor {
         })
     }
 }
+#[derive(Clone)]
+pub struct TriggerDraft {
+    pub id: u64,
+    original: Map<String, Value>,
+}
 pub struct Form {
+    pub triggers: Vec<TriggerDraft>,
+    next_trigger: u64,
     pub mode: Mode,
     pub entries: Vec<Editor>,
     pub open_pick: Option<usize>,
@@ -519,52 +627,171 @@ impl Form {
         let origin = window.focused(cx);
         let entries = modal_specs(&mode)
             .into_iter()
-            .map(|spec| {
-                let v = initial
-                    .get(spec.key)
-                    .map(|v| {
-                        if spec.format == Format::Json && !v.is_null() {
-                            serde_json::to_string_pretty(v).unwrap_or_default()
-                        } else {
-                            value_text(v)
-                        }
-                    })
-                    .unwrap_or_else(|| spec.default.to_owned());
-                let control = match spec.format {
-                    Format::Choice(_) | Format::Ref(_) | Format::Many(_) | Format::Bool => {
-                        Control::Pick {
-                            value: v,
-                            focus: cx.focus_handle().tab_stop(true),
-                        }
-                    }
-                    _ => Control::Text(Field::new(
-                        &v,
-                        spec.label,
-                        spec.format == Format::Body || spec.format == Format::Json,
-                        spec.format == Format::Secret,
-                        window,
-                        cx,
-                    )),
-                };
-                Editor { spec, control }
-            })
+            .map(|spec| Editor::new(spec, initial, None, window, cx))
             .collect();
-        Self {
+        let automation = mode.automation();
+        let mut this = Self {
             mode,
             entries,
+            triggers: vec![],
+            next_trigger: 0,
             open_pick: None,
             error: String::new(),
             origin,
             search_results: vec![],
             last_search: String::new(),
             preview: None,
+        };
+        if automation {
+            if let Some(triggers) = initial.get("triggers").and_then(Value::as_array) {
+                for t in triggers {
+                    this.add_trigger(t, window, cx);
+                }
+            } else {
+                this.add_trigger(&json!({"type":"status","enabled":true}), window, cx);
+            }
         }
+        this
+    }
+    pub fn add_trigger(&mut self, raw: &Value, window: &mut Window, cx: &mut Context<Workbench>) {
+        if self.triggers.len() >= 32 {
+            self.error = "最多可配置 32 个触发器。".into();
+            return;
+        }
+        use Format::*;
+        let original = raw.as_object().cloned().unwrap_or_default();
+        let id = self.next_trigger;
+        self.next_trigger += 1;
+        for spec in [
+            item("type", "触发方式", Choice(TRIGGERS), "status"),
+            item("status", "任务进入状态", Ref("$statuses"), ""),
+            item("keyword", "评论包含文字（可选）", Text, ""),
+            item(
+                "frequency",
+                "重复",
+                Choice(&[
+                    ("interval", "按间隔"),
+                    ("daily", "每天"),
+                    ("weekly", "每周"),
+                ]),
+                "interval",
+            ),
+            item("interval_minutes", "间隔分钟数", Number, "60"),
+            item("local_time", "当地时间（HH:MM）", Text, "09:00"),
+            item(
+                "timezone",
+                "时区",
+                Choice(&[
+                    ("Asia/Shanghai", "上海"),
+                    ("Asia/Tokyo", "东京"),
+                    ("Asia/Kolkata", "加尔各答"),
+                    ("Europe/London", "伦敦"),
+                    ("Europe/Berlin", "柏林"),
+                    ("America/New_York", "纽约"),
+                    ("America/Los_Angeles", "洛杉矶"),
+                    ("UTC", "UTC"),
+                ]),
+                "Asia/Shanghai",
+            ),
+            item("weekdays", "每周执行日", Many("$weekdays"), "1, 2, 3, 4, 5"),
+            item("enabled", "启用此触发器", Bool, "true"),
+        ] {
+            self.entries
+                .push(Editor::new(spec, &original, Some(id), window, cx));
+        }
+        self.triggers.push(TriggerDraft { id, original });
+        self.open_pick = None;
+    }
+    pub fn remove_trigger(&mut self, id: u64) {
+        self.triggers.retain(|t| t.id != id);
+        self.entries.retain(|e| e.trigger != Some(id));
+        self.open_pick = None;
     }
     pub fn values(&self, cx: &App) -> Result<Map<String, Value>, String> {
-        self.entries
+        let mut fields = self
+            .entries
             .iter()
+            .filter(|e| e.trigger.is_none())
             .map(|e| Ok((e.spec.key.to_owned(), e.parsed(cx)?)))
-            .collect()
+            .collect::<Result<Map<_, _>, String>>()?;
+        if self.mode.automation() {
+            let mut triggers = Vec::new();
+            for t in &self.triggers {
+                let get = |key: &str| -> Result<Value, String> {
+                    self.entries
+                        .iter()
+                        .find(|e| e.trigger == Some(t.id) && e.spec.key == key)
+                        .ok_or_else(|| "触发条件缺少字段".to_owned())?
+                        .parsed(cx)
+                };
+                let kind = get("type")?;
+                let freq = get("frequency")?;
+                let mut trigger = t.original.clone();
+                for k in [
+                    "type",
+                    "enabled",
+                    "frequency",
+                    "status",
+                    "keyword",
+                    "interval_minutes",
+                    "local_time",
+                    "timezone",
+                    "weekdays",
+                ] {
+                    trigger.remove(k);
+                }
+                trigger.insert("type".into(), kind.clone());
+                trigger.insert("enabled".into(), get("enabled")?);
+                for key in [
+                    "status",
+                    "keyword",
+                    "frequency",
+                    "interval_minutes",
+                    "local_time",
+                    "timezone",
+                    "weekdays",
+                ] {
+                    if !trigger_field_visible(
+                        key,
+                        kind.as_str().unwrap_or(""),
+                        freq.as_str().unwrap_or(""),
+                    ) {
+                        continue;
+                    }
+                    let mut val = get(key)?;
+                    if key == "frequency" && val == "interval" {
+                        continue;
+                    }
+                    if key == "weekdays" {
+                        let days = val
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|v| v.as_str())
+                            .map(|d| d.parse::<u8>().map_err(|_| "请选择星期".to_owned()))
+                            .collect::<Result<Vec<_>, _>>()?;
+                        val = json!(days);
+                    }
+                    if !val.is_null() && val.as_str() != Some("") {
+                        trigger.insert(key.into(), val);
+                    }
+                }
+                triggers.push(Value::Object(trigger));
+            }
+            fields.insert("triggers".into(), json!(triggers));
+        }
+        Ok(fields)
+    }
+}
+pub fn trigger_field_visible(key: &str, kind: &str, frequency: &str) -> bool {
+    match key {
+        "status" => kind == "status",
+        "keyword" => kind == "comment",
+        "frequency" => kind == "schedule",
+        "interval_minutes" => kind == "schedule" && frequency == "interval",
+        "local_time" | "timezone" => kind == "schedule" && frequency != "interval",
+        "weekdays" => kind == "schedule" && frequency == "weekly",
+        _ => true,
     }
 }
 pub fn initial_record(r: &Record) -> Map<String, Value> {
@@ -574,23 +801,6 @@ pub fn initial_record(r: &Record) -> Map<String, Value> {
         for (k, v) in filters {
             f.insert(format!("filter_{k}"), v.clone());
         }
-    }
-    if let Some(ts) = r.fields.get("triggers").and_then(Value::as_array)
-        && let Some(first) = ts.first()
-    {
-        for (to, from) in [
-            ("trigger_type", "type"),
-            ("trigger_status", "status"),
-            ("interval_minutes", "interval_minutes"),
-        ] {
-            if let Some(v) = first.get(from) {
-                f.insert(to.into(), v.clone());
-            }
-        }
-        f.insert(
-            "extra_triggers".into(),
-            json!(ts.iter().skip(1).collect::<Vec<_>>()),
-        );
     }
     f
 }
@@ -633,35 +843,6 @@ pub fn compile_record(
             }
         }
         fields.insert("filter".into(), Value::Object(filter));
-    }
-    if kind == "automation" {
-        let mut trigger = Map::new();
-        let t = fields.remove("trigger_type").unwrap_or(json!("status"));
-        trigger.insert("type".into(), t.clone());
-        trigger.insert("enabled".into(), json!(true));
-        let s = fields.remove("trigger_status");
-        let interval = fields.remove("interval_minutes");
-        match t.as_str() {
-            Some("status") => {
-                if let Some(s) = s {
-                    trigger.insert("status".into(), s);
-                }
-            }
-            Some("schedule") => {
-                if let Some(i) = interval {
-                    trigger.insert("interval_minutes".into(), i);
-                }
-            }
-            _ => {}
-        }
-        let mut ts = vec![Value::Object(trigger)];
-        if let Some(extra) = fields.remove("extra_triggers")
-            && !extra.is_null()
-        {
-            let vals = extra.as_array().ok_or("其他触发器需要 JSON 数组")?;
-            ts.extend(vals.iter().cloned());
-        }
-        fields.insert("triggers".into(), Value::Array(ts));
     }
     if creating {
         fields.retain(|_, v| !v.is_null() && v.as_str() != Some(""));

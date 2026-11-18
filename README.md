@@ -6,6 +6,8 @@ ShipForge 是用 Rust 和 GPUI 编写的开源协作工作台。你可以在 Win
 
 打开 ShipForge 即可创建第一条本地任务。想先看看有数据的看板，可在程序目录运行 `shipforge-desktop.exe --demo`。团队协作、外部工具和第三方同步按需配置。
 
+![Windows 上的 ShipForge 任务看板](docs/images/windows-board.png)
+
 | 文档 | 内容 |
 | --- | --- |
 | [功能清单与验收条件](docs/features.md) | 对照 HiFox 官网、帮助中心和 Windows 实机梳理的 26 项能力。 |

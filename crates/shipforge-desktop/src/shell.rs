@@ -384,10 +384,146 @@ impl Workbench {
                     )),
             )
     }
+    fn editor_row(
+        &mut self,
+        i: usize,
+        e: crate::forms::Editor,
+        open_pick: Option<usize>,
+        mode: &Mode,
+        w: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Div {
+        let raw = e.raw(cx);
+        let id = e.trigger.map_or_else(
+            || format!("modal-{}", e.spec.key),
+            |t| format!("trigger-{t}-{}", e.spec.key),
+        );
+        let label = e.spec.label;
+        let mut field = col().w_full().gap(px(4.)).child(text(label, 12., MUTED));
+        match e.control {
+            Control::Text(ref input) => {
+                field = field.child(self.field(&id, label, input, w, cx));
+            }
+            Control::Pick { value, focus } => {
+                let (mut options, allow_empty, multi) = match e.spec.format {
+                    Format::Ref(k) => (self.options(k), true, false),
+                    Format::Many(k) => (self.options(k), true, true),
+                    Format::Bool => (
+                        vec![
+                            ("true".into(), "启用".into()),
+                            ("false".into(), "关闭".into()),
+                        ],
+                        false,
+                        false,
+                    ),
+                    Format::Choice(v) => (
+                        v.iter()
+                            .map(|(k, l)| (k.to_string(), l.to_string()))
+                            .collect(),
+                        false,
+                        false,
+                    ),
+                    _ => unreachable!(),
+                };
+                if allow_empty {
+                    options.insert(0, (String::new(), "未设置".into()));
+                }
+                let selected: Vec<&str> = value.split(',').map(str::trim).collect();
+                let display = if multi {
+                    options
+                        .iter()
+                        .filter(|(v, _)| !v.is_empty() && selected.contains(&v.as_str()))
+                        .map(|(_, l)| l.as_str())
+                        .collect::<Vec<_>>()
+                        .join("、")
+                } else {
+                    options
+                        .iter()
+                        .find(|(v, _)| v == &raw)
+                        .map(|(_, l)| l.clone())
+                        .unwrap_or(raw)
+                };
+                let frame = self.field_frame(&id, &focus, w, cx);
+                field = field.child(
+                    frame.px_0().child(
+                        self.button(id.clone(), label, UiAction::Pick(i), cx)
+                            .track_focus(&focus)
+                            .w_full()
+                            .h(px(33.))
+                            .justify_start()
+                            .child(text(
+                                if display.is_empty() {
+                                    "请选择".into()
+                                } else {
+                                    display
+                                },
+                                13.,
+                                INK,
+                            ))
+                            .child(div().flex_1())
+                            .child(icon("chevron-down", 13.)),
+                    ),
+                );
+                if open_pick == Some(i) {
+                    let mut menu = col()
+                        .id(format!("choice-menu-{i}"))
+                        .max_h(px(174.))
+                        .overflow_y_scroll()
+                        .border_1()
+                        .border_color(rgb(LINE))
+                        .rounded(px(6.))
+                        .p(px(3.))
+                        .bg(rgb(PALE));
+                    for (index, (v, l)) in options.iter().enumerate() {
+                        let active = if multi {
+                            selected.contains(&v.as_str())
+                        } else {
+                            v == &value
+                        };
+                        menu = menu.child(
+                            self.button(
+                                format!("field-{i}-option-{index}"),
+                                l.clone(),
+                                UiAction::Choose(i, v.clone()),
+                                cx,
+                            )
+                            .w_full()
+                            .justify_start()
+                            .when(active, |b| b.bg(rgb(SELECTED)))
+                            .child(l.clone())
+                            .child(div().flex_1())
+                            .when(active, |b| b.child(icon("check", 13.))),
+                        );
+                    }
+                    field = field.child(menu);
+                }
+            }
+        }
+        if e.spec.key == "path" {
+            let save = match mode {
+                Mode::Download(_, file) => {
+                    Some(file["filename"].as_str().unwrap_or("attachment").to_owned())
+                }
+                Mode::Export => Some("shipforge-workspace.json".to_owned()),
+                _ => None,
+            };
+            field = field.child(
+                outlined(self.button(
+                    format!("browse-{i}"),
+                    "浏览文件",
+                    UiAction::Browse { index: i, save },
+                    cx,
+                ))
+                .child("浏览…"),
+            );
+        }
+        field
+    }
     fn form_layer(&mut self, w: &mut Window, cx: &mut Context<Self>) -> Option<AnyElement> {
         let f = self.form.as_ref()?;
         let mode = f.mode.clone();
         let entries = f.entries.clone();
+        let trigger_ids = f.triggers.iter().map(|t| t.id).collect::<Vec<_>>();
         let open_pick = f.open_pick;
         let error = f.error.clone();
         let results = f.search_results.clone();
@@ -395,11 +531,7 @@ impl Workbench {
         let viewport = w.viewport_size();
         let max_w = f32::from(viewport.width);
         let max_h = f32::from(viewport.height);
-        let width = if matches!(&mode,Mode::Create(k) if k=="automation") {
-            860.
-        } else {
-            620.
-        };
+        let width = if mode.automation() { 860. } else { 620. };
         let width = f32::min(width, (max_w - 40.).max(340.));
         let mut body = col().w_full().gap(px(12.)).px(px(21.)).py(px(14.));
         if let Mode::Output { content, .. } = &mode {
@@ -435,112 +567,134 @@ impl Workbench {
                 MUTED,
             ));
         }
-        for (i, e) in entries.into_iter().enumerate() {
-            let raw = e.raw(cx);
-            let id = format!("modal-{}", e.spec.key);
-            let label = e.spec.label;
-            let mut field = col().w_full().gap(px(4.)).child(text(label, 12., MUTED));
-            match e.control {
-                Control::Text(ref input) => {
-                    field = field.child(self.field(&id, label, input, w, cx));
-                }
-                Control::Pick { value, focus } => {
-                    let (mut options, allow_empty, multi) = match e.spec.format {
-                        Format::Ref(k) => (self.options(k), true, false),
-                        Format::Many(k) => (self.options(k), true, true),
-                        Format::Bool => (
-                            vec![
-                                ("true".into(), "启用".into()),
-                                ("false".into(), "关闭".into()),
-                            ],
-                            false,
-                            false,
-                        ),
-                        Format::Choice(v) => (
-                            v.iter()
-                                .map(|(k, l)| (k.to_string(), l.to_string()))
-                                .collect(),
-                            false,
-                            false,
-                        ),
-                        _ => unreachable!(),
-                    };
-                    if allow_empty {
-                        options.insert(0, (String::new(), "未设置".into()));
-                    }
-                    let selected: Vec<&str> = value.split(',').map(str::trim).collect();
-                    let display = if multi {
-                        options
-                            .iter()
-                            .filter(|(v, _)| !v.is_empty() && selected.contains(&v.as_str()))
-                            .map(|(_, l)| l.as_str())
-                            .collect::<Vec<_>>()
-                            .join("、")
-                    } else {
-                        options
-                            .iter()
-                            .find(|(v, _)| v == &raw)
-                            .map(|(_, l)| l.clone())
-                            .unwrap_or(raw)
-                    };
-                    let frame = self.field_frame(&id, &focus, w, cx);
-                    field = field.child(
-                        frame.px_0().child(
-                            self.button(id.clone(), label, UiAction::Pick(i), cx)
-                                .track_focus(&focus)
-                                .w_full()
-                                .h(px(33.))
-                                .justify_start()
-                                .child(text(
-                                    if display.is_empty() {
-                                        "请选择".into()
-                                    } else {
-                                        display
-                                    },
-                                    13.,
-                                    INK,
-                                ))
-                                .child(div().flex_1())
-                                .child(icon("chevron-down", 13.)),
-                        ),
-                    );
-                    if open_pick == Some(i) {
-                        let mut menu = col()
-                            .id(format!("choice-menu-{i}"))
-                            .max_h(px(174.))
-                            .overflow_y_scroll()
-                            .border_1()
-                            .border_color(rgb(LINE))
-                            .rounded(px(6.))
-                            .p(px(3.))
-                            .bg(rgb(PALE));
-                        for (index, (v, l)) in options.iter().enumerate() {
-                            let active = if multi {
-                                selected.contains(&v.as_str())
-                            } else {
-                                v == &value
-                            };
-                            menu = menu.child(
-                                self.button(
-                                    format!("field-{i}-option-{index}"),
-                                    l.clone(),
-                                    UiAction::Choose(i, v.clone()),
-                                    cx,
-                                )
-                                .w_full()
-                                .justify_start()
-                                .when(active, |b| b.bg(rgb(SELECTED)))
-                                .child(l.clone())
-                                .child(div().flex_1())
-                                .when(active, |b| b.child(icon("check", 13.))),
-                            );
-                        }
-                        field = field.child(menu);
-                    }
-                }
+        if mode.automation() {
+            let mut left = col().flex_1().min_w_0().gap(px(13.));
+            let mut right = col().flex_1().min_w_0().gap(px(11.)).child(
+                row()
+                    .justify_between()
+                    .child(headline("触发器", 14.))
+                    .child(
+                        outlined(self.button(
+                            "add-trigger",
+                            "添加触发器",
+                            UiAction::AddTrigger,
+                            cx,
+                        ))
+                        .child(icon("plus", 13.))
+                        .child("添加触发器"),
+                    ),
+            );
+            for (i, e) in entries
+                .iter()
+                .enumerate()
+                .filter(|(_, e)| e.trigger.is_none() && e.spec.key != "notify")
+            {
+                left = left.child(self.editor_row(i, e.clone(), open_pick, &mode, w, cx));
             }
-            if e.spec.key=="path"{let save=match &mode{Mode::Download(_,file)=>Some(file["filename"].as_str().unwrap_or("attachment").to_owned()),Mode::Export=>Some("shipforge-workspace.json".to_owned()),_=>None};field=field.child(outlined(self.button(format!("browse-{i}"),"浏览文件",UiAction::Browse{index:i,save},cx)).child("浏览…"));}
-            body = body.child(field);
+            for (index, trigger) in trigger_ids.into_iter().enumerate() {
+                let raw = |key: &str| {
+                    entries
+                        .iter()
+                        .find(|e| e.trigger == Some(trigger) && e.spec.key == key)
+                        .map(|e| e.raw(cx))
+                        .unwrap_or_default()
+                };
+                let kind = raw("type");
+                let freq = raw("frequency");
+                let mut card = col()
+                    .w_full()
+                    .min_w_0()
+                    .gap(px(7.))
+                    .p(px(11.))
+                    .rounded(px(8.))
+                    .border_1()
+                    .border_color(rgb(LINE))
+                    .bg(rgb(0xfafafd))
+                    .child(
+                        row()
+                            .justify_between()
+                            .child(headline(format!("触发器 {}", index + 1), 13.))
+                            .child(self.tool_button(
+                                &format!("remove-trigger-{trigger}"),
+                                "移除触发器",
+                                "x",
+                                UiAction::RemoveTrigger(trigger),
+                                cx,
+                            )),
+                    );
+                for (i, e) in entries.iter().enumerate().filter(|(_, e)| {
+                    e.trigger == Some(trigger)
+                        && crate::forms::trigger_field_visible(e.spec.key, &kind, &freq)
+                }) {
+                    card = card.child(self.editor_row(i, e.clone(), open_pick, &mode, w, cx));
+                }
+                if kind == "webhook" {
+                    card = card.child(text("由此规则收到的 Webhook 事件触发。", 12., MUTED));
+                }
+                right = right.child(card);
+            }
+            if let Some((i, e)) = entries
+                .iter()
+                .enumerate()
+                .find(|(_, e)| e.trigger.is_none() && e.spec.key == "notify")
+            {
+                right = right.child(self.editor_row(i, e.clone(), open_pick, &mode, w, cx));
+            }
+            body = if width >= 720. {
+                body.child(
+                    row()
+                        .w_full()
+                        .items_start()
+                        .gap(px(22.))
+                        .child(left)
+                        .child(right),
+                )
+            } else {
+                body.child(left).child(right)
+            };
+        } else {
+            for (i, e) in entries.into_iter().enumerate() {
+                body = body.child(self.editor_row(i, e, open_pick, &mode, w, cx));
+            }
+        }
+        if (matches!(&mode,Mode::Create(k) if k=="view")
+            || matches!(&mode,Mode::Edit(r) if r.kind=="view"))
+            && let Some(values) = self.form.as_ref().and_then(|f| f.values(cx).ok())
+        {
+            let q = values
+                .get("query")
+                .and_then(Value::as_str)
+                .unwrap_or("")
+                .to_lowercase();
+            let preview: Vec<_> = self
+                .list("task")
+                .iter()
+                .filter(|t| {
+                    q.is_empty()
+                        || t.title.to_lowercase().contains(&q)
+                        || t.field("description").to_lowercase().contains(&q)
+                })
+                .filter(|t| {
+                    ["type", "status", "priority", "assignee", "project"]
+                        .iter()
+                        .all(|k| {
+                            values
+                                .get(&format!("filter_{k}"))
+                                .and_then(Value::as_str)
+                                .is_none_or(|v| v.is_empty() || v == t.field(k))
+                        })
+                })
+                .collect();
+            let mut panel = col()
+                .p(px(10.))
+                .rounded(px(6.))
+                .bg(rgb(PALE))
+                .gap(px(3.))
+                .child(headline(format!("预览 · {} 项任务", preview.len()), 13.));
+            for t in preview.iter().take(5) {
+                panel = panel.child(text(format!("{}   {}", t.code(), t.title), 12., MUTED));
+            }
+            body = body.child(panel);
         }
         if matches!(mode, Mode::Search) {
             for (i, r) in results.iter().take(150).enumerate() {

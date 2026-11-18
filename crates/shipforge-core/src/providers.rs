@@ -1,7 +1,9 @@
 //! Convert authenticated relay payloads to the same issue synchronization contract used by the CLI.
+mod extended;
 use crate::{Context, Result, invalid, required, worker};
 use chrono::{DateTime, NaiveDateTime};
 use serde_json::{Value, json};
+pub(crate) const NAMES:&[&str]=&["gitlab","jira","feishu","lark","slack","telegram","linear","asana","teams","discord","wecom","dingtalk"];
 
 pub(crate) fn execute(c: &Context<'_>, q: &Value, preview: bool) -> Result<Value> {
     let id = required(q, "id")?;
@@ -27,6 +29,12 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, preview: bool) -> Result<Value
         "slack" => slack(p, f)?,
         "telegram" => telegram(p, f)?,
         "feishu" | "lark" => feishu(p, f)?,
+        "linear" => extended::linear(p, f)?,
+        "asana" => extended::asana(p, f)?,
+        "teams" => extended::teams(p, f)?,
+        "discord" => extended::discord(p, f)?,
+        "wecom" => extended::wecom(p, f)?,
+        "dingtalk" => extended::dingtalk(p, f)?,
         _ => return Err(invalid("no inbound parser for this provider")),
     };
     let supplied = q
@@ -96,6 +104,8 @@ fn issue_title(value: &Value) -> Result<String> {
 }
 fn upstream_id(v: &Value, key: &str) -> Result<String> {
     let out = if let Some(id) = v[key].as_i64() {
+        id.to_string()
+    } else if let Some(id)=v[key].as_u64() {
         id.to_string()
     } else {
         required(v, key)?.to_owned()

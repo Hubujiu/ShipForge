@@ -27,6 +27,7 @@ shipforge --data-dir $workspace list task
 | `iteration.preview`、`iteration.close`、`triage` | 预览迭代剩余工作，然后结项并处理剩余任务；分拣动作作用于对应任务。 |
 | `follow`、`notification.act` | 关注任务或处理调用者自己的聚合提醒。评论、对话、消息分别使用通用对象操作。 |
 | `document.history`、`document.restore`、`artifact.save` | 查看文档历史、用指定历史版本生成当前版本、把授权的产物保存到文档库。 |
+| `attachment.upload`、`attachment.download` | 上传、读取任务、消息、文档或运行产物中的真实文件。单文件上限 4 MiB，下载核验 SHA-256。文档可按修订版本取文件。 |
 | `export`、`import.preview`、`import` | 导出可见业务对象、预检与事务导入，维护外部标识和引用。先预览导入结果再正式提交。 |
 | `agent.resolve`、`catalog.list`、`catalog.install`、`tool.authorize` | 查看 Agent 有效配置、浏览与安装内置模板/技能、核对工具授权。Agent、小队、技能及工具配置由通用对象操作维护。 |
 | `machine.register`、`machine.heartbeat`、`machine.disable`、`machine.enable` | 注册机器、更新实时能力、禁用或重新启用机器。机器凭据保存在机器配置旁的状态目录中。 |

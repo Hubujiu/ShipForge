@@ -20,3 +20,14 @@ ShipForge 把工单事件和普通用户文字消息转换成当前空间的任�
 2. 让已验证上游投递的 relay 或本机操作员提交 `{"op":"provider.preview","space":"default","id":"support","provider":"slack","payload":{...}}`。将 `payload` 替换为样例中的实际事件对象。预览返回对象与投递标识、版本、标题、描述和关闭状态。上游载荷含投递 ID 时，显式传入的 `event_id` 必须与其一致。
 3. 使用相同参数调用 `provider.ingest`。需要目标空间的管理员权限，服务端可将 relay 的凭据限定到单个空间和连接器。相同投递 ID 与内容重试会返回原结果。新投递按源版本识别延迟更新，通过外部对象标识找到同一个任务。若本地与源同时改动某一字段，结果中的 `action` 为 `conflict`，管理员可重放并指定 `resolve:"source"` 或 `resolve:"local"`。有效更新同时提交任务和同步记录。
 4. 受保密控制的 GitLab Issue、设置安全级别的 Jira Issue、机器人、图片及不支持的消息子类型会返回错误。由管理员选择可以复制到目标空间任务列表的来源，核对预览后启用 relay。
+
+## 其他供应商的接入范围
+
+| 参考产品中的平台 | 当前可用入口 | 由接入方提供的部分 |
+| --- | --- | --- |
+| GitHub Issues | 机器工具的 Issues 同步适配器、通用事件入库和回写数据导出 | 已授权的 GitHub 访问、仓库绑定 |
+| 禅道、TAPD、Bugly、PingCode、Teambition、Zoho BugTracker、Asana、Linear 或兼容 Jira 的自建接口 | 文件字段映射导入，或 `connector.ingest` 按外部工单持续更新 | 事件订阅和载荷转换，各平台账号与回写 |
+| CNB、Gitee 及其他代码托管服务 | 由 relay 映射工单到 `connector.ingest`，或使用文件导入 | 提取平台工单并提供对象标识、投递标识和版本 |
+| 企业微信、钉钉、微信、QQ、Discord、Teams | 由 relay 映射文字消息到 `connector.ingest` | 来源鉴权、事件转换、机器人配置及回复 |
+
+上述通用路径已按统一操作契约验证。五个平台专用解析器使用本地代表性事件进行验收；接通付费云账户时，仍需在对应租户配置权限与回调。

@@ -64,6 +64,25 @@ enum Command {
     Search {
         query: String,
     },
+    /// Attach a local file, or create a private document if no document ID is given.
+    Upload {
+        path: PathBuf,
+        #[arg(long, default_value = "document")]
+        kind: String,
+        #[arg(long)]
+        id: Option<String>,
+        #[arg(long)]
+        media_type: Option<String>,
+    },
+    /// Download one attachment to a new local file.
+    Download {
+        kind: String,
+        id: String,
+        attachment_id: String,
+        path: PathBuf,
+        #[arg(long)]
+        version: Option<u64>,
+    },
     /// Verify and save a team connection. Read the token from stdin or SHIPFORGE_TOKEN.
     Connect {
         url: String,
@@ -191,6 +210,41 @@ fn execute(cli: Cli) -> Result<Value, String> {
             r
         }
         Command::Search { query } => json!({"op":"search","query":query}),
+        Command::Upload {
+            path,
+            kind,
+            id,
+            media_type,
+        } => {
+            let mut request = shipforge_client::upload_file(&path)?;
+            request["kind"] = json!(kind);
+            if let Some(id) = id {
+                request["id"] = json!(id);
+            }
+            if let Some(mime) = media_type {
+                request["media_type"] = json!(mime);
+            }
+            request
+        }
+        Command::Download {
+            kind,
+            id,
+            attachment_id,
+            path,
+            version,
+        } => {
+            let mut request = json!({"op":"attachment.download","space":cli.space,"kind":kind,"id":id,"attachment_id":attachment_id});
+            if let Some(rev) = version {
+                request["version"] = json!(rev);
+            }
+            let mut reply = Client::from_dir(cli.data_dir.as_deref())?.execute(request)?;
+            shipforge_client::save_attachment(&path, &reply)?;
+            if let Some(meta) = reply.as_object_mut() {
+                meta.remove("content_base64");
+            }
+            reply["path"] = json!(path);
+            return Ok(reply);
+        }
         Command::Sync { action } => json!({"op":format!("sync.{action}")}),
     };
     if !body.is_object() {

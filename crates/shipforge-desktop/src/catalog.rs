@@ -211,7 +211,7 @@ impl Page {
             ),
             Runs => (
                 "运行历史",
-                "history",
+                "clock-arrow-left",
                 "run",
                 "运行",
                 "任务、对话或自动化生成的运行会出现在这里。",

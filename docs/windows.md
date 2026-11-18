@@ -46,9 +46,15 @@ $config = "$env:LOCALAPPDATA\ShipForgeExample\machine.json"
 
 团队部署中执行端也需连接同一服务，使用为该执行身份单独签发的 `worker` 令牌。服务机、桌面与执行机可以分别运行。通过 `shipforge-worker --help` 查看已安装版本提供的探测、同步和停止命令。
 
+## 上传和保存附件
+
+在命令行中，`shipforge upload .\report.pdf` 创建一份带附件的私人文档。`shipforge upload .\report.pdf --kind task --id TASK_ID` 把文件添加到已有任务。命令返回的 `fields.attachments` 含每个附件的 ID、文件名、字节数和 SHA-256。`shipforge download task TASK_ID ATTACHMENT_ID .\report-copy.pdf` 把附件校验后保存到新文件。单个附件可达 4 MiB。
+
 ## 外部系统
 
 创建带有 `fields.provider` 的连接器后，可用 `provider.preview` 检查传入的 GitLab、Jira、飞书、Slack 或 Telegram 事件如何映射为任务，再用 `provider.ingest` 应用。服务端支持 `POST /v1/integrations/{space}/{connector}`，使用绑定到该空间和连接器的 hook 令牌。GitLab Issue Webhook 可以把该令牌作为 Secret token，其他平台可通过自己的受信中继转发事件。数据格式、幂等要求及冲突处理见 CLI 手册。GitHub Issues 拉取与显式回写使用执行端中的 GitHub 命令。
+
+执行端如何配置 GitHub 双向同步、MCP、本机运行目录和小队回报可查阅机器手册；各供应商的事件标识与身份边界见入站连接器文档。[执行机器手册](../crates/shipforge-worker/README.md) · [入站连接器和样例](../crates/shipforge-core/PROVIDERS.md)
 
 ## 备份及恢复
 

@@ -10,7 +10,11 @@ use std::{
 
 pub type Rows = BTreeMap<String, Vec<Record>>;
 pub enum Request {
-    Attachment {ticket:u64,command:Value,path:PathBuf},
+    Attachment {
+        ticket: u64,
+        command: Value,
+        path: PathBuf,
+    },
     Machine {
         ticket: u64,
         space: String,
@@ -132,6 +136,15 @@ impl Backend {
                                     }
                                 }
                             }
+                            if let Ok(c) = &mut client
+                                && c.mode() == "team"
+                                && let Ok(sync) = c.execute(json!({"op":"sync.status"}))
+                                && sync["online"] == true
+                                && sync["pending"].as_u64().is_some_and(|n| n > 0)
+                                && let Err(msg) = c.execute(json!({"op":"sync.flush"}))
+                            {
+                                errors.insert("sync".into(), msg);
+                            }
                             if events
                                 .send(Event::Rows {
                                     generation,
@@ -144,7 +157,29 @@ impl Backend {
                                 break;
                             }
                         }
-                        Request::Call { ticket, command } => {
+                        Request::Call {
+                            ticket,
+                            mut command,
+                        } => {
+                            if matches!(
+                                command["op"].as_str(),
+                                Some("create" | "update" | "delete")
+                            ) && matches!(
+                                command["kind"].as_str(),
+                                Some(
+                                    "task"
+                                        | "document"
+                                        | "comment"
+                                        | "view"
+                                        | "project"
+                                        | "iteration"
+                                        | "message"
+                                )
+                            ) && (command["op"] == "create" || command["expected_rev"].is_i64())
+                                && client.as_ref().is_ok_and(|c| c.mode() == "team")
+                            {
+                                command["queue_if_offline"] = json!(true);
+                            }
                             let result = execute(&mut client, command);
                             if events.send(Event::Reply { ticket, result }).is_err() {
                                 break;
@@ -184,7 +219,17 @@ impl Backend {
                             }
                             let _ = events.send(Event::Reply { ticket, result });
                         }
-                        Request::Attachment{ticket,command,path}=>{let result=client.as_mut().map_err(|e|e.clone()).and_then(|c|crate::files::attachment(c,command,&path));let _=events.send(Event::Reply{ticket,result});}
+                        Request::Attachment {
+                            ticket,
+                            command,
+                            path,
+                        } => {
+                            let result = client
+                                .as_mut()
+                                .map_err(|e| e.clone())
+                                .and_then(|c| crate::files::attachment(c, command, &path));
+                            let _ = events.send(Event::Reply { ticket, result });
+                        }
                         Request::Export {
                             ticket,
                             command,

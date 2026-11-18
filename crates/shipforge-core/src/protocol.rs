@@ -81,7 +81,7 @@ pub fn is_read_only(op: &str) -> bool {
 
 /// JSON Schema for the versioned operation envelope. Operation-specific data is checked by core.
 pub fn schema() -> Value {
-    let mut schema=json!({
+    let mut schema = json!({
         "$schema":"https://json-schema.org/draft/2020-12/schema","title":"ShipForge workspace request","type":"object",
         "required":["op"],
         "properties":{
@@ -99,7 +99,7 @@ pub fn schema() -> Value {
            {"if":{"properties":{"op":{"enum":["list","get","create","update","delete"]}}},"then":{"required":["kind"]}},
            {"if":{"properties":{"op":{"enum":["get","update","delete","view.run","iteration.preview","iteration.close","triage","follow","document.history","document.restore","artifact.save","notification.act","task.relations","project.progress"]}}},"then":{"required":["id"]}},
            {"if":{"properties":{"op":{"const":"create"}}},"then":{"required":["title"]}},
-           {"if":{"properties":{"op":{"enum":["provider.preview","provider.ingest"]}}},"then":{"required":["id","provider","payload"],"properties":{"provider":{"enum":["gitlab","jira","feishu","lark","slack","telegram"]}}}},
+           {"if":{"properties":{"op":{"enum":["provider.preview","provider.ingest"]}}},"then":{"required":["id","provider","payload"],"properties":{"provider":{"enum":crate::providers::NAMES}}}},
            {"if":{"properties":{"op":{"const":"attachment.upload"}}},"then":{"required":["kind","filename","content_base64"],"properties":{"kind":{"enum":["document","artifact","message","task"]}},"if":{"properties":{"kind":{"enum":["artifact","message","task"]}}},"then":{"required":["id"]}}},
            {"if":{"properties":{"op":{"const":"attachment.download"}}},"then":{"required":["kind","id","attachment_id"],"properties":{"kind":{"enum":["document","artifact","message","task"]}}}}
         ]

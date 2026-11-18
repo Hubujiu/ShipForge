@@ -41,7 +41,9 @@ impl Default for Location {
 }
 #[derive(Clone)]
 pub enum UiAction {
-    Browse{index:usize,save:Option<String>},
+    AddTrigger,
+    RemoveTrigger(u64),
+    Browse { index: usize, save: Option<String> },
     Go(Page),
     Open(Record),
     Back,
@@ -80,6 +82,7 @@ pub enum UiAction {
     RuleFire(Record),
     ViewAgentHistory(Record),
     IterationEnd(Record),
+    PendingDrafts,
     Grant,
     Tokens,
 }
@@ -92,6 +95,8 @@ enum After {
     Versions(Record),
     Output(String),
     Machine,
+    Drafts,
+    Dashboard(u64),
     Preview(PathBuf),
     Connected,
     Tokens,
@@ -122,8 +127,11 @@ pub struct Workbench {
     pub notice: Option<(String, Instant)>,
     pub versions: Vec<Value>,
     pub view_tasks: Vec<Record>,
+    pub metrics: Value,
     pub drawer_tab: String,
     pub tokens: Vec<Value>,
+    pub drafts: Vec<Value>,
+    reading: bool,
     history: Vec<Location>,
     pos: usize,
     backend: Backend,
@@ -166,8 +174,11 @@ impl Workbench {
             notice: None,
             versions: vec![],
             view_tasks: vec![],
+            metrics: Value::Null,
             drawer_tab: String::new(),
             tokens: vec![],
+            drafts: vec![],
+            reading: false,
             pos: 0,
             backend: Backend::open(dir, demo),
             generation: 0,
@@ -286,6 +297,7 @@ impl Workbench {
         }
     }
     fn read(&mut self, foreground: bool) {
+        self.reading = true;
         self.generation += 1;
         if foreground {
             self.loading = true;
@@ -354,6 +366,7 @@ impl Workbench {
                 "relation_type",
                 "organization",
                 "document",
+                "task",
             ]);
             if self
                 .form
@@ -371,6 +384,51 @@ impl Workbench {
             kinds: kinds.into_iter().map(str::to_owned).collect(),
         });
         self.poll_at = Instant::now() + Duration::from_secs(5);
+        if self.loc.page == Page::Dashboard || self.loc.layout == "dashboard" {
+            let mut filter = self
+                .loc
+                .view
+                .as_ref()
+                .and_then(|v| v.fields.get("filter"))
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            for (k, v) in &self.loc.filter {
+                if let Some(key) = k.strip_prefix("filter_") {
+                    filter.insert(key.into(), v.clone());
+                }
+            }
+            if !self.loc.task_type.is_empty() {
+                filter.insert("type".into(), json!(self.loc.task_type));
+            }
+            if self.loc.page == Page::Mine {
+                filter.insert(
+                    if self.loc.mine_created {
+                        "creator"
+                    } else {
+                        "assignee"
+                    }
+                    .into(),
+                    json!(self.actor),
+                );
+            } else if self.loc.page == Page::Triage {
+                filter.insert("status_category".into(), json!("triage"));
+            } else if self.loc.view.is_none() {
+                filter.insert("status_category_not".into(), json!("triage"));
+            }
+            let query = self
+                .loc
+                .filter
+                .get("query")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            self.send(
+                json!({"op":"dashboard","space":self.loc.space,"filter":filter,"query":query}),
+                After::Dashboard(self.generation),
+                false,
+            );
+        }
+
         if let Some(view) = &self.loc.view {
             let id = view.id.clone();
             self.send(
@@ -418,6 +476,7 @@ impl Workbench {
                         continue;
                     }
                     self.loading = false;
+                    self.reading = false;
                     self.errors = errors;
                     for k in self.errors.keys() {
                         self.rows.remove(k);
@@ -479,7 +538,7 @@ impl Workbench {
                 }
             }
         }
-        if !self.loading && !self.busy && Instant::now() >= self.poll_at {
+        if !self.loading && !self.busy && !self.reading && Instant::now() >= self.poll_at {
             self.read(false);
         }
         if self
@@ -531,6 +590,11 @@ impl Workbench {
         );
     }
     fn reply(&mut self, after: After, value: Value, w: &mut Window, cx: &mut Context<Self>) {
+        if value.get("queued").and_then(Value::as_bool) == Some(true) {
+            self.close_form(w, cx);
+            self.notify_text("已保存离线草稿，重连后可同步。");
+            return;
+        }
         match after {
             After::Saved(kind) => {
                 self.close_form(w, cx);
@@ -564,9 +628,18 @@ impl Workbench {
                     f.search_results = serde_json::from_value(value).unwrap_or_default();
                 }
             }
+            After::Drafts => {
+                self.drafts = value.as_array().cloned().unwrap_or_default();
+                self.loc.section = "drafts".into();
+            }
             After::View(id) => {
                 if self.loc.view.as_ref().is_some_and(|v| v.id == id) {
                     self.view_tasks = serde_json::from_value(value).unwrap_or_default();
+                }
+            }
+            After::Dashboard(revision) => {
+                if revision == self.generation {
+                    self.metrics = value;
                 }
             }
             After::Who => {
@@ -764,10 +837,10 @@ impl Workbench {
             Go(p)=>self.navigate(p),Open(r)=>self.open(r,false),OpenSearch(r)=>{self.close_form(w,cx);self.open(r,true);}
             Back=>self.history(false),Forward=>self.history(true),CloseDetail=>self.act_detail_close(),
             Create(k)=>self.open_form(Mode::Create(k),w,cx),Edit(r)=>self.open_form(Mode::Edit(r),w,cx),
-            ToggleSidebar=>self.sidebar=!self.sidebar,Refresh=>{self.error=None;self.read(true);},
-            TaskType(t)=>{self.loc.task_type=t;self.revision+=1;},Layout(l)=>{self.loc.layout=l;self.revision+=1;},
-            Section(s)=>{self.loc.section=s;self.revision+=1;},Mine(v)=>{self.loc.mine_created=v;self.revision+=1;},
-            Filter=>self.open_form(Mode::Filter,w,cx),ResetFilter=>{self.loc.filter.clear();self.loc.task_type.clear();self.revision+=1;},
+            ToggleSidebar=>self.sidebar = !self.sidebar,Refresh=>{self.error=None;self.read(true);},
+            TaskType(t)=>{self.loc.task_type=t;self.revision+=1;self.read(false);},Layout(l)=>{self.loc.layout=l;self.revision+=1;self.read(false);},
+            Section(s)=>{self.loc.section=s;self.revision+=1;},Mine(v)=>{self.loc.mine_created=v;self.revision+=1;self.read(false);},
+            Filter=>self.open_form(Mode::Filter,w,cx),ResetFilter=>{self.loc.filter.clear();self.loc.task_type.clear();self.revision+=1;self.read(false);},
             SaveView=>self.open_form(Mode::Create("view".into()),w,cx),Search=>self.open_form(Mode::Search,w,cx),
             SelectSpace(r)=>self.switch_space(r),OpenView(v)=>{self.navigate(Page::Tasks);self.loc.layout=v.field("layout").to_owned();self.loc.view=Some(v);self.view_tasks.clear();self.read(true);}
             Apply(mut cmd,msg)=>{cmd["space"]=json!(self.loc.space);self.send(cmd,After::Notice(msg),true);}
@@ -777,6 +850,8 @@ impl Workbench {
                 if matches!(e.spec.format,crate::forms::Format::Many(_)){let mut a:Vec<&str>=value.split(',').map(str::trim).filter(|s|!s.is_empty()).collect();if a.contains(&v.as_str()){a.retain(|s|*s!=v);}else if !v.is_empty(){a.push(&v);}else{a.clear();}*value=a.join(", ");}else{*value=v;f.open_pick=None;}focus.focus(w,cx);
             }
             Delete(r)=>{let command=json!({"op":"delete","space":self.loc.space,"kind":r.kind,"id":r.id,"expected_rev":r.rev});self.open_form(Mode::Confirm{label:format!("删除「{}」",r.title),command},w,cx);}
+            AddTrigger=>{if let Some(f)=&mut self.form{f.add_trigger(&json!({"type":"status"}),w,cx);}},
+            RemoveTrigger(id)=>{if let Some(f)=&mut self.form{f.remove_trigger(id);}},
             Browse{index,save}=>self.browse(index,save.as_deref(),w,cx),
             Inspect(mut cmd,label)=>{cmd["space"]=json!(self.loc.space);self.send(cmd,After::Output(label),false);}
             Connect=>self.open_form(Mode::Connect,w,cx),Disconnect=>{let ticket=self.register(After::Connected,true);let _=self.backend.sender.send(Request::Disconnect{ticket});}
@@ -787,20 +862,56 @@ impl Workbench {
             RuleFire(r)=>{self.open_form(Mode::Confirm{label:format!("运行「{}」",r.title),command:json!({"op":"automation.fire","id":r.id,"space":self.loc.space,"event_id":format!("ui-{}",std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_nanos())})},w,cx);}
             ViewAgentHistory(r)=>{self.drawer_tab="runs".into();self.loc.selected=Some(r);self.read(false);}
             IterationEnd(r)=>self.open_form(Mode::IterationEnd(r),w,cx),
+            PendingDrafts=>self.send(json!({"op":"sync.pending"}),After::Drafts,false),
             Grant=>self.open_form(Mode::Token,w,cx),Tokens=>self.send(json!({"op":"access.list","space":self.loc.space}),After::Tokens,false),
         }
         cx.notify();
     }
-    fn browse(&mut self,index:usize,save:Option<&str>,w:&mut Window,cx:&mut Context<Self>){
-        let Some(Control::Text(crate::controls::Field::Single(state)))=self.form.as_ref().and_then(|f|f.entries.get(index)).map(|e|&e.control)else{return};
-        let state=state.clone();
-        if let Some(name)=save{
-            let initial=std::env::var_os("USERPROFILE").or_else(||std::env::var_os("HOME")).map(PathBuf::from).unwrap_or_default();
-            let result=cx.prompt_for_new_path(&initial,Some(name));
-            cx.spawn_in(w,async move|_,cx|{if let Ok(Ok(Some(path)))=result.await{let _=cx.update(|window,cx|state.update(cx,|s,cx|s.set_value(path.to_string_lossy().to_string(),window,cx)));}}).detach();
-        }else{
-            let result=cx.prompt_for_paths(PathPromptOptions{files:true,directories:false,multiple:false,prompt:Some("选择文件".into())});
-            cx.spawn_in(w,async move|_,cx|{if let Ok(Ok(Some(paths)))=result.await&&let Some(path)=paths.first(){let _=cx.update(|window,cx|state.update(cx,|s,cx|s.set_value(path.to_string_lossy().to_string(),window,cx)));}}).detach();
+    fn browse(&mut self, index: usize, save: Option<&str>, w: &mut Window, cx: &mut Context<Self>) {
+        let Some(Control::Text(crate::controls::Field::Single(state))) = self
+            .form
+            .as_ref()
+            .and_then(|f| f.entries.get(index))
+            .map(|e| &e.control)
+        else {
+            return;
+        };
+        let state = state.clone();
+        if let Some(name) = save {
+            let initial = std::env::var_os("USERPROFILE")
+                .or_else(|| std::env::var_os("HOME"))
+                .map(PathBuf::from)
+                .unwrap_or_default();
+            let result = cx.prompt_for_new_path(&initial, Some(name));
+            cx.spawn_in(w, async move |_, cx| {
+                if let Ok(Ok(Some(path))) = result.await {
+                    let _ = cx.update(|window, cx| {
+                        state.update(cx, |s, cx| {
+                            s.set_value(path.to_string_lossy().to_string(), window, cx)
+                        })
+                    });
+                }
+            })
+            .detach();
+        } else {
+            let result = cx.prompt_for_paths(PathPromptOptions {
+                files: true,
+                directories: false,
+                multiple: false,
+                prompt: Some("选择文件".into()),
+            });
+            cx.spawn_in(w, async move |_, cx| {
+                if let Ok(Ok(Some(paths))) = result.await
+                    && let Some(path) = paths.first()
+                {
+                    let _ = cx.update(|window, cx| {
+                        state.update(cx, |s, cx| {
+                            s.set_value(path.to_string_lossy().to_string(), window, cx)
+                        })
+                    });
+                }
+            })
+            .detach();
         }
     }
     fn submit(&mut self, w: &mut Window, cx: &mut Context<Self>) -> Result<(), String> {
@@ -832,7 +943,7 @@ impl Workbench {
             Mode::Comment(ref r)|Mode::Message(ref r)=>{let body=val("body");if body.is_empty(){return Err("请输入内容。".into())}let(kind,key)=if matches!(mode,Mode::Comment(_)){("comment","task")}else{("message","chat")};
                 self.send(json!({"op":"create","kind":kind,"space":self.loc.space,"title":body.chars().take(60).collect::<String>(),"fields":{(key):r.id,"body":body}}),After::Saved(kind.into()),true);
             }
-            Mode::Filter=>{self.loc.filter=values;self.loc.filter.retain(|_,v|!v.is_null()&&v.as_str()!=Some(""));self.close_form(w,cx);}
+            Mode::Filter=>{self.loc.filter=values;self.loc.filter.retain(|_,v|!v.is_null()&&v.as_str()!=Some(""));self.close_form(w,cx);self.read(false);}
             Mode::Connect=>{let (url,token)=(val("url"),val("token"));if url.is_empty()||token.is_empty(){return Err("请输入服务地址和令牌。".into());}let ticket=self.register(After::Connected,true);let _=self.backend.sender.send(Request::Connect{url,token,ticket});}
             Mode::Confirm{command,..}=>self.send(command,After::Notice("操作已完成".into()),true),
             Mode::IterationEnd(r)=>self.send(json!({"op":"iteration.close","space":self.loc.space,"id":r.id,"target":values.get("target"),"expected_rev":r.rev}),After::Notice("迭代已结束".into()),true),
@@ -846,7 +957,8 @@ impl Workbench {
             Mode::Workflow{op,record}=>{let mut q=Value::Object(values);q["op"]=json!(op);q["space"]=json!(self.loc.space);q["id"]=json!(record.id);
                 if op=="tool.authorize"{q["id"]=q["agent"].take();q["tool_id"]=json!(record.id);}
                 if op=="triage"{q["decision"]=json!("duplicate");q["expected_rev"]=json!(record.rev);}
-                let inspect=matches!(op,"tool.authorize"|"connector.export");let after=if inspect{After::Output(crate::forms::workflow_name(op).into())}else{After::Notice("已保存".into())};self.send(q,after,!inspect);}
+                let inspect=matches!(op,"tool.authorize"|"connector.export"|"provider.preview");let after=if inspect{After::Output(crate::forms::workflow_name(op).into())}else{After::Notice("已保存".into())};self.send(q,after,!inspect);}
+            Mode::ResolveDraft(draft)=>{let rev=values.get("expected_rev").and_then(Value::as_i64).filter(|v|*v>0).ok_or("请输入有效的服务器版本")?;self.send(json!({"op":"sync.resolve","id":draft["request_id"],"expected_rev":rev}),After::Notice("草稿已更新，可重新同步".into()),true);}
             Mode::Token=>{if val("actor").is_empty(){return Err("请选择成员。".into());}self.send(json!({"op":"access.issue","actor":val("actor"),"scope":val("scope"),"space":self.loc.space}),After::Output("访问令牌（请妥善保存）".into()),true);}
             Mode::Search=>self.search(val("query")),Mode::Output{..}=>self.close_form(w,cx),
         }
@@ -860,6 +972,15 @@ impl Workbench {
                 .collect::<Vec<_>>()
         };
         match source {
+            "$weekdays" => ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
+                .iter()
+                .enumerate()
+                .map(|(i, l)| ((i + 1).to_string(), l.to_string()))
+                .collect(),
+            "$sources" => vec![
+                ("guest".into(), "访客".into()),
+                ("external".into(), "外部集成".into()),
+            ],
             "$handlers" | "$agents" => {
                 let mut v = if source == "$handlers" {
                     from("member")

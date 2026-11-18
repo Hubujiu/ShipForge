@@ -3,7 +3,7 @@ use crate::process;
 use serde_json::{Value, json};
 use shipforge_client::Client;
 use std::fs::{self, OpenOptions};
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -14,6 +14,46 @@ struct Host {
     cfg: Config,
     dir: PathBuf,
     key: String,
+}
+struct ProgressFile(PathBuf);
+impl ProgressFile {
+    fn new(dir: &Path) -> Result<Self> {
+        let directory = dir.join("progress");
+        fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
+        let file = directory.join(format!("{}.json", Uuid::new_v4().simple()));
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&file)
+            .map_err(|e| e.to_string())?;
+        Ok(Self(file))
+    }
+    fn read(&self) -> Option<Value> {
+        let info = fs::symlink_metadata(&self.0).ok()?;
+        if !info.is_file() || info.len() > 8192 {
+            return None;
+        }
+        let mut content = Vec::new();
+        fs::File::open(&self.0)
+            .ok()?
+            .take(8193)
+            .read_to_end(&mut content)
+            .ok()?;
+        let value: Value = serde_json::from_slice(&content).ok()?;
+        let message = value["message"]
+            .as_str()
+            .filter(|s| !s.trim().is_empty() && s.len() <= 2048)?;
+        let percent = &value["percent"];
+        if !percent.is_null() && !percent.as_u64().is_some_and(|v| v <= 100) {
+            return None;
+        }
+        Some(json!({"message":message,"percent":percent}))
+    }
+}
+impl Drop for ProgressFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.0);
+    }
 }
 impl Host {
     fn call(&self, client: &mut Client, mut request: Value) -> Result<Value> {
@@ -86,15 +126,26 @@ impl Host {
         let mut previous = Instant::now();
         let mut confirmed = Instant::now();
         let mut authorization = Client::from_env()?;
+        let progress = ProgressFile::new(&self.dir)?;
+        let mut context = claim["run"].clone();
+        context["fields"]["progress_file"] = json!(progress.0);
+        let mut sent_progress = None;
         let heartbeat = || {
             if previous.elapsed() < Duration::from_secs(3) {
                 return Ok(false);
             }
             previous = Instant::now();
-            let request = json!({"op":"run.heartbeat","id":id,"lease":lease});
+            let mut request = json!({"op":"run.heartbeat","id":id,"lease":lease});
+            let latest = progress.read();
+            if latest != sent_progress
+                && let Some(value) = &latest
+            {
+                request["progress"] = value.clone();
+            }
             match self.call(&mut client, request) {
                 Ok(response) => {
                     confirmed = Instant::now();
+                    sent_progress = latest;
                     Ok(response["cancel"] == true)
                 }
                 Err(e)
@@ -121,7 +172,7 @@ impl Host {
             let value = crate::mcp::call(&self.cfg, dir, tool, &descriptor, args)?;
             Ok(json!({"tool_id":tool,"result":value}))
         };
-        let payload = process::execute(&self.cfg, &self.dir, &claim["run"], heartbeat, call_tool)
+        let mut payload = process::execute(&self.cfg, &self.dir, &context, heartbeat, call_tool)
             .unwrap_or_else(|error| {
                 let status = if error == "cancelled" {
                     "cancelled"
@@ -130,6 +181,9 @@ impl Host {
                 };
                 json!({"status":status,"result":error,"artifacts":[]})
             });
+        if let Some(value) = progress.read() {
+            payload["progress"] = value;
+        }
         let mut request = payload.clone();
         request["op"] = json!("run.report");
         request["id"] = json!(id);

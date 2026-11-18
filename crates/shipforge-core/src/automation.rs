@@ -168,6 +168,7 @@ fn fire(
     let handler = req(&rule.fields, "handler_id")?;
     let kind = rule.fields["handler_kind"].as_str().unwrap_or("agent");
     let mut fields = json!({"origin_kind":"automation","automation_id":rule.id,"instruction":rule.fields["instruction"],"source":source});
+    if rule.fields["visibility"]=="private"{fields["visibility"]=json!("private");}
     if let Some(t) = task {
         fields["task_id"] = json!(t.id);
         fields["task"] = super::task_context(c, t)?;
@@ -360,7 +361,9 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
         if original != payload {
             return Err("event_id was reused with different content".into());
         }
-        return serde_json::from_str(&response).map_err(|e| e.to_string());
+        let receipt:Value=serde_json::from_str(&response).map_err(|e|e.to_string())?;
+        read(c,"task",req(&receipt,"task")?)?;
+        return Ok(receipt);
     }
     let base:Option<(String,String,String)>=c.db.query_row("SELECT task,base,source_version FROM sf_connector_objects WHERE space=? AND connector=? AND external=?",params![c.space,connector.id,external],|r|Ok((r.get(0)?,r.get(1)?,r.get(2)?))).optional().map_err(db_error)?;
     let response = if let Some((task_id, base, previous_version)) = base {
@@ -412,17 +415,11 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
             json!({"action":if merged==local{"unchanged"}else{"updated"},"task":task.id,"external_id":external})
         }
     } else {
-        let triage = c.get("space", c.space)?.fields["triage_enabled"] == true;
-        let state = if incoming["closed"] == true {
-            "done"
-        } else if triage {
-            "triage"
-        } else {
-            "todo"
-        };
+        let mut record=json!({"description":description,"external_id":external,"connector":connector.id,"source":"integration"});
+        if incoming["closed"]==true {record["status"]=json!("done");}
         let task = crate::write_request(
             c,
-            &json!({"op":"create","kind":"task","title":title,"fields":{"description":description,"status":state,"external_id":external,"connector":connector.id,"source":"integration"}}),
+            &json!({"op":"create","kind":"task","title":title,"fields":record}),
         )?;
         let tid = req(&task, "id")?;
         c.db.execute("INSERT INTO sf_connector_objects(space,connector,external,task,base,source_version) VALUES(?,?,?,?,?,?)",params![c.space,connector.id,external,tid,incoming.to_string(),source_version]).map_err(db_error)?;

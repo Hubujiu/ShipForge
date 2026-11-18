@@ -1,5 +1,8 @@
 mod credentials;
+mod files;
 mod remote;
+
+pub use files::{save_attachment, upload_file};
 
 use directories::ProjectDirs;
 use serde_json::{Value, json};

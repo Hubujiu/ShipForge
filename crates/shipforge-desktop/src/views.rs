@@ -8,6 +8,24 @@ use crate::{
 use gpui_kit::{prelude::*, *};
 use serde_json::{Value, json};
 
+#[derive(Clone)]
+struct DraggedTask(Record);
+impl Render for DraggedTask {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        row()
+            .max_w(px(260.))
+            .p(px(8.))
+            .gap(px(6.))
+            .rounded(px(7.))
+            .bg(white())
+            .border_1()
+            .border_color(rgb(LINE))
+            .shadow_md()
+            .child(icon("list-checks", 13.))
+            .child(text(self.0.title.clone(), 13., INK).truncate())
+    }
+}
+
 impl Workbench {
     pub fn page_body(&mut self, w: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = self.loc.page;
@@ -49,7 +67,18 @@ impl Workbench {
             .child(text("/", 12., DIM))
             .child(headline(page_title.to_owned(), 14.))
             .child(div().flex_1());
-        if p==Page::Docs&&self.writable(){header=header.child(outlined(self.button("upload-document","从文件新建文档",UiAction::Form(Mode::Upload(None)),cx)).child(icon("upload",14.)).child("上传文档"));}
+        if p == Page::Docs && self.writable() {
+            header = header.child(
+                outlined(self.button(
+                    "upload-document",
+                    "从文件新建文档",
+                    UiAction::Form(Mode::Upload(None)),
+                    cx,
+                ))
+                .child(icon("upload", 14.))
+                .child("上传文档"),
+            );
+        }
         if p == Page::Machines && self.mode != "demo" {
             header = header
                 .child(
@@ -357,6 +386,23 @@ impl Workbench {
         }
         out.into_any_element()
     }
+    fn drop_target(&self, element: Div, group: &str, key: &str, cx: &Context<Self>) -> Div {
+        if !self.writable() {
+            return element;
+        }
+        let group = group.to_owned();
+        let key = key.to_owned();
+        element.on_drop::<DraggedTask>(cx.listener(move|this,drag:&DraggedTask,window,cx|{
+            let task=&drag.0;
+            if task.space!=this.loc.space||task.field(&group)==key{return;}
+            let mut patch=json!({(&group):key});
+            if group=="assignee"{
+                if key.is_empty(){patch["assignee"]=Value::Null;}
+                else{patch["assignee_kind"]=json!(["agent","crew","member"].into_iter().find(|kind|this.find(kind,&key).is_some()).unwrap_or("member"));}
+            }
+            this.act(UiAction::Apply(json!({"op":"update","kind":"task","id":task.id,"expected_rev":task.rev,"fields":patch}),"任务已移动".into()),window,cx);
+        }))
+    }
     fn board(&self, tasks: &[Record], viewport: f32, cx: &Context<Self>) -> AnyElement {
         let group = self
             .loc
@@ -436,21 +482,20 @@ impl Workbench {
         for (key, label, color) in groups {
             let items: Vec<_> = tasks.iter().filter(|r| r.field(group) == key).collect();
             if items.is_empty() {
-                empty = empty.child(
-                    row()
-                        .h(px(31.))
-                        .w_full()
-                        .px(px(8.))
-                        .rounded(px(6.))
-                        .border_1()
-                        .border_color(rgb(LINE))
-                        .bg(white())
-                        .gap(px(7.))
-                        .child(mark(color))
-                        .child(text(label, 12., MUTED))
-                        .child(div().flex_1())
-                        .child(text("0", 11., DIM)),
-                );
+                let target = row()
+                    .h(px(31.))
+                    .w_full()
+                    .px(px(8.))
+                    .rounded(px(6.))
+                    .border_1()
+                    .border_color(rgb(LINE))
+                    .bg(white())
+                    .gap(px(7.))
+                    .child(mark(color))
+                    .child(text(label, 12., MUTED))
+                    .child(div().flex_1())
+                    .child(text("0", 11., DIM));
+                empty = empty.child(self.drop_target(target, group, &key, cx));
                 continue;
             }
             let mut cards = col()
@@ -486,7 +531,7 @@ impl Workbench {
                         .child(text(n.to_string(), 11., DIM)),
                 )
                 .child(cards);
-            board = board.child(col);
+            board = board.child(self.drop_target(col, group, &key, cx));
         }
         if collapsed > 0 {
             board = board.child(empty.ml_auto());
@@ -525,6 +570,11 @@ impl Workbench {
             UiAction::Open(r.clone()),
             cx,
         )
+        .when(self.writable(), |btn| {
+            btn.on_drag(DraggedTask(r.clone()), |drag, _, _, cx| {
+                cx.new(|_| drag.clone())
+            })
+        })
         .w_full()
         .h_auto()
         .min_h(px(78.))
@@ -602,9 +652,12 @@ impl Workbench {
         }
         list.into_any_element()
     }
-    fn dashboard(&self, tasks: &[Record], _cx: &Context<Self>) -> Div {
+    fn dashboard(&self, tasks: &[Record], cx: &Context<Self>) -> AnyElement {
         let n = tasks.len();
-        let done = tasks.iter().filter(|r| r.field("status") == "done").count();
+        let done = self.metrics["completed"]
+            .as_u64()
+            .map(|v| v as usize)
+            .unwrap_or_else(|| tasks.iter().filter(|r| r.field("status") == "done").count());
         let unassigned = tasks
             .iter()
             .filter(|r| r.field("assignee").is_empty())
@@ -656,14 +709,33 @@ impl Workbench {
         if dated.is_empty() {
             due = due.child(text("没有设置截止日期的未完成任务。", 13., MUTED));
         }
+        let mut priority = col()
+            .gap(px(8.))
+            .p(px(13.))
+            .border_1()
+            .border_color(rgb(LINE))
+            .rounded(px(8.))
+            .child(headline("优先级分布", 14.));
+        for (key, label) in PRIORITIES {
+            let count = tasks.iter().filter(|r| r.field("priority") == *key).count();
+            priority = priority.child(
+                row()
+                    .gap(px(8.))
+                    .child(text((*label).to_owned(), 12., MUTED).w(px(70.)))
+                    .child(text(count.to_string(), 12., INK)),
+            );
+        }
         for r in dated.iter().take(12) {
-            due = due.child(text(
-                format!("{}   {}", r.field("due_date"), r.title),
-                13.,
-                INK,
-            ));
+            due = due.child(
+                row()
+                    .gap(px(6.))
+                    .child(text(r.field("due_date").to_owned(), 12., MUTED))
+                    .child(div().flex_1().child(self.related_row(r, cx))),
+            );
         }
         col()
+            .id("dashboard-scroll")
+            .overflow_y_scroll()
             .w_full()
             .flex_1()
             .min_h_0()
@@ -675,10 +747,25 @@ impl Workbench {
                     .gap(px(8.))
                     .child(info("全部任务", n))
                     .child(info("已完成", done))
-                    .child(info("未指派", unassigned)),
+                    .child(info("未指派", unassigned))
+                    .child(info(
+                        "已逾期",
+                        self.metrics["overdue"].as_u64().unwrap_or_default() as usize,
+                    ))
+                    .child(info(
+                        "7 天内到期",
+                        self.metrics["due_soon"].as_u64().unwrap_or_default() as usize,
+                    )),
             )
-            .child(chart)
+            .child(
+                row()
+                    .items_start()
+                    .gap(px(12.))
+                    .child(chart.flex_1())
+                    .child(priority.flex_1()),
+            )
             .child(due)
+            .into_any_element()
     }
     fn list_tabs(&self, cx: &Context<Self>) -> Div {
         let mut tabs = row().min_h(px(41.)).px(px(13.)).gap(px(4.));
@@ -915,17 +1002,54 @@ impl Workbench {
         }
         if self.mode == "team" {
             let mut toolbar = row().gap(px(8.));
-            for (op, l) in [
-                ("sync.status", "同步状态"),
-                ("sync.pending", "待同步更改"),
-                ("sync.flush", "立即同步"),
-            ] {
+            for (op, l) in [("sync.status", "同步状态"), ("sync.flush", "立即同步")] {
                 toolbar = toolbar.child(
                     outlined(self.button(op, l, UiAction::Inspect(json!({"op":op}), l.into()), cx))
                         .child(l),
                 );
             }
+            toolbar = toolbar.child(
+                outlined(self.button("pending-drafts", "待同步更改", UiAction::PendingDrafts, cx))
+                    .child("待同步更改"),
+            );
             page = page.child(toolbar);
+        }
+        if self.loc.section == "drafts" {
+            if self.drafts.is_empty() {
+                page = page.child(text("当前没有待同步的更改。", 13., MUTED));
+            }
+            for (index, draft) in self.drafts.iter().enumerate() {
+                let req = &draft["request"];
+                let title = req["title"]
+                    .as_str()
+                    .or_else(|| req["id"].as_str())
+                    .unwrap_or("更改");
+                let mut item = col()
+                    .gap(px(4.))
+                    .p(px(9.))
+                    .border_1()
+                    .border_color(rgb(LINE))
+                    .rounded(px(6.))
+                    .child(headline(title.to_string(), 13.))
+                    .child(text(format!("{} · {}", req["op"], req["kind"]), 12., MUTED));
+                if let Some(error) = draft["error"].as_str() {
+                    item = item.child(text(error.to_string(), 12., ERROR));
+                }
+                let mut buttons = row().gap(px(7.));
+                if !draft["error"].is_null() {
+                    buttons = buttons.child(
+                        outlined(self.button(
+                            format!("rebase-draft-{index}"),
+                            "处理冲突",
+                            UiAction::Form(Mode::ResolveDraft(draft.clone())),
+                            cx,
+                        ))
+                        .child("处理冲突"),
+                    );
+                }
+                buttons=buttons.child(self.button(format!("remove-draft-{index}"),"舍弃草稿",UiAction::Form(Mode::Confirm{label:format!("舍弃草稿「{title}」"),command:json!({"op":"sync.resolve","id":draft["request_id"],"discard":true})}),cx).child("舍弃"));
+                page = page.child(item.child(buttons));
+            }
         }
         if self.loc.section == "tokens" {
             for t in &self.tokens {
@@ -1130,23 +1254,25 @@ impl Workbench {
         }
         match r.kind.as_str() {
             "task" => {
-                for (enable, label, glyph) in
-                    [(true, "关注", "bell"), (false, "取消关注", "bell-off")]
-                {
-                    actions = actions.child(
-                        outlined(self.button(
-                            format!("follow-{enable}"),
-                            label,
-                            UiAction::Apply(
-                                json!({"op":"follow","id":r.id,"enabled":enable}),
-                                "关注设置已更新".into(),
-                            ),
-                            cx,
-                        ))
-                        .child(icon(glyph, 13.))
-                        .child(label),
-                    );
-                }
+                let following = r.fields.get("following") == Some(&Value::Bool(true));
+                let (label, glyph) = if following {
+                    ("取消关注", "bell-off")
+                } else {
+                    ("关注", "bell")
+                };
+                actions = actions.child(
+                    outlined(self.button(
+                        "task-follow",
+                        label,
+                        UiAction::Apply(
+                            json!({"op":"follow","id":r.id,"enabled":!following}),
+                            "关注设置已更新".into(),
+                        ),
+                        cx,
+                    ))
+                    .child(icon(glyph, 13.))
+                    .child(label),
+                );
                 if self.writable() {
                     actions = actions.child(
                         outlined(self.button(
@@ -1220,7 +1346,7 @@ impl Workbench {
                         UiAction::Versions(r.clone()),
                         cx,
                     ))
-                    .child(icon("history", 13.))
+                    .child(icon("clock-arrow-left", 13.))
                     .child("历史版本"),
                 );
                 body = body.child(actions);
@@ -1289,7 +1415,7 @@ impl Workbench {
                         UiAction::ViewAgentHistory(r.clone()),
                         cx,
                     ))
-                    .child(icon("history", 13.))
+                    .child(icon("clock-arrow-left", 13.))
                     .child("运行历史"),
                 );
                 body = body.child(actions);
@@ -1342,7 +1468,12 @@ impl Workbench {
                 let ops: &[&str] = if r.kind == "tool" {
                     &["tool.authorize"]
                 } else {
-                    &["connector.ingest", "connector.export"]
+                    &[
+                        "provider.preview",
+                        "provider.ingest",
+                        "connector.ingest",
+                        "connector.export",
+                    ]
                 };
                 for op in ops {
                     let l = crate::forms::workflow_name(op);
@@ -1436,11 +1567,47 @@ impl Workbench {
             }
             _ => body = body.child(actions).child(self.attributes(r)),
         }
-        if matches!(r.kind.as_str(),"document"|"task"|"artifact"|"message"){
-            let mut files=col().gap(px(6.)).child(headline("附件",14.));
-            if self.writable(){files=files.child(outlined(self.button("attach-file","添加附件",UiAction::Form(Mode::Upload(Some(r.clone()))),cx)).child(icon("upload",13.)).child("添加附件"));}
-            for (i,f) in r.fields.get("attachments").and_then(Value::as_array).into_iter().flatten().enumerate(){let name=f["filename"].as_str().unwrap_or("附件").to_string();files=files.child(self.button(format!("download-file-{i}"),name.clone(),UiAction::Form(Mode::Download(r.clone(),f.clone())),cx).justify_start().child(icon("download",13.)).child(text(name,12.,INK)).child(text(format!("{} B",f["bytes"]),11.,MUTED)));}
-            body=body.child(files);}
+        if matches!(
+            r.kind.as_str(),
+            "document" | "task" | "artifact" | "message"
+        ) {
+            let mut files = col().gap(px(6.)).child(headline("附件", 14.));
+            if self.writable() {
+                files = files.child(
+                    outlined(self.button(
+                        "attach-file",
+                        "添加附件",
+                        UiAction::Form(Mode::Upload(Some(r.clone()))),
+                        cx,
+                    ))
+                    .child(icon("upload", 13.))
+                    .child("添加附件"),
+                );
+            }
+            for (i, f) in r
+                .fields
+                .get("attachments")
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .enumerate()
+            {
+                let name = f["filename"].as_str().unwrap_or("附件").to_string();
+                files = files.child(
+                    self.button(
+                        format!("download-file-{i}"),
+                        name.clone(),
+                        UiAction::Form(Mode::Download(r.clone(), f.clone())),
+                        cx,
+                    )
+                    .justify_start()
+                    .child(icon("download", 13.))
+                    .child(text(name, 12., INK))
+                    .child(text(format!("{} B", f["bytes"]), 11., MUTED)),
+                );
+            }
+            body = body.child(files);
+        }
         let mut toolbar = row()
             .w_full()
             .h(px(43.))

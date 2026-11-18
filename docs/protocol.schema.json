@@ -99,6 +99,314 @@
       "if": {
         "properties": {
           "op": {
+            "const": "attachment.upload"
+          }
+        }
+      },
+      "then": {
+        "if": {
+          "properties": {
+            "kind": {
+              "enum": [
+                "artifact",
+                "message",
+                "task"
+              ]
+            }
+          }
+        },
+        "properties": {
+          "kind": {
+            "enum": [
+              "document",
+              "artifact",
+              "message",
+              "task"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "filename",
+          "content_base64"
+        ],
+        "then": {
+          "required": [
+            "id"
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "attachment.download"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "document",
+              "artifact",
+              "message",
+              "task"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "id",
+          "attachment_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "agent.resolve",
+              "catalog.install",
+              "machine.enable",
+              "machine.disable",
+              "run.cancel",
+              "run.retry"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "tool.authorize"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "tool_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "machine.register"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "machine_key",
+          "title"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "machine.heartbeat",
+              "run.claim"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "machine_key"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "run.heartbeat",
+              "run.report",
+              "run.tool"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "machine_key",
+          "id",
+          "lease"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "run.tool"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "tool_id",
+          "call_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "run.report"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "status"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "run.reply"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "text"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "run.enqueue"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "handler_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "automation.fire"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "event_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "connector.ingest"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "external_id",
+          "event_id",
+          "source_version",
+          "title"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "connector.export"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "task_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "run.report"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "artifacts": {
+            "maxItems": 100,
+            "type": "array"
+          },
+          "status": {
+            "enum": [
+              "done",
+              "failed",
+              "cancelled",
+              "waiting"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "const": "access.issue"
           }
         }
@@ -164,6 +472,29 @@
     "allow_cached": {
       "type": "boolean"
     },
+    "attachment_id": {
+      "type": "string"
+    },
+    "call_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "capacity": {
+      "maximum": 64,
+      "minimum": 1,
+      "type": "integer"
+    },
+    "chat_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "content_base64": {
+      "contentEncoding": "base64",
+      "maxLength": 5592408,
+      "type": "string"
+    },
     "event_id": {
       "maxLength": 256,
       "minLength": 1,
@@ -173,11 +504,32 @@
       "minimum": 1,
       "type": "integer"
     },
+    "external_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
     "fields": {
       "type": "object"
     },
+    "filename": {
+      "maxLength": 255,
+      "minLength": 1,
+      "type": "string"
+    },
     "filter": {
       "type": "object"
+    },
+    "handler_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "handler_kind": {
+      "enum": [
+        "agent",
+        "crew"
+      ]
     },
     "id": {
       "minLength": 1,
@@ -218,10 +570,29 @@
       ],
       "type": "string"
     },
+    "lease": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
     "limit": {
       "maximum": 5000,
       "minimum": 1,
       "type": "integer"
+    },
+    "machine_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
+    "machine_key": {
+      "maxLength": 256,
+      "minLength": 32,
+      "type": "string",
+      "writeOnly": true
+    },
+    "media_type": {
+      "type": "string"
     },
     "offset": {
       "minimum": 0,
@@ -246,6 +617,7 @@
         "export",
         "import.preview",
         "provider.preview",
+        "attachment.download",
         "create",
         "update",
         "delete",
@@ -257,6 +629,7 @@
         "artifact.save",
         "import",
         "provider.ingest",
+        "attachment.upload",
         "agent.resolve",
         "catalog.list",
         "catalog.install",
@@ -306,6 +679,13 @@
       "minLength": 1,
       "type": "string"
     },
+    "runtimes": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 128,
+      "type": "array"
+    },
     "scope": {
       "enum": [
         "read",
@@ -313,6 +693,11 @@
         "worker",
         "hook"
       ]
+    },
+    "source_version": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
     },
     "space": {
       "default": "default",
@@ -324,7 +709,17 @@
         "null"
       ]
     },
+    "task_id": {
+      "maxLength": 4096,
+      "minLength": 1,
+      "type": "string"
+    },
     "title": {
+      "minLength": 1,
+      "type": "string"
+    },
+    "tool_id": {
+      "maxLength": 4096,
       "minLength": 1,
       "type": "string"
     },

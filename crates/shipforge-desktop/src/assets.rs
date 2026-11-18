@@ -27,6 +27,7 @@ impl AssetSource for Assets {
             "icons/chevron-right.svg" => include_bytes!("../assets/icons/chevron-right.svg"),
             "icons/chevrons-up-down.svg" => include_bytes!("../assets/icons/chevrons-up-down.svg"),
             "icons/circle-dot.svg" => include_bytes!("../assets/icons/circle-dot.svg"),
+            "icons/clock-arrow-left.svg" => include_bytes!("../assets/icons/clock-arrow-left.svg"),
             "icons/cloud.svg" => include_bytes!("../assets/icons/cloud.svg"),
             "icons/columns-3.svg" => include_bytes!("../assets/icons/columns-3.svg"),
             "icons/compass.svg" => include_bytes!("../assets/icons/compass.svg"),

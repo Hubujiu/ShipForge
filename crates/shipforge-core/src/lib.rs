@@ -121,12 +121,13 @@ impl Store {
                     ));
                 }
                 // Replays must still pass current resource permissions.
-                let value: Value = serde_json::from_str(&result).map_err(storage)?;
+                let mut value: Value = serde_json::from_str(&result).map_err(storage)?;
                 c.authorize_replay(&request, &value)?;
+                current_following(&c, &mut value)?;
                 return Ok(value);
             }
         }
-        let result = match op {
+        let mut result = match op {
             "schema" => Ok(schema()),
             "whoami" => Ok(json!({"actor":actor,"space":space,"role":c.role()?})),
             "attachment.upload" => attachments::upload(&c, &request),
@@ -155,9 +156,27 @@ impl Store {
             )
             .map_err(storage)?;
         }
+        current_following(&c, &mut result)?;
         tx.commit().map_err(storage)?;
         Ok(result)
     }
+}
+
+fn current_following(c: &Context<'_>, result: &mut Value) -> Result<()> {
+    if result["kind"] == "task"
+        && result["fields"].is_object()
+        && let Some(id) = result["id"].as_str()
+    {
+        let follows: bool =
+            c.db.query_row(
+                "SELECT EXISTS(SELECT 1 FROM followers WHERE space=? AND actor=? AND task=?)",
+                params![c.space, c.actor, id],
+                |r| r.get(0),
+            )
+            .map_err(storage)?;
+        result["fields"]["following"] = json!(follows);
+    }
+    Ok(())
 }
 
 pub(crate) fn write_request(c: &Context<'_>, q: &Value) -> Result<Value> {

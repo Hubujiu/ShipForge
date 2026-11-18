@@ -2,7 +2,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::path::Path;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use url::{Host, Url};
 use uuid::Uuid;
 
@@ -40,6 +40,7 @@ pub(super) struct Remote {
     credential: String,
     cache: Connection,
     online: Option<bool>,
+    last_network_failure: Option<Instant>,
 }
 
 impl Remote {
@@ -75,6 +76,7 @@ impl Remote {
             credential: token.to_owned(),
             cache,
             online: None,
+            last_network_failure: None,
         })
     }
 
@@ -87,10 +89,12 @@ impl Remote {
         let mut response = match call {
             Ok(r) => {
                 self.online = Some(true);
+                self.last_network_failure = None;
                 r
             }
             Err(e) => {
                 self.online = Some(false);
+                self.last_network_failure = Some(Instant::now());
                 return Err(format!("offline: {e}"));
             }
         };
@@ -152,8 +156,31 @@ impl Remote {
         if queue && request.get("request_id").is_none() {
             request["request_id"] = json!(Uuid::new_v4().to_string());
         }
+        if queue && op == "create" && request.get("id").is_none() {
+            let mut seed = Sha256::new();
+            seed.update(self.credential.as_bytes());
+            seed.update(request["request_id"].to_string());
+            let key: String = seed
+                .finalize()
+                .iter()
+                .take(16)
+                .map(|b| format!("{b:02x}"))
+                .collect();
+            request["id"] = json!(format!("draft-{key}"));
+        }
         let key = request.to_string();
-        match self.send(&request) {
+        // Reopening a board may request several lists. Back off briefly after a failed connection.
+        let answer = if cacheable
+            && allow_cache
+            && self
+                .last_network_failure
+                .is_some_and(|t| t.elapsed() < Duration::from_secs(2))
+        {
+            Err("offline: team server unavailable".into())
+        } else {
+            self.send(&request)
+        };
+        match answer {
             Ok(answer) => {
                 if cacheable {
                     let encoded = answer.to_string();
@@ -276,14 +303,16 @@ impl Remote {
     fn flush(&mut self) -> Result<Value, String> {
         let mut completed = Vec::new();
         while completed.len() < 100 {
-            let next: Option<(String, String)> = self
+            let next: Option<(String, String, Option<String>)> = self
                 .cache
-                .query_row("SELECT id,body FROM drafts ORDER BY seq LIMIT 1", [], |r| {
-                    Ok((r.get(0)?, r.get(1)?))
-                })
+                .query_row(
+                    "SELECT id,body,problem FROM drafts ORDER BY seq LIMIT 1",
+                    [],
+                    |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+                )
                 .optional()
                 .map_err(storage)?;
-            let Some((id, body)) = next else {
+            let Some((id, body, None)) = next else {
                 break;
             };
             match self.send(&serde_json::from_str(&body).map_err(storage)?) {
@@ -326,12 +355,16 @@ impl Remote {
             .map_err(storage)?
             .ok_or_else(|| "not_found: draft".to_owned())?;
         if request["discard"] == true {
-            self.cache
+            let changed = self
+                .cache
                 .execute(
                     "DELETE FROM drafts WHERE id=?1 AND body=?2",
                     params![id, body],
                 )
                 .map_err(storage)?;
+            if changed == 0 {
+                return Err("conflict: draft concurrently changed".into());
+            }
             return Ok(json!({"discarded":id}));
         }
         let rev = request["expected_rev"]

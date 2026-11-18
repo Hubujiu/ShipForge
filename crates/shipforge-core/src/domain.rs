@@ -77,6 +77,9 @@ fn write_inner(c: &Context<'_>, q: &Value, notify: bool, files: Option<Value>) -
         return Ok(as_value(r.clone()));
     }
     let mut patch = fields_object(q.get("fields"))?;
+    if kind == "task" && patch.contains_key("following") {
+        return Err(invalid("use follow to change your own following status"));
+    }
     if patch.contains_key("attachments") {
         return Err(invalid("use attachment.upload to attach files"));
     }
@@ -239,12 +242,18 @@ fn validate_space(f: &Value) -> Result<()> {
             return Err(invalid("triage settings must be boolean"));
         }
     }
-    if let Some(v)=f.get("triage_sources") {
-        for key in strings(v,"triage_sources")? {
-            if !matches!(key,"guest"|"external") {return Err(invalid("triage sources are guest and external"));}
+    if let Some(v) = f.get("triage_sources") {
+        for key in strings(v, "triage_sources")? {
+            if !matches!(key, "guest" | "external") {
+                return Err(invalid("triage sources are guest and external"));
+            }
         }
     }
-    if let Some(v)=f.get("triage_types") {for id in strings(v,"triage_types")? {identifier(id)?;}}
+    if let Some(v) = f.get("triage_types") {
+        for id in strings(v, "triage_types")? {
+            identifier(id)?;
+        }
+    }
     Ok(())
 }
 
@@ -378,11 +387,31 @@ fn validate(c: &Context<'_>, old: Option<&Record>, row: &mut Record) -> Result<(
                     target.require_edit()?;
                 }
             }
-            if let Some(previous)=old && let Some(spaces)=previous.fields["spaces"].as_array() {
-                for removed in spaces.iter().filter_map(Value::as_str).filter(|old_id| !f["spaces"].as_array().is_some_and(|ids|ids.iter().any(|id|id==old_id))) {
-                    if removed==c.space {continue;}
-                    let scope=Context{db:c.db,space:removed,actor:c.actor};
-                    if scope.records("task")?.iter().any(|t|t.fields["project"]==row.id) {return Err(conflict("remove the space's task assignments before unlinking its project"));}
+            if let Some(previous) = old
+                && let Some(spaces) = previous.fields["spaces"].as_array()
+            {
+                for removed in spaces.iter().filter_map(Value::as_str).filter(|old_id| {
+                    !f["spaces"]
+                        .as_array()
+                        .is_some_and(|ids| ids.iter().any(|id| id == old_id))
+                }) {
+                    if removed == c.space {
+                        continue;
+                    }
+                    let scope = Context {
+                        db: c.db,
+                        space: removed,
+                        actor: c.actor,
+                    };
+                    if scope
+                        .records("task")?
+                        .iter()
+                        .any(|t| t.fields["project"] == row.id)
+                    {
+                        return Err(conflict(
+                            "remove the space's task assignments before unlinking its project",
+                        ));
+                    }
                 }
             }
         }

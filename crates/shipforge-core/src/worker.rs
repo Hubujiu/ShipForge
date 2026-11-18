@@ -367,6 +367,7 @@ fn resolved(c: &Context<'_>, id: &str) -> Result<Value> {
     }
     let mut value = json!({"runtime":"local-tool","directory_mode":"isolated","skills":[],"tools":[],"instructions":"","max_parallel":1,"chat_parallel":1});
     for item in chain.iter().rev() {
+        if item.fields["visibility"]=="private"{value["private_source"]=json!(true);}
         for key in [
             "runtime",
             "directory_mode",
@@ -409,8 +410,13 @@ fn snapshot(c: &Context<'_>, handler: &str, kind: &str) -> Result<Value> {
         ("tools", "tool", "tool_grants"),
     ] {
         let mut entries = Vec::new();
+        let mut private=false;
         for id in array_ids(&data[field])? {
             let item = read(c, target, id)?;
+            private|=item.fields["visibility"]=="private";
+            if target=="tool" && let Some(doc)=item.fields["document"].as_str(){
+                private|=c.find("document",doc)?.is_some_and(|doc|doc.fields["visibility"]=="private");
+            }
             let entry = if target == "skill" {
                 json!({"id":id,"title":item.title,"rev":item.rev,"instructions":item.fields["instructions"]})
             } else {
@@ -419,6 +425,7 @@ fn snapshot(c: &Context<'_>, handler: &str, kind: &str) -> Result<Value> {
             entries.push(entry);
         }
         data[dest] = json!(entries);
+        if private{data["private_source"]=json!(true);}
     }
     Ok(data)
 }
@@ -444,7 +451,7 @@ fn enqueue(
     }
     let config = snapshot(c, handler, kind)?;
     let handler_record = read(c, kind, handler)?;
-    if handler_record.fields["visibility"] == "private" {
+    if handler_record.fields["visibility"] == "private" || config["private_source"]==true || fields["visibility"]=="private" || fields["task"]["private_context"]==true {
         fields["visibility"] = json!("private");
         fields["owner"] = json!(c.actor);
     }
@@ -511,13 +518,15 @@ fn task_context(c: &Context<'_>, task: &Record) -> Result<Value> {
         .collect::<Vec<_>>();
     comments.sort_by_key(|r| std::cmp::Reverse(r.created_at));
     let mut discussion = Vec::new();
+    let mut private=false;
     for r in comments.into_iter().take(15) {
         if c.visible(&r)? {
+            private|=r.fields["visibility"]=="private";
             discussion.push(json!({"title":r.title,"body":r.fields["body"]}));
         }
     }
     Ok(
-        json!({"id":task.id,"title":task.title,"description":task.fields["description"],"status":task.fields["status"],"priority":task.fields["priority"],"rev":task.rev,"comments":discussion}),
+        json!({"id":task.id,"title":task.title,"description":task.fields["description"],"status":task.fields["status"],"priority":task.fields["priority"],"rev":task.rev,"comments":discussion,"private_context":private}),
     )
 }
 fn manual_enqueue(c: &Context<'_>, q: &Value) -> Result<Value> {
@@ -886,12 +895,33 @@ fn heartbeat(c: &Context<'_>, q: &Value) -> Result<Value> {
     {
         return Err("stale lease".into());
     }
+    if let Some(value) = q.get("progress").filter(|v| !v.is_null()) {
+        let mut fields = run.fields.clone();
+        if apply_progress(&mut fields, value, at)? {
+            c.update(&run, &run.title, fields)?;
+        }
+    }
     c.db.execute(
         "UPDATE sf_run_leases SET expires=? WHERE space=? AND run=?",
         params![at + LEASE_MS, c.space, run.id],
     )
     .map_err(db_error)?;
     Ok(json!({"cancel":run.fields["status"]=="cancelling","expires_at":at+LEASE_MS}))
+}
+fn apply_progress(fields: &mut Value, progress: &Value, at: i64) -> Result<bool> {
+    let message = progress["message"]
+        .as_str()
+        .filter(|s| !s.trim().is_empty() && s.len() <= 2048)
+        .ok_or("progress needs a message of 1–2048 bytes")?;
+    let percent = &progress["percent"];
+    if !percent.is_null() && !percent.as_u64().is_some_and(|p| p <= 100) {
+        return Err("progress percent must be 0–100".into());
+    }
+    if fields["progress"]["message"] == message && fields["progress"]["percent"] == *percent {
+        return Ok(false);
+    }
+    fields["progress"] = json!({"message":message,"percent":percent,"at":at});
+    Ok(true)
 }
 fn authorize_run_tool(c: &Context<'_>, q: &Value) -> Result<Value> {
     let (run, expires, reported) = lease_row(c, q)?;
@@ -933,8 +963,11 @@ fn authorize_run_tool(c: &Context<'_>, q: &Value) -> Result<Value> {
 fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
     let (run, expires, last) = lease_row(c, q)?;
     let at = now();
-    let body_digest =
-        digest(&json!([q["status"], q["result"], q["artifacts"], q["delegates"]]).to_string());
+    let mut fingerprint = vec![&q["status"], &q["result"], &q["artifacts"], &q["delegates"]];
+    if let Some(progress) = q.get("progress").filter(|v| !v.is_null()) {
+        fingerprint.push(progress);
+    }
+    let body_digest = digest(&json!(fingerprint).to_string());
     if let Some(prior) = last {
         if prior != body_digest {
             return Err("lease was already reported with a different result".into());
@@ -967,6 +1000,9 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
         outcome
     });
     f["result"] = json!(text);
+    if let Some(progress) = q.get("progress").filter(|v| !v.is_null()) {
+        apply_progress(&mut f, progress, at)?;
+    }
     let mut summary = q["artifacts"].clone();
     if let Some(items) = summary.as_array_mut() {
         for entry in items {
@@ -984,6 +1020,8 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
             return Err("delegation requires an initial crew run".into());
         }
         let allowed = array_ids(&run.fields["config"]["crew_members"])?;
+        let requester=Context{db:c.db,space:c.space,actor:req(&run.fields,"requested_by")?};
+        requester.require_edit()?;
         let mut children = Vec::new();
         for (idx, d) in ds.iter().enumerate() {
             let target = req(d, "handler_id")?;
@@ -991,7 +1029,8 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
                 return Err("agent is not a member of this crew".into());
             }
             let instruction = req(d, "instruction")?;
-            children.push(enqueue(c,&format!("delegate:{}:{idx}",run.id),target,"agent",instruction,json!({"instruction":instruction,"parent_id":run.id,"task_id":run.fields["task_id"],"task":run.fields["task_context"],"chat_id":run.fields["chat_id"]}))?.id);
+            let context=json!({"instruction":instruction,"visibility":run.fields["visibility"],"parent_id":run.id,"task_id":run.fields["task_id"],"task":run.fields["task_context"],"chat_id":run.fields["chat_id"]});
+            children.push(enqueue(&requester,&format!("delegate:{}:{idx}",run.id),target,"agent",instruction,context)?.id);
         }
         f["children"] = json!(children);
         f["status"] = json!("waiting_children");
@@ -1034,7 +1073,7 @@ fn on_terminal(c: &Context<'_>, r: &Record) -> Result<()> {
             .as_str()
             .filter(|s| !s.is_empty())
             .unwrap_or("执行已结束");
-        c.create("message",None,&r.title,json!({"chat":chat,"run":r.id,"body":text,"author_kind":"agent","author":r.fields["handler_id"],"creator":c.actor}))?;
+        c.create("message",None,&r.title,json!({"chat":chat,"run":r.id,"body":text,"visibility":r.fields["visibility"],"owner":r.fields["requested_by"],"author_kind":"agent","author":r.fields["handler_id"],"creator":r.fields["requested_by"]}))?;
     }
     if let Some(parent_id) = r.fields["parent_id"].as_str() {
         let parent = c.get("run", parent_id)?;
