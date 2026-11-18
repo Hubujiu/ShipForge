@@ -6,6 +6,7 @@ mod backend;
 mod catalog;
 mod controls;
 mod forms;
+mod files;
 mod machine;
 mod motion;
 mod shell;

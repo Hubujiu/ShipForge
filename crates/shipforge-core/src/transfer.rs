@@ -237,6 +237,17 @@ fn apply(c: &Context<'_>, input: &[Value]) -> Result<Value> {
         f.remove("creator");
         f.remove("number");
         f.remove("system");
+        if let Some(files) = f.remove("attachments") {
+            let mut metadata = files;
+            if let Some(entries) = metadata.as_array_mut() {
+                for entry in entries {
+                    if let Some(item) = entry.as_object_mut() {
+                        item.remove("id");
+                    }
+                }
+            }
+            f.insert("source_attachments".into(), metadata);
+        }
         let entry = json!({"op":op,"kind":kind,"id":id,"title":title,"fields":f});
         pending.push(entry);
     }

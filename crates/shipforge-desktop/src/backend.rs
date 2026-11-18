@@ -10,6 +10,7 @@ use std::{
 
 pub type Rows = BTreeMap<String, Vec<Record>>;
 pub enum Request {
+    Attachment {ticket:u64,command:Value,path:PathBuf},
     Machine {
         ticket: u64,
         space: String,
@@ -183,6 +184,7 @@ impl Backend {
                             }
                             let _ = events.send(Event::Reply { ticket, result });
                         }
+                        Request::Attachment{ticket,command,path}=>{let result=client.as_mut().map_err(|e|e.clone()).and_then(|c|crate::files::attachment(c,command,&path));let _=events.send(Event::Reply{ticket,result});}
                         Request::Export {
                             ticket,
                             command,

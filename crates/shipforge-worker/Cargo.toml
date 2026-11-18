@@ -7,6 +7,7 @@ license = "MIT"
 description = "ShipForge local machine agent host and integration adapters"
 
 [dependencies]
+base64 = "0.22"
 shipforge-client = { path = "../shipforge-client" }
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }

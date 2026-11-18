@@ -41,6 +41,7 @@ impl Default for Location {
 }
 #[derive(Clone)]
 pub enum UiAction {
+    Browse{index:usize,save:Option<String>},
     Go(Page),
     Open(Record),
     Back,
@@ -776,6 +777,7 @@ impl Workbench {
                 if matches!(e.spec.format,crate::forms::Format::Many(_)){let mut a:Vec<&str>=value.split(',').map(str::trim).filter(|s|!s.is_empty()).collect();if a.contains(&v.as_str()){a.retain(|s|*s!=v);}else if !v.is_empty(){a.push(&v);}else{a.clear();}*value=a.join(", ");}else{*value=v;f.open_pick=None;}focus.focus(w,cx);
             }
             Delete(r)=>{let command=json!({"op":"delete","space":self.loc.space,"kind":r.kind,"id":r.id,"expected_rev":r.rev});self.open_form(Mode::Confirm{label:format!("删除「{}」",r.title),command},w,cx);}
+            Browse{index,save}=>self.browse(index,save.as_deref(),w,cx),
             Inspect(mut cmd,label)=>{cmd["space"]=json!(self.loc.space);self.send(cmd,After::Output(label),false);}
             Connect=>self.open_form(Mode::Connect,w,cx),Disconnect=>{let ticket=self.register(After::Connected,true);let _=self.backend.sender.send(Request::Disconnect{ticket});}
             Versions(r)=>self.send(json!({"op":"document.history","id":r.id,"space":self.loc.space}),After::Versions(r),false),
@@ -788,6 +790,18 @@ impl Workbench {
             Grant=>self.open_form(Mode::Token,w,cx),Tokens=>self.send(json!({"op":"access.list","space":self.loc.space}),After::Tokens,false),
         }
         cx.notify();
+    }
+    fn browse(&mut self,index:usize,save:Option<&str>,w:&mut Window,cx:&mut Context<Self>){
+        let Some(Control::Text(crate::controls::Field::Single(state)))=self.form.as_ref().and_then(|f|f.entries.get(index)).map(|e|&e.control)else{return};
+        let state=state.clone();
+        if let Some(name)=save{
+            let initial=std::env::var_os("USERPROFILE").or_else(||std::env::var_os("HOME")).map(PathBuf::from).unwrap_or_default();
+            let result=cx.prompt_for_new_path(&initial,Some(name));
+            cx.spawn_in(w,async move|_,cx|{if let Ok(Ok(Some(path)))=result.await{let _=cx.update(|window,cx|state.update(cx,|s,cx|s.set_value(path.to_string_lossy().to_string(),window,cx)));}}).detach();
+        }else{
+            let result=cx.prompt_for_paths(PathPromptOptions{files:true,directories:false,multiple:false,prompt:Some("选择文件".into())});
+            cx.spawn_in(w,async move|_,cx|{if let Ok(Ok(Some(paths)))=result.await&&let Some(path)=paths.first(){let _=cx.update(|window,cx|state.update(cx,|s,cx|s.set_value(path.to_string_lossy().to_string(),window,cx)));}}).detach();
+        }
     }
     fn submit(&mut self, w: &mut Window, cx: &mut Context<Self>) -> Result<(), String> {
         if self.busy {
@@ -825,6 +839,9 @@ impl Workbench {
             Mode::Export|Mode::Import=>{let path=PathBuf::from(val("path"));if !path.is_absolute(){return Err("请输入文件的完整路径。".into());}
                 let sp=self.loc.space.clone();let req=if matches!(mode,Mode::Export){let ticket=self.register(After::Notice("空间数据已导出".into()),true);Request::Export{ticket,command:json!({"op":"export","space":sp}),path}}
                 else{let confirmed=preview.as_ref().and_then(|p|p.get("path")).and_then(Value::as_str)==path.to_str();let after=if confirmed{After::Notice("导入已完成".into())}else{After::Preview(path.clone())};let ticket=self.register(after,true);Request::Import{ticket,command:json!({"op":if confirmed{"import"}else{"import.preview"},"space":sp}),path}};let _=self.backend.sender.send(req);}
+            Mode::Upload(_)|Mode::Download(_,_)=>{let path=PathBuf::from(val("path"));if !path.is_absolute(){return Err("请选择完整文件路径。".into())}
+                let(command,after)=match &mode{Mode::Upload(record)=>{let mut q=json!({"op":"attachment.upload","kind":"document","space":self.loc.space});if let Some(r)=record{q["id"]=json!(r.id);q["kind"]=json!(r.kind);q["expected_rev"]=json!(r.rev);}else{q["visibility"]=json!(val("visibility"));}(q,After::Saved(record.as_ref().map_or("document",|r|&r.kind).to_owned()))},Mode::Download(r,file)=>(json!({"op":"attachment.download","kind":r.kind,"id":r.id,"attachment_id":file["id"],"space":self.loc.space}),After::Notice(format!("已保存到 {}",path.display()))),_=>unreachable!()};
+                let ticket=self.register(after,true);self.backend.sender.send(Request::Attachment{ticket,command,path}).map_err(|e|e.to_string())?;}
             Mode::Machine{stop}=>{let ticket=self.register(After::Machine,true);self.backend.sender.send(Request::Machine{ticket,space:self.loc.space.clone(),fields:Value::Object(values),stop}).map_err(|e|e.to_string())?;}
             Mode::Workflow{op,record}=>{let mut q=Value::Object(values);q["op"]=json!(op);q["space"]=json!(self.loc.space);q["id"]=json!(record.id);
                 if op=="tool.authorize"{q["id"]=q["agent"].take();q["tool_id"]=json!(record.id);}

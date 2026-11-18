@@ -45,11 +45,16 @@ pub(crate) fn validate_task(
     }
     let space = c.get("space", c.space)?;
     let guest = c.role()? == "guest";
+    if guest {f["source"]=json!("guest");}
     let external = matches!(
         f["source"].as_str(),
         Some("external" | "integration" | "guest")
     ) || f["external_id"].is_string();
     let inbox = space.fields["triage_enabled"] == true;
+    let channel=if guest {"guest"} else {"external"};
+    let source_allowed=space.fields["triage_sources"].as_array().is_none_or(|sources|sources.iter().any(|s|s==channel));
+    let type_allowed=space.fields["triage_types"].as_array().is_none_or(|types|types.iter().any(|s|s==&task_type));
+    if guest && !(inbox && source_allowed && type_allowed) {return Err(forbidden("this submission source or task type is outside triage"));}
     let allowed = config
         .as_ref()
         .and_then(|r| r.fields["statuses"].as_array());
@@ -57,7 +62,7 @@ pub(crate) fn validate_task(
         c.category_for(required(f, "status")?)?.as_str(),
         "done" | "cancelled"
     );
-    if old.is_none() && inbox && (guest || external && !terminal) {
+    if old.is_none() && inbox && source_allowed && type_allowed && (guest || external && !terminal) {
         let candidate = match allowed.filter(|list| !list.is_empty()) {
             None => Some("triage".into()),
             Some(list) => list
@@ -86,12 +91,9 @@ pub(crate) fn validate_task(
     ) {
         return Err(invalid("unknown task priority"));
     }
-    if let Some(previous) = old
-        && c.status_category(previous)? == "triage"
-        && (category != "triage" || !f["iteration"].is_null())
-        && space.fields["triage_priority_required"] == true
-        && f["priority"] == "none"
-    {
+    let in_triage=category=="triage" || old.map(|r|c.status_category(r)).transpose()?.as_deref()==Some("triage");
+    if in_triage && ((!matches!(category.as_str(),"triage" | "cancelled") && old.is_some()) || !f["iteration"].is_null())
+        && space.fields["triage_priority_required"] == true && f["priority"]=="none" {
         return Err(invalid(
             "set a priority before accepting or planning this task",
         ));
@@ -196,8 +198,9 @@ pub(crate) fn resolve_project(c: &Context<'_>, id: &str) -> Result<Record> {
     {
         return Ok(r);
     }
+    let org=c.org_id()?;
     for space in c.all_spaces()? {
-        if space.id == c.space {
+        if space.id == c.space || space.fields["organization"].as_str().unwrap_or("default")!=org {
             continue;
         }
         let other = Context {
@@ -205,9 +208,6 @@ pub(crate) fn resolve_project(c: &Context<'_>, id: &str) -> Result<Record> {
             actor: c.actor,
             space: &space.id,
         };
-        if other.role().is_err() {
-            continue;
-        }
         if let Some(r) = other.find("project", id)?
             && other.visible(&r)?
             && r.fields["spaces"]
@@ -404,7 +404,8 @@ pub(crate) fn cleanup(c: &Context<'_>, r: &Record) -> Result<()> {
                 "task"
             };
             let spaces = if r.kind == "project" {
-                c.all_spaces()?.into_iter().map(|s| s.id).collect()
+                let org=c.org_id()?;
+                c.all_spaces()?.into_iter().filter(|s|s.fields["organization"].as_str().unwrap_or("default")==org).map(|s| s.id).collect()
             } else {
                 vec![c.space.to_string()]
             };

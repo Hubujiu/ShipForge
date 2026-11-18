@@ -26,6 +26,7 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
             let kind = required(q, "kind")?;
             check_kind(kind)?;
             let id = required(q, "id")?;
+            if kind=="project" {return resolve_project(c,id).map(as_value);}
             match c.readable(kind, id) {
                 Ok(r) => Ok(as_value(r)),
                 Err(e) if kind == "task" && e.starts_with("not_found:") => {
@@ -179,10 +180,21 @@ pub(crate) fn visible_records(c: &Context<'_>, kind: &str) -> Result<Vec<Record>
             rows.push(row);
         }
     }
+    if kind=="project" {
+        let org=c.org_id()?;
+        for space in c.all_spaces()? {
+            if space.id==c.space || space.fields["organization"].as_str().unwrap_or("default")!=org {continue;}
+            let referring=Context{actor:c.actor,space:&space.id,db:c.db};
+            for project in referring.records("project")? {
+                if project.fields["spaces"].as_array().is_some_and(|ids|ids.iter().any(|id|id==c.space)) && referring.visible(&project)? {rows.push(project);}
+            }
+        }
+    }
     Ok(rows)
 }
 fn search_matches(r: &Record, text: &str) -> bool {
     r.title.to_lowercase().contains(text)
+        || r.fields["attachments"].as_array().is_some_and(|a|a.iter().filter_map(|f|f["filename"].as_str()).any(|s|s.to_lowercase().contains(text)))
         || r.id.to_lowercase().contains(text)
         || ["body", "description", "number", "summary"]
             .iter()

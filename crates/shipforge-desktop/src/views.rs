@@ -9,7 +9,7 @@ use gpui_kit::{prelude::*, *};
 use serde_json::{Value, json};
 
 impl Workbench {
-    pub fn page_body(&mut self, _w: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    pub fn page_body(&mut self, w: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = self.loc.page;
         let info = p.info();
         let page_title = self
@@ -49,6 +49,7 @@ impl Workbench {
             .child(text("/", 12., DIM))
             .child(headline(page_title.to_owned(), 14.))
             .child(div().flex_1());
+        if p==Page::Docs&&self.writable(){header=header.child(outlined(self.button("upload-document","从文件新建文档",UiAction::Form(Mode::Upload(None)),cx)).child(icon("upload",14.)).child("上传文档"));}
         if p == Page::Machines && self.mode != "demo" {
             header = header
                 .child(
@@ -111,9 +112,9 @@ impl Workbench {
             );
         }
         match p {
-            Page::Tasks | Page::Mine | Page::Triage | Page::Dashboard => {
-                root.child(self.task_page(cx)).into_any_element()
-            }
+            Page::Tasks | Page::Mine | Page::Triage | Page::Dashboard => root
+                .child(self.task_page(f32::from(w.viewport_size().width), cx))
+                .into_any_element(),
             Page::Settings => root.child(self.settings_page(cx)).into_any_element(),
             Page::Transfer => root.child(self.transfer_page(cx)).into_any_element(),
             Page::Market => root.child(self.market_page(cx)).into_any_element(),
@@ -175,7 +176,7 @@ impl Workbench {
             .p(px(24.))
             .child(empty)
     }
-    fn task_page(&self, cx: &Context<Self>) -> AnyElement {
+    fn task_page(&self, viewport: f32, cx: &Context<Self>) -> AnyElement {
         let page = self.loc.page;
         let tasks = self.task_rows();
         let dashboard = page == Page::Dashboard || self.loc.layout == "dashboard";
@@ -350,13 +351,13 @@ impl Workbench {
                 cx,
             ));
         } else if self.loc.layout == "board" {
-            out = out.child(self.board(&tasks, cx));
+            out = out.child(self.board(&tasks, viewport, cx));
         } else {
             out = out.child(self.task_list(&tasks, self.loc.layout == "table", cx));
         }
         out.into_any_element()
     }
-    fn board(&self, tasks: &[Record], cx: &Context<Self>) -> AnyElement {
+    fn board(&self, tasks: &[Record], viewport: f32, cx: &Context<Self>) -> AnyElement {
         let group = self
             .loc
             .view
@@ -399,17 +400,39 @@ impl Workbench {
                 groups.push((key.into(), label, VIOLET));
             }
         }
+        let active = groups
+            .iter()
+            .filter(|(key, _, _)| tasks.iter().any(|task| task.field(group) == key))
+            .count();
+        let collapsed = groups.len() - active;
+        let side = if self.sidebar {
+            if viewport >= 1100. { 272. } else { 196. }
+        } else {
+            0.
+        };
+        let usable = (viewport - 60. - side - 32. - 26.).max(220.);
+        let fold_width = if collapsed == 0 {
+            0.
+        } else {
+            (usable * 0.18).clamp(122., 250.)
+        };
+        let column_width =
+            ((usable - fold_width - 9. * active as f32) / active.max(1) as f32).clamp(222., 338.);
+        let stack_width = (column_width * active as f32
+            + fold_width
+            + 9. * active.saturating_sub(usize::from(collapsed == 0)) as f32)
+            .max(usable);
         let mut board = row()
-            .id("task-board")
+            .w(px(stack_width))
+            .h_full()
             .items_start()
-            .flex_1()
-            .min_h_0()
-            .w_full()
-            .overflow_x_scroll()
-            .px(px(13.))
-            .pb(px(14.))
+            .justify_start()
             .gap(px(9.));
-        let mut empty = col().w(px(170.)).flex_shrink_0().gap(px(5.));
+        let mut empty = col()
+            .w(px(fold_width))
+            .flex_shrink_0()
+            .gap(px(5.))
+            .child(text("折叠的列", 12., MUTED).pb(px(3.)));
         for (key, label, color) in groups {
             let items: Vec<_> = tasks.iter().filter(|r| r.field(group) == key).collect();
             if items.is_empty() {
@@ -419,7 +442,9 @@ impl Workbench {
                         .w_full()
                         .px(px(8.))
                         .rounded(px(6.))
-                        .bg(rgb(PALE))
+                        .border_1()
+                        .border_color(rgb(LINE))
+                        .bg(white())
                         .gap(px(7.))
                         .child(mark(color))
                         .child(text(label, 12., MUTED))
@@ -445,7 +470,7 @@ impl Workbench {
                 ));
             }
             let col = col()
-                .w(px(326.))
+                .w(px(column_width))
                 .h_full()
                 .min_h_0()
                 .flex_shrink_0()
@@ -463,7 +488,20 @@ impl Workbench {
                 .child(cards);
             board = board.child(col);
         }
-        board.child(empty).into_any_element()
+        if collapsed > 0 {
+            board = board.child(empty.ml_auto());
+        }
+        div()
+            .id("task-board-scroll")
+            .overflow_x_scroll()
+            .w_full()
+            .min_w_0()
+            .min_h_0()
+            .flex_1()
+            .px(px(13.))
+            .pb(px(13.))
+            .child(board)
+            .into_any_element()
     }
     fn task_card(&self, r: &Record, cx: &Context<Self>) -> impl IntoElement {
         let mut bottom = row()
@@ -1398,6 +1436,11 @@ impl Workbench {
             }
             _ => body = body.child(actions).child(self.attributes(r)),
         }
+        if matches!(r.kind.as_str(),"document"|"task"|"artifact"|"message"){
+            let mut files=col().gap(px(6.)).child(headline("附件",14.));
+            if self.writable(){files=files.child(outlined(self.button("attach-file","添加附件",UiAction::Form(Mode::Upload(Some(r.clone()))),cx)).child(icon("upload",13.)).child("添加附件"));}
+            for (i,f) in r.fields.get("attachments").and_then(Value::as_array).into_iter().flatten().enumerate(){let name=f["filename"].as_str().unwrap_or("附件").to_string();files=files.child(self.button(format!("download-file-{i}"),name.clone(),UiAction::Form(Mode::Download(r.clone(),f.clone())),cx).justify_start().child(icon("download",13.)).child(text(name,12.,INK)).child(text(format!("{} B",f["bytes"]),11.,MUTED)));}
+            body=body.child(files);}
         let mut toolbar = row()
             .w_full()
             .h(px(43.))

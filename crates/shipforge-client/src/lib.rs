@@ -59,9 +59,56 @@ pub fn data_dir() -> Result<PathBuf, String> {
     if let Some(dir) = std::env::var_os("SHIPFORGE_DATA_DIR").filter(|s| !s.is_empty()) {
         return Ok(PathBuf::from(dir));
     }
+    #[cfg(windows)]
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(program_dir) = exe.parent()
+        && let Some(directory) = installed_data_dir(program_dir)?
+    {
+        return Ok(directory);
+    }
     ProjectDirs::from("org", "ShipForge", "ShipForge Workspace")
         .map(|p| p.data_local_dir().to_owned())
         .ok_or_else(|| "storage: cannot locate a user data directory".into())
+}
+
+#[cfg(windows)]
+fn installed_data_dir(program_dir: &Path) -> Result<Option<PathBuf>, String> {
+    let bytes = match std::fs::read(program_dir.join("shipforge-install.ini")) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => {
+            return Err(format!(
+                "storage: cannot read installation preferences: {e}"
+            ));
+        }
+    };
+    let text = if let Some(body) = bytes.strip_prefix(&[0xff, 0xfe]) {
+        let (pairs, rest) = body.as_chunks::<2>();
+        if !rest.is_empty() {
+            return Err("storage: incomplete installation preferences".into());
+        }
+        let chars: Vec<_> = pairs.iter().copied().map(u16::from_le_bytes).collect();
+        String::from_utf16(&chars).map_err(|e| format!("storage: {e}"))?
+    } else {
+        String::from_utf8(bytes).map_err(|e| format!("storage: {e}"))?
+    };
+    let mut installation = false;
+    for line in text.trim_start_matches('\u{feff}').lines().map(str::trim) {
+        if line.starts_with('[') {
+            installation = line.eq_ignore_ascii_case("[Installation]");
+        } else if installation
+            && let Some((key, value)) = line.split_once('=')
+            && key.trim().eq_ignore_ascii_case("data_dir")
+            && !value.trim().is_empty()
+        {
+            let path = PathBuf::from(value.trim());
+            if !path.is_absolute() {
+                return Err("storage: installed data directory must be an absolute path".into());
+            }
+            return Ok(Some(path));
+        }
+    }
+    Ok(None)
 }
 
 impl Client {

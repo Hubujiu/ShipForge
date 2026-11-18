@@ -267,8 +267,10 @@ fn save_artifact(c: &Context<'_>, q: &Value) -> Result<Value> {
         .or_else(|| item.fields["url"].as_str())
         .or_else(|| item.fields["path"].as_str())
         .unwrap_or(&item.title);
-    write_request(
-        c,
-        &json!({"op":"create","kind":"document","title":q["title"].as_str().unwrap_or(&item.title),"fields":{"body":body,"artifact":item.id,"visibility":q["visibility"].as_str().unwrap_or("private")}}),
-    )
+    let request = json!({"op":"create","kind":"document","title":q["title"].as_str().unwrap_or(&item.title),"fields":{"body":body,"artifact":item.id,"visibility":q["visibility"].as_str().unwrap_or("private")}});
+    if let Some(files) = item.fields.get("attachments") {
+        domain::write_with_files(c, &request, files.clone())
+    } else {
+        write_request(c, &request)
+    }
 }

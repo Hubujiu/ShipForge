@@ -20,6 +20,7 @@ CREATE INDEX IF NOT EXISTS record_history ON event_log(space,kind,id,seq);
 CREATE TABLE IF NOT EXISTS versions(space TEXT NOT NULL,id TEXT NOT NULL,rev INTEGER NOT NULL,title TEXT NOT NULL,fields TEXT NOT NULL,actor TEXT NOT NULL,at INTEGER NOT NULL,PRIMARY KEY(space,id,rev));
 CREATE TABLE IF NOT EXISTS sequences(space TEXT PRIMARY KEY,n INTEGER NOT NULL);
 CREATE TABLE IF NOT EXISTS space_defaults(space TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS attachments(space TEXT NOT NULL,id TEXT NOT NULL,content BLOB NOT NULL,PRIMARY KEY(space,id));
 CREATE TABLE IF NOT EXISTS followers(space TEXT NOT NULL,task TEXT NOT NULL,actor TEXT NOT NULL,PRIMARY KEY(space,task,actor));
 ";
 
@@ -213,7 +214,11 @@ impl Context<'_> {
         let mut tombstone = old.clone();
         tombstone.rev += 1;
         tombstone.updated_at = now();
-        self.event(&tombstone, "delete")
+        self.event(&tombstone, "delete")?;
+        if old.kind == "document" || old.fields["attachments"].is_array() {
+            crate::attachments::prune(self)?;
+        }
+        Ok(())
     }
     fn event(&self, row: &Record, action: &str) -> Result<()> {
         self.db.execute("INSERT INTO event_log(space,kind,id,rev,action,actor,at,snapshot) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![self.space,row.kind,row.id,row.rev,action,self.actor,row.updated_at,serde_json::to_string(row).map_err(storage)?]).map_err(storage)?;

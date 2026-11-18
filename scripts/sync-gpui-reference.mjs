@@ -16,7 +16,7 @@ const status = {todo:'待办', in_progress:'进行中', done:'已完成'};
 const priorities = {low:'低', medium:'中', high:'高'};
 const rows = demo.filter(r => r.kind === 'task');
 const hash = createHash('sha256');
-for (const n of icons) hash.update(n).update(readFileSync(join(assets, 'icons', n)));
+for (const n of icons) hash.update(n).update(readFileSync(join(assets, 'icons', n), 'utf8').replaceAll('\r\n', '\n'));
 const boards = Object.entries(status).map(([key,label]) => '<section><h2>' + label + '</h2>' +
   rows.filter(r => r.fields.status === key).map(r => '<article><strong>' + esc(r.title) + '</strong><p>' + esc(r.fields.description || '') + '</p><small>' + esc(priorities[r.fields.priority] || '') + '优先级</small></article>').join('') + '</section>').join('');
 const svgList = icons.map(n => '<li><img alt="" src="../../crates/shipforge-desktop/assets/icons/' + n + '"><span>' + esc(n.slice(0,-4)) + '</span></li>').join('');

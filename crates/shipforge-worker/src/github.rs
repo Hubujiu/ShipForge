@@ -205,64 +205,112 @@ fn push_on(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::{BufRead, BufReader,Read,Write};
+    use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
     use std::thread;
 
-    fn bytes<R:BufRead>(reader:&mut R,length:usize,chunked:bool)->Vec<u8>{
-        let mut data=Vec::new();
+    fn bytes<R: BufRead>(reader: &mut R, length: usize, chunked: bool) -> Vec<u8> {
+        let mut data = Vec::new();
         if chunked {
             loop {
-                let mut line=String::new();reader.read_line(&mut line).unwrap();
-                let size=usize::from_str_radix(line.trim(),16).unwrap();
-                if size==0{break;}
-                let pos=data.len();data.resize(pos+size,0);reader.read_exact(&mut data[pos..]).unwrap();
-                let mut end=String::new();reader.read_line(&mut end).unwrap();
+                let mut line = String::new();
+                reader.read_line(&mut line).unwrap();
+                let size = usize::from_str_radix(line.trim(), 16).unwrap();
+                if size == 0 {
+                    break;
+                }
+                let pos = data.len();
+                data.resize(pos + size, 0);
+                reader.read_exact(&mut data[pos..]).unwrap();
+                let mut end = String::new();
+                reader.read_line(&mut end).unwrap();
             }
-        }else{reader.take(length as u64).read_to_end(&mut data).unwrap();}
+        } else {
+            reader.take(length as u64).read_to_end(&mut data).unwrap();
+        }
         data
     }
     #[test]
-    fn github_updates_only_mapped_issues_and_refuses_stale_changes(){
-        let mut client=Client::memory().unwrap();
+    fn github_updates_only_mapped_issues_and_refuses_stale_changes() {
+        let mut client = Client::memory().unwrap();
         client.execute(json!({"op":"create","kind":"connector","id":"gh","title":"Source","fields":{"provider":"github","repository":"sample/repo"}})).unwrap();
-        let first=json!({"number":12,"updated_at":"2026-01-01T00:00:00Z","title":"Before","body":"base","state":"open"});
-        let applied=client.execute(request(&first,"default","gh").unwrap()).unwrap();
-        let id=applied["task"].as_str().unwrap();
-        client.execute(json!({"op":"update","kind":"task","id":id,"title":"After"})).unwrap();
-        let listener=TcpListener::bind("127.0.0.1:0").unwrap();
-        let origin=format!("http://{}",listener.local_addr().unwrap());
-        let worker=thread::spawn(move||{
-            for n in 0..3{
-                let(mut stream,_)=listener.accept().unwrap();
-                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-                let mut reader=BufReader::new(stream.try_clone().unwrap());
-                let mut start=String::new();reader.read_line(&mut start).unwrap();
-                let method=if n==1{"PATCH"}else{"GET"};
+        let first = json!({"number":12,"updated_at":"2026-01-01T00:00:00Z","title":"Before","body":"base","state":"open"});
+        let applied = client
+            .execute(request(&first, "default", "gh").unwrap())
+            .unwrap();
+        let id = applied["task"].as_str().unwrap();
+        client
+            .execute(json!({"op":"update","kind":"task","id":id,"title":"After"}))
+            .unwrap();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let worker = thread::spawn(move || {
+            for n in 0..3 {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut reader = BufReader::new(stream.try_clone().unwrap());
+                let mut start = String::new();
+                reader.read_line(&mut start).unwrap();
+                let method = if n == 1 { "PATCH" } else { "GET" };
                 assert!(start.starts_with(&format!("{method} /repos/sample/repo/issues/12 ")));
-                let mut headers=String::new();
-                loop{let mut line=String::new();reader.read_line(&mut line).unwrap();if line.trim_end().is_empty(){break;}headers.push_str(&line.to_ascii_lowercase());}
-                assert!(headers.contains("authorization: bearer synthetic-token"));
-                let mut issue=first.clone();
-                if n==1{
-                    assert!(headers.contains("if-match: \"first\""));
-                    let size=headers.lines().find_map(|l|l.strip_prefix("content-length: ")).and_then(|l|l.trim().parse::<usize>().ok()).unwrap_or(0);
-                    let body=bytes(&mut reader,size,headers.contains("transfer-encoding: chunked"));
-                    let value:Value=serde_json::from_slice(&body).unwrap();
-                    assert_eq!(value,json!({"title":"After","body":"base","state":"open"}));
-                    issue["title"]=json!("After");issue["updated_at"]=json!("2026-01-02T00:00:00Z");
+                let mut headers = String::new();
+                loop {
+                    let mut line = String::new();
+                    reader.read_line(&mut line).unwrap();
+                    if line.trim_end().is_empty() {
+                        break;
+                    }
+                    headers.push_str(&line.to_ascii_lowercase());
                 }
-                if n==2{issue["updated_at"]=json!("2026-01-03T00:00:00Z");}
-                let body=issue.to_string();
+                assert!(headers.contains("authorization: bearer synthetic-token"));
+                let mut issue = first.clone();
+                if n == 1 {
+                    assert!(headers.contains("if-match: \"first\""));
+                    let size = headers
+                        .lines()
+                        .find_map(|l| l.strip_prefix("content-length: "))
+                        .and_then(|l| l.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    let body = bytes(
+                        &mut reader,
+                        size,
+                        headers.contains("transfer-encoding: chunked"),
+                    );
+                    let value: Value = serde_json::from_slice(&body).unwrap();
+                    assert_eq!(value, json!({"title":"After","body":"base","state":"open"}));
+                    issue["title"] = json!("After");
+                    issue["updated_at"] = json!("2026-01-02T00:00:00Z");
+                }
+                if n == 2 {
+                    issue["updated_at"] = json!("2026-01-03T00:00:00Z");
+                }
+                let body = issue.to_string();
                 write!(stream,"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nETag: \"first\"\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
             }
         });
-        let api=Api{agent:ureq::Agent::config_builder().timeout_global(Some(Duration::from_secs(6))).proxy(None).build().into(),token:Some("synthetic-token".into())};
-        let receipt=push_on(&mut client,"default","gh",id,&api,&origin).unwrap();
-        assert_eq!(receipt["task"],id);
-        assert_eq!(client.execute(json!({"op":"connector.export","id":"gh","task_id":id})).unwrap()["source_version"],"2026-01-02T00:00:00Z");
-        assert!(push_on(&mut client,"default","gh",id,&api,&origin).unwrap_err().contains("upstream issue changed"));
+        let api = Api {
+            agent: ureq::Agent::config_builder()
+                .timeout_global(Some(Duration::from_secs(6)))
+                .proxy(None)
+                .build()
+                .into(),
+            token: Some("synthetic-token".into()),
+        };
+        let receipt = push_on(&mut client, "default", "gh", id, &api, &origin).unwrap();
+        assert_eq!(receipt["task"], id);
+        assert_eq!(
+            client
+                .execute(json!({"op":"connector.export","id":"gh","task_id":id}))
+                .unwrap()["source_version"],
+            "2026-01-02T00:00:00Z"
+        );
+        assert!(
+            push_on(&mut client, "default", "gh", id, &api, &origin)
+                .unwrap_err()
+                .contains("upstream issue changed")
+        );
         worker.join().unwrap();
     }
 }
-

@@ -183,6 +183,12 @@ impl Context<'_> {
             }
         }
         match op {
+            "attachment.upload" => {
+                let r = prior
+                    .as_ref()
+                    .ok_or_else(|| invalid("invalid attachment receipt"))?;
+                self.authorize_write(&r.kind, Some(r))?;
+            }
             "follow" => {
                 self.readable("task", required(q, "id")?)?;
             }

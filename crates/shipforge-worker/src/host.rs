@@ -86,21 +86,50 @@ impl Host {
         let mut previous = Instant::now();
         let mut confirmed = Instant::now();
         let mut authorization = Client::from_env()?;
-        let payload=process::execute(&self.cfg,&self.dir,&claim["run"],||{
-            if previous.elapsed()<Duration::from_secs(3){return Ok(false);}
-            previous=Instant::now();
-            match self.call(&mut client,json!({"op":"run.heartbeat","id":id,"lease":lease})){
-                Ok(v)=>{confirmed=Instant::now();Ok(v["cancel"]==true)}
-                Err(e) if confirmed.elapsed()>Duration::from_secs(85) || e.contains("stale lease") || e.contains("disabled") || e.contains("authentication") => Err(format!("renew lease: {e}")),
-                Err(_)=>Ok(false)
+        let heartbeat = || {
+            if previous.elapsed() < Duration::from_secs(3) {
+                return Ok(false);
             }
-        },|invocation,dir|{
-            let tool=invocation["tool_id"].as_str().ok_or("tool call requires tool_id")?;
-            let descriptor=self.call(&mut authorization,json!({"op":"run.tool","id":id,"lease":lease,"tool_id":tool,"call_id":Uuid::new_v4().to_string()}))?;
-            let args=invocation.get("arguments").cloned().unwrap_or_else(||json!({}));
-            let value=crate::mcp::call(&self.cfg,dir,tool,&descriptor,args)?;
+            previous = Instant::now();
+            let request = json!({"op":"run.heartbeat","id":id,"lease":lease});
+            match self.call(&mut client, request) {
+                Ok(response) => {
+                    confirmed = Instant::now();
+                    Ok(response["cancel"] == true)
+                }
+                Err(e)
+                    if confirmed.elapsed() > Duration::from_secs(85)
+                        || e.contains("stale lease")
+                        || e.contains("disabled")
+                        || e.contains("authentication") =>
+                {
+                    Err(format!("renew lease: {e}"))
+                }
+                Err(_) => Ok(false),
+            }
+        };
+        let call_tool = |invocation: &Value, dir: &Path| {
+            let tool = invocation["tool_id"]
+                .as_str()
+                .ok_or("tool call requires tool_id")?;
+            let request = json!({"op":"run.tool","id":id,"lease":lease,"tool_id":tool,"call_id":Uuid::new_v4().to_string()});
+            let descriptor = self.call(&mut authorization, request)?;
+            let args = invocation
+                .get("arguments")
+                .cloned()
+                .unwrap_or_else(|| json!({}));
+            let value = crate::mcp::call(&self.cfg, dir, tool, &descriptor, args)?;
             Ok(json!({"tool_id":tool,"result":value}))
-        }).unwrap_or_else(|e|json!({"status":if e=="cancelled"{"cancelled"}else{"failed"},"result":e,"artifacts":[]}));
+        };
+        let payload = process::execute(&self.cfg, &self.dir, &claim["run"], heartbeat, call_tool)
+            .unwrap_or_else(|error| {
+                let status = if error == "cancelled" {
+                    "cancelled"
+                } else {
+                    "failed"
+                };
+                json!({"status":status,"result":error,"artifacts":[]})
+            });
         let mut request = payload.clone();
         request["op"] = json!("run.report");
         request["id"] = json!(id);
@@ -160,13 +189,21 @@ pub fn run(file: &Path, once: bool) -> Result<Value> {
         if last_ping.elapsed() >= Duration::from_secs(20) {
             if let Err(e) = host.call(&mut client, json!({"op":"machine.heartbeat"})) {
                 if once || e.contains("disabled") || e.contains("authentication") {
+                    for job in jobs.drain(..) {
+                        let _ = job.join();
+                    }
                     return Err(e);
                 }
                 eprintln!("machine heartbeat: {e}");
                 thread::sleep(Duration::from_secs(2));
                 continue;
             }
-            host.call(&mut client, json!({"op":"automation.tick"}))?;
+            if let Err(error) = host.call(&mut client, json!({"op":"automation.tick"})) {
+                if once {
+                    return Err(error);
+                }
+                eprintln!("automation tick: {error}");
+            }
             last_ping = Instant::now();
         }
         while jobs.len() < host.cfg.capacity as usize {

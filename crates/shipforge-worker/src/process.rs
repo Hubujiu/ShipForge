@@ -158,7 +158,9 @@ pub(crate) fn stop(child: &mut Child) {
     let _ = child.wait();
 }
 fn bounded_artifacts(list: &Value, workspace: &Path) -> Result<Vec<Value>> {
+    use base64::Engine;
     let mut items = Vec::new();
+    let mut inline_budget = 1024 * 1024;
     if let Some(entries) = list.as_array() {
         if entries.len() > 96 {
             return Err("too many artifacts".into());
@@ -183,7 +185,31 @@ fn bounded_artifacts(list: &Value, workspace: &Path) -> Result<Vec<Value>> {
             if !file.starts_with(workspace) || !file.is_file() {
                 return Err("artifact escapes workspace or is not a file".into());
             }
-            items.push(json!({"name":entry["name"].as_str().unwrap_or(raw),"path":raw,"location":file,"bytes":file.metadata().map_err(|e|e.to_string())?.len()}));
+            let size = file.metadata().map_err(|e| e.to_string())?.len();
+            let mut meta = json!({"name":entry["name"].as_str().unwrap_or(raw),"path":raw,"location":file,"bytes":size});
+            let limit = inline_budget.min(256 * 1024);
+            if size <= limit {
+                let mut content = Vec::new();
+                File::open(&file)
+                    .and_then(|f| f.take(limit + 1).read_to_end(&mut content))
+                    .map_err(|e| e.to_string())?;
+                if content.len() as u64 <= limit {
+                    inline_budget -= content.len() as u64;
+                    meta["filename"] = json!(
+                        file.file_name()
+                            .and_then(|n| n.to_str())
+                            .unwrap_or("artifact")
+                    );
+                    meta["media_type"] = json!(
+                        entry["media_type"]
+                            .as_str()
+                            .unwrap_or("application/octet-stream")
+                    );
+                    meta["content_base64"] =
+                        json!(base64::engine::general_purpose::STANDARD.encode(content));
+                }
+            }
+            items.push(meta);
         }
     }
     Ok(items)

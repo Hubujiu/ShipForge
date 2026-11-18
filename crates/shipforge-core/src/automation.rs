@@ -334,8 +334,10 @@ fn catalog() -> Value {
         {"id":"delivery-agent","kind":"agent","title":"交付检查员","description":"汇总执行结果和交付风险，协助负责人验收。","fields":{"runtime":"local-tool","instructions":"对照任务的验收条件和已有运行记录，列出已通过的检查、还缺少的依据以及交付物。","skills":[]}}
     ])
 }
-fn mapped_task(c:&Context<'_>,record: &Record) -> Result<Value> {
-    Ok(json!({"title":record.title,"description":record.fields["description"].as_str().unwrap_or_default(),"closed":matches!(c.status_category(record)?.as_str(),"done"|"cancelled"|"completed"|"canceled")}))
+fn mapped_task(c: &Context<'_>, record: &Record) -> Result<Value> {
+    Ok(
+        json!({"title":record.title,"description":record.fields["description"].as_str().unwrap_or_default(),"closed":matches!(c.status_category(record)?.as_str(),"done"|"cancelled"|"completed"|"canceled")}),
+    )
 }
 fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
     c.require_admin()?;
@@ -370,7 +372,7 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
         {
             json!({"action":"unchanged","task":task.id,"external_id":external})
         } else {
-            let local = mapped_task(c,&task)?;
+            let local = mapped_task(c, &task)?;
             let mut merged = local.clone();
             let mut conflicts = Vec::new();
             for key in ["title", "description", "closed"] {

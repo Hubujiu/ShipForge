@@ -6022,6 +6022,7 @@ dependencies = [
 name = "shipforge-core"
 version = "0.6.0"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "rusqlite",
  "serde",
@@ -6035,6 +6036,7 @@ dependencies = [
 name = "shipforge-desktop"
 version = "0.6.0"
 dependencies = [
+ "base64 0.22.1",
  "embed-resource",
  "gpui-kit",
  "resvg 0.45.1",
@@ -6061,6 +6063,7 @@ dependencies = [
 name = "shipforge-worker"
 version = "0.6.0"
 dependencies = [
+ "base64 0.22.1",
  "clap",
  "libc",
  "serde",

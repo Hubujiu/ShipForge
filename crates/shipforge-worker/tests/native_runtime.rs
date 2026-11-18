@@ -198,4 +198,73 @@ reply(call,{"content":[{"type":"text","text":call["params"]["arguments"]["phrase
         .execute(json!({"op":"list","kind":"artifact"}))
         .unwrap();
     assert_eq!(files.as_array().unwrap().len(), 2);
+    let artifact = files
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|item| item["title"] == "same-workdir.txt")
+        .unwrap();
+    let downloaded=client.execute(json!({"op":"attachment.download","kind":"artifact","id":artifact["id"],"attachment_id":artifact["fields"]["attachments"][0]["id"]})).unwrap();
+    assert_eq!(downloaded["content_base64"], "b3BlbmVk");
+}
+
+#[test]
+fn direct_directory_lock_serializes_independent_jobs() {
+    let temp = tempfile::tempdir().unwrap();
+    let repo = temp.path().join("direct");
+    std::fs::create_dir(&repo).unwrap();
+    let file = temp.path().join("machine.json");
+    let cfg = file.to_str().unwrap();
+    let data = temp.path().join("data");
+    let script = temp.path().join("serial.py");
+    std::fs::write(
+        &script,
+        r#"import json, os, pathlib, sys, time
+data=json.load(sys.stdin)
+marker=pathlib.Path("in-use.txt")
+with marker.open("x") as hold:
+    hold.write(data["title"])
+    time.sleep(0.35)
+marker.unlink()
+with open("finished.txt","a") as out:
+    out.write(data["title"]+"\n")
+print(json.dumps({"status":"done","result":"completed"}))
+"#,
+    )
+    .unwrap();
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    worker(
+        &data,
+        &[
+            "init",
+            "--config",
+            cfg,
+            "--workspace",
+            repo.to_str().unwrap(),
+            "--runtime",
+            "serial",
+            "--program",
+            python,
+            "--arg",
+            script.to_str().unwrap(),
+        ],
+    );
+    let mut settings: Value = serde_json::from_slice(&std::fs::read(&file).unwrap()).unwrap();
+    settings["capacity"] = json!(2);
+    settings["allow_direct"] = json!(true);
+    std::fs::write(&file, settings.to_string()).unwrap();
+    let mut cli = Client::local(&data).unwrap();
+    cli.execute(json!({"op":"create","kind":"agent","id":"a","title":"A","fields":{"runtime":"serial","max_parallel":2,"directory_mode":"direct"}})).unwrap();
+    for id in ["first", "second"] {
+        cli.execute(json!({"op":"create","kind":"task","id":id,"title":id,"fields":{"status":"todo","assignee":"a","assignee_kind":"agent"}})).unwrap();
+    }
+    let jobs = worker(&data, &["run", "--config", cfg, "--once"])["runs"]
+        .as_array()
+        .unwrap()
+        .clone();
+    assert_eq!(jobs.len(), 2);
+    assert!(jobs.iter().all(|r| r["status"] == "done"), "{jobs:?}");
+    let lines = std::fs::read_to_string(repo.join("finished.txt")).unwrap();
+    assert_eq!(lines.lines().count(), 2);
+    assert!(!repo.join("in-use.txt").exists());
 }

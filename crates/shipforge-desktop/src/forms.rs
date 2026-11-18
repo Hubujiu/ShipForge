@@ -60,6 +60,7 @@ pub enum Mode {
     Comment(Record),
     Message(Record),
     IterationEnd(Record),
+    Upload(Option<Record>), Download(Record, Value),
     Machine { stop: bool },
     Workflow { op: &'static str, record: Record },
     Confirm { label: String, command: Value },
@@ -79,6 +80,7 @@ impl Mode {
                 "启动本机工作机"
             }
             .into(),
+            Upload(_)=>"上传附件".into(), Download(..)=>"下载附件".into(),
             Workflow { op, .. } => workflow_name(op).into(),
             Create(k) => format!("新建{}", noun(k)),
             Edit(r) => format!("编辑{}", noun(&r.kind)),
@@ -104,6 +106,7 @@ impl Mode {
                     "启动"
                 }
             }
+            Self::Upload(_)=>"上传", Self::Download(..)=>"保存",
             Self::Workflow { .. } => "确认",
             Self::Create(_) => "创建",
             Self::Filter => "应用筛选",
@@ -384,6 +387,8 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             }
             s
         }
+        Upload(record)=>{let mut s=vec![item("path","文件路径（最大 4 MiB）",Text,"")];if record.is_none(){s.push(item("visibility","文档可见范围",Choice(VIS),"private"));}s}
+        Download(..)=>vec![item("path","保存到新文件",Text,"")],
         Workflow { op, .. } => match *op {
             "run.reply" => vec![item("text", "回复内容", Body, "")],
             "tool.authorize" => vec![item("agent", "Agent", Ref("agent"), "")],

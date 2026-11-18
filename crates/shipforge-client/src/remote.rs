@@ -95,7 +95,7 @@ impl Remote {
             }
         };
         let status = response.status().as_u16();
-        if status == 401 || status == 403 {
+        if matches!(status, 401 | 403 | 404) {
             self.cache
                 .execute("DELETE FROM reads", [])
                 .map_err(storage)?;
@@ -156,7 +156,16 @@ impl Remote {
         match self.send(&request) {
             Ok(answer) => {
                 if cacheable {
-                    self.cache.execute("INSERT OR REPLACE INTO reads(query,answer,at) VALUES(?1,?2,unixepoch())", params![key, answer.to_string()]).map_err(storage)?;
+                    let encoded = answer.to_string();
+                    let tx = self.cache.transaction().map_err(storage)?;
+                    // A changed result may reflect an ACL or membership change affecting other cached queries.
+                    tx.execute("DELETE FROM reads WHERE EXISTS (SELECT 1 FROM reads AS previous WHERE previous.query=?1 AND previous.answer<>?2)", params![key, encoded]).map_err(storage)?;
+                    tx.execute(
+                        "INSERT OR REPLACE INTO reads(query,answer,at) VALUES(?1,?2,unixepoch())",
+                        params![key, encoded],
+                    )
+                    .map_err(storage)?;
+                    tx.commit().map_err(storage)?;
                 } else if !shipforge_core::is_read_only(&op) && !op.starts_with("access.") {
                     self.cache
                         .execute("DELETE FROM reads", [])

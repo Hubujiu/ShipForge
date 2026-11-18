@@ -1,6 +1,7 @@
 //! The transactional workspace operations used by every ShipForge client.
 mod access;
 mod actions;
+mod attachments;
 mod defaults;
 mod domain;
 mod persistence;
@@ -102,6 +103,7 @@ impl Store {
         } else {
             None
         };
+        let fingerprint = key.map(|_| attachments::receipt(&request, op));
         if let Some(key) = key {
             let saved: Option<(String, String)> = tx
                 .query_row(
@@ -113,7 +115,7 @@ impl Store {
                 .map_err(storage)?;
             if let Some((original, result)) = saved {
                 let receipt_request: Value = serde_json::from_str(&original).map_err(storage)?;
-                if receipt_request != request {
+                if Some(&receipt_request) != fingerprint.as_ref() {
                     return Err(conflict(
                         "request_id already identifies a different request",
                     ));
@@ -127,6 +129,8 @@ impl Store {
         let result = match op {
             "schema" => Ok(schema()),
             "whoami" => Ok(json!({"actor":actor,"space":space,"role":c.role()?})),
+            "attachment.upload" => attachments::upload(&c, &request),
+            "attachment.download" => attachments::download(&c, &request),
             "provider.ingest" | "provider.preview" => providers::execute(&c, &request, read),
             "create" | "update" | "delete" => write_request(&c, &request),
             "list" | "get" | "search" | "events" | "space.list" | "organization.list"
@@ -141,7 +145,13 @@ impl Store {
         if let Some(key) = key {
             tx.execute(
                 "INSERT INTO receipts(space,actor,key,request,result) VALUES(?1,?2,?3,?4,?5)",
-                params![space, actor, key, request.to_string(), result.to_string()],
+                params![
+                    space,
+                    actor,
+                    key,
+                    fingerprint.expect("receipt exists for key").to_string(),
+                    result.to_string()
+                ],
             )
             .map_err(storage)?;
         }

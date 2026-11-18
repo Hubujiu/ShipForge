@@ -65,6 +65,15 @@ pub fn call(
     let stdout = child.stdout.take().expect("piped stdout");
     let mut stderr = child.stderr.take().expect("piped stderr");
     let (messages, rx) = sync_channel(8);
+    let (outbound, commands) = std::sync::mpsc::channel::<Value>();
+    thread::spawn(move || {
+        for msg in commands {
+            if send(&mut out, msg).is_err() {
+                break;
+            }
+        }
+    });
+    let write = |msg| outbound.send(msg).map_err(|e| e.to_string());
     thread::spawn(move || {
         let mut stream = BufReader::new(stdout);
         loop {
@@ -89,25 +98,24 @@ pub fn call(
     });
     let until = Instant::now() + Duration::from_secs(spec.runtime.timeout_seconds.min(25));
     let outcome = (|| {
-        send(
-            &mut out,
+        write(
             json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":VERSION,"capabilities":{},"clientInfo":{"name":"shipforge-worker","version":env!("CARGO_PKG_VERSION")}}}),
         )?;
         let init = response(&rx, 1, until)?;
-        if init["protocolVersion"] != VERSION || !init["capabilities"]["tools"].is_object() {
+        if !matches!(
+            init["protocolVersion"].as_str(),
+            Some(VERSION | "2025-03-26" | "2024-11-05")
+        ) || !init["capabilities"]["tools"].is_object()
+        {
             return Err("MCP server does not support the configured tools protocol".into());
         }
-        send(
-            &mut out,
-            json!({"jsonrpc":"2.0","method":"notifications/initialized"}),
-        )?;
-        send(
-            &mut out,
+        write(json!({"jsonrpc":"2.0","method":"notifications/initialized"}))?;
+        write(
             json!({"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":spec.tool_name,"arguments":args}}),
         )?;
         response(&rx, 2, until)
     })();
-    drop(out);
+    drop(outbound);
     stop(&mut child);
     outcome
 }

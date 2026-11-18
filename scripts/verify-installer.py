@@ -5,6 +5,7 @@ import argparse
 import configparser
 from contextlib import closing
 import hashlib
+import json
 import os
 from pathlib import Path
 import sqlite3
@@ -39,6 +40,9 @@ def main() -> None:
         data = base / "保留的 项目数据"
         data.mkdir()
         database = data / "workspace.sqlite3"
+        clean_env = {k:v for k,v in os.environ.items() if k not in ("SHIPFORGE_DATA_DIR","SHIPFORGE_SERVER","SHIPFORGE_TOKEN")}
+        subprocess.run([str(payload/"shipforge.exe"),"--data-dir",str(data),"create","task","existing task"],
+                       env=clean_env, capture_output=True, check=True, timeout=20)
         with closing(sqlite3.connect(database)) as connection:
             connection.execute("CREATE TABLE preserved (content TEXT)")
             connection.execute("INSERT INTO preserved VALUES ('project/task/annotation sentinel')")
@@ -63,6 +67,13 @@ def main() -> None:
             (install / "user-notes.txt").write_text("keep", encoding="utf-8")
         subprocess.run([sys.executable, str(repo / "scripts/verify-release.py"), str(install), "--expected-version", version], check=True)
         assert digest(database) == before
+        # Starting the installed CLI explicitly should use the same custom profile as the shortcut.
+        reply = json.loads(subprocess.check_output([str(install/"shipforge.exe"),"create","task","installed-profile-check"],env=clean_env,encoding="utf-8"))
+        assert reply["ok"]
+        with closing(sqlite3.connect(database)) as connection:
+            assert connection.execute("SELECT content FROM preserved").fetchone()[0] == "project/task/annotation sentinel"
+            assert connection.execute("SELECT title FROM records WHERE kind='task' AND id=?", (reply["data"]["id"],)).fetchone()[0] == "installed-profile-check"
+            assert connection.execute("SELECT count(*) FROM records WHERE kind='task' AND title='existing task'").fetchone()[0] == 1
     print(f"Verified {setup.name}: custom Unicode directory, reinstall, payload hashes and untouched data")
 
 

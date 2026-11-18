@@ -39,6 +39,81 @@ pub(crate) const READ_OPS: &[&str] = &[
 ];
 const LEASE_MS: i64 = 120_000;
 
+pub(crate) fn extend_schema(schema: &mut Value) {
+    let props = schema["properties"]
+        .as_object_mut()
+        .expect("schema properties");
+    for field in [
+        "machine_id",
+        "tool_id",
+        "call_id",
+        "handler_id",
+        "task_id",
+        "chat_id",
+        "external_id",
+        "source_version",
+        "lease",
+    ] {
+        props.insert(
+            field.into(),
+            json!({"type":"string","minLength":1,"maxLength":4096}),
+        );
+    }
+    props.insert(
+        "machine_key".into(),
+        json!({"type":"string","minLength":32,"maxLength":256,"writeOnly":true}),
+    );
+    props.insert("handler_kind".into(), json!({"enum":["agent","crew"]}));
+    props.insert(
+        "capacity".into(),
+        json!({"type":"integer","minimum":1,"maximum":64}),
+    );
+    props.insert(
+        "runtimes".into(),
+        json!({"type":"array","items":{"type":"string"},"maxItems":128}),
+    );
+    let rules = schema["allOf"].as_array_mut().expect("schema rules");
+    for (ops, required) in [
+        (
+            &[
+                "agent.resolve",
+                "catalog.install",
+                "machine.enable",
+                "machine.disable",
+                "run.cancel",
+                "run.retry",
+            ][..],
+            &["id"][..],
+        ),
+        (&["tool.authorize"], &["id", "tool_id"]),
+        (
+            &["machine.register"],
+            &["machine_id", "machine_key", "title"],
+        ),
+        (
+            &["machine.heartbeat", "run.claim"],
+            &["machine_id", "machine_key"],
+        ),
+        (
+            &["run.heartbeat", "run.report", "run.tool"],
+            &["machine_id", "machine_key", "id", "lease"],
+        ),
+        (&["run.tool"], &["tool_id", "call_id"]),
+        (&["run.report"], &["status"]),
+        (&["run.reply"], &["id", "text"]),
+        (&["run.enqueue"], &["handler_id"]),
+        (&["automation.fire"], &["id", "event_id"]),
+        (
+            &["connector.ingest"],
+            &["id", "external_id", "event_id", "source_version", "title"],
+        ),
+        (&["connector.export"], &["id", "task_id"]),
+    ] {
+        rules.push(json!({"if":{"properties":{"op":{"enum":ops}}},"then":{"required":required}}));
+    }
+    rules.push(json!({"if":{"properties":{"op":{"const":"run.report"}}},"then":{"properties":{"status":{"enum":["done","failed","cancelled","waiting"]},"artifacts":{"type":"array","maxItems":100}}}}));
+}
+
 fn now() -> i64 {
     Utc::now().timestamp_millis()
 }
@@ -536,6 +611,9 @@ fn cancel(c: &Context<'_>, r: &Record) -> Result<Record> {
             cancel(c, &child)?;
         }
     }
+    if updated.fields["status"] == "cancelled" {
+        on_terminal(c, &updated)?;
+    }
     Ok(updated)
 }
 fn retry(c: &Context<'_>, q: &Value) -> Result<Value> {
@@ -629,19 +707,19 @@ fn disable(c: &Context<'_>, q: &Value) -> Result<Value> {
     }
     let mut f = r.fields.clone();
     f["disabled"] = json!(true);
-    for run in c
-        .records("run")?
-        .into_iter()
-        .filter(|x| x.fields["machine_id"] == r.id && active(x))
-    {
+    for run in c.records("run")?.into_iter().filter(|x| {
+        x.fields["machine_id"] == r.id
+            && matches!(x.fields["status"].as_str(), Some("running" | "cancelling"))
+    }) {
         let mut data = run.fields.clone();
         data["status"] = json!("interrupted");
         data["result"] = json!("机器已停用，重新执行前请核实先前的运行。");
         data["finished_at"] = json!(now());
-        c.update(&run, &run.title, data)?;
+        let done = c.update(&run, &run.title, data)?;
+        on_terminal(c, &done)?;
     }
     c.db.execute(
-        "DELETE FROM sf_run_leases WHERE space=? AND machine=?",
+        "UPDATE sf_run_leases SET expires=0 WHERE space=? AND machine=? AND response_hash IS NULL",
         params![c.space, r.id],
     )
     .map_err(db_error)?;
@@ -889,7 +967,15 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
         outcome
     });
     f["result"] = json!(text);
-    f["artifacts"] = q["artifacts"].clone();
+    let mut summary = q["artifacts"].clone();
+    if let Some(items) = summary.as_array_mut() {
+        for entry in items {
+            if let Some(obj) = entry.as_object_mut() {
+                obj.remove("content_base64");
+            }
+        }
+    }
+    f["artifacts"] = summary;
     if let Some(ds) = q["delegates"].as_array().filter(|v| !v.is_empty())
         && f["status"] == "done"
     {
@@ -914,6 +1000,7 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
         f["finished_at"] = json!(at);
     }
     let updated = c.update(&run, &run.title, f)?;
+    record_artifacts(c, &updated, &q["artifacts"])?;
     c.db.execute(
         "UPDATE sf_run_leases SET response_hash=?,expires=? WHERE space=? AND run=?",
         params![body_digest, at, c.space, run.id],
@@ -924,17 +1011,24 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
     }
     encoded(updated)
 }
-fn on_terminal(c: &Context<'_>, r: &Record) -> Result<()> {
-    if let Some(artifacts) = r.fields["artifacts"].as_array() {
+fn record_artifacts(c: &Context<'_>, r: &Record, entries: &Value) -> Result<()> {
+    if let Some(artifacts) = entries.as_array() {
         for entry in artifacts {
             let title = entry["name"]
                 .as_str()
                 .or(entry["path"].as_str())
                 .or(entry.as_str())
                 .unwrap_or("执行产物");
-            c.create("artifact",None,title,json!({"run":r.id,"task":r.fields["task"],"chat":r.fields["chat"],"machine":r.fields["machine_id"],"path":entry["location"].as_str().or(entry["path"].as_str()).or(entry.as_str()),"bytes":entry["bytes"],"creator":c.actor}))?;
+            let fields = json!({"run":r.id,"run_id":r.id,"task":r.fields["task_id"],"task_id":r.fields["task_id"],"chat":r.fields["chat_id"],"chat_id":r.fields["chat_id"],"machine":r.fields["machine_id"],"path":entry["location"].as_str().or(entry["path"].as_str()).or(entry.as_str()),"bytes":entry["bytes"],"creator":c.actor});
+            let artifact = c.create("artifact", None, title, fields)?;
+            if entry["content_base64"].is_string() {
+                crate::attachments::append(c, &artifact, entry)?;
+            }
         }
     }
+    Ok(())
+}
+fn on_terminal(c: &Context<'_>, r: &Record) -> Result<()> {
     if let Some(chat) = r.fields["chat"].as_str() {
         let text = r.fields["result"]
             .as_str()

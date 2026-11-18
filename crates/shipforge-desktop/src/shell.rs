@@ -108,13 +108,16 @@ impl Workbench {
                 .when(active, |b| b.bg(rgb(0xe8e8f1)))
         };
         col()
-            .w(px(60.))
+            .w(px(54.))
             .h_full()
             .flex_shrink_0()
             .items_center()
             .py(px(13.))
             .gap(px(10.))
-            .bg(rgb(0xf8f8fb))
+            .bg(white())
+            .border_1()
+            .border_color(rgb(LINE))
+            .rounded(px(8.))
             .child(
                 self.button("workspace-home", "空间任务", UiAction::Go(Page::Tasks), cx)
                     .size(px(36.))
@@ -179,7 +182,17 @@ impl Workbench {
         .rounded(px(6.))
         .justify_start()
         .gap(px(9.))
-        .px(px(9.))
+        .pl(px(
+            if matches!(
+                page,
+                Page::Iterations | Page::Projects | Page::Triage | Page::Views
+            ) {
+                31.
+            } else {
+                10.
+            },
+        ))
+        .pr(px(9.))
         .when(active, |b| {
             b.bg(rgb(SELECTED)).font_weight(FontWeight::SEMIBOLD)
         })
@@ -304,8 +317,9 @@ impl Workbench {
             .h_full()
             .flex_shrink_0()
             .overflow_hidden()
-            .bg(rgb(0xfafbfd))
-            .border_r_1()
+            .bg(white())
+            .border_1()
+            .rounded(px(8.))
             .border_color(rgb(LINE))
             .child(
                 row()
@@ -525,6 +539,7 @@ impl Workbench {
                     }
                 }
             }
+            if e.spec.key=="path"{let save=match &mode{Mode::Download(_,file)=>Some(file["filename"].as_str().unwrap_or("attachment").to_owned()),Mode::Export=>Some("shipforge-workspace.json".to_owned()),_=>None};field=field.child(outlined(self.button(format!("browse-{i}"),"浏览文件",UiAction::Browse{index:i,save},cx)).child("浏览…"));}
             body = body.child(field);
         }
         if matches!(mode, Mode::Search) {
@@ -681,6 +696,10 @@ impl Render for Workbench {
             )
             .clamp(0., 1.);
         let mut workspace = div()
+            .border_1()
+            .border_color(rgb(LINE))
+            .rounded(px(8.))
+            .bg(white())
             .relative()
             .h_full()
             .flex_1()
@@ -712,6 +731,14 @@ impl Render for Workbench {
                         .w_full()
                         .flex_1()
                         .min_h_0()
+                        .items_start()
+                        .justify_start()
+                        .pt(px(2.))
+                        .pb(px(8.))
+                        .pl(px(8.))
+                        .pr(px(8.))
+                        .gap(px(6.))
+                        .bg(rgb(0xf0f0f6))
                         .child(rail)
                         .child(side)
                         .child(workspace),
