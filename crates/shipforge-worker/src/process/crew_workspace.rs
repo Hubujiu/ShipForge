@@ -1,6 +1,6 @@
 use super::*;
 
-fn checked_dir(dir: &Path) -> Result<PathBuf> {
+pub(super) fn checked_dir(dir: &Path) -> Result<PathBuf> {
     let meta = fs::symlink_metadata(dir).map_err(|e| e.to_string())?;
     #[cfg(windows)]
     {
@@ -20,6 +20,7 @@ pub(super) fn open(
     run: &Value,
     state: &Path,
     source: Option<&Path>,
+    repositories: &Value,
     pulse: &mut impl FnMut() -> Result<bool>,
     timeout: Duration,
 ) -> Result<WorkingDir> {
@@ -60,18 +61,24 @@ pub(super) fn open(
     if source.is_some_and(|p| root.starts_with(p)) {
         return Err("keep machine configuration outside the bound repository".into());
     }
-    let key = crate::config::hex_digest(
-        json!([
-            cfg.space,
-            cfg.machine_id,
-            scope["crew"],
-            scope["task"],
-            token,
-            source
-        ])
-        .to_string()
-        .as_bytes(),
-    );
+    let mut namespace = json!([
+        cfg.space,
+        cfg.machine_id,
+        scope["crew"],
+        scope["task"],
+        token,
+        source
+    ]);
+    if repositories
+        .as_array()
+        .is_some_and(|items| !items.is_empty())
+    {
+        namespace
+            .as_array_mut()
+            .unwrap()
+            .push(super::repositories::fingerprint(repositories));
+    }
+    let key = crate::config::hex_digest(namespace.to_string().as_bytes());
     let bucket = root.join(key);
     fs::create_dir_all(&bucket).map_err(|e| e.to_string())?;
     let bucket = checked_dir(&bucket)?;
@@ -104,6 +111,11 @@ pub(super) fn open(
             let path = bucket.join(&id);
             if let Some(source) = source {
                 git_at(source, &["worktree", "add", "--detach"], &path)?;
+            } else if repositories
+                .as_array()
+                .is_some_and(|items| !items.is_empty())
+            {
+                super::repositories::checkout(&state, &path, repositories, pulse, until)?;
             } else {
                 fs::create_dir(&path).map_err(|e| e.to_string())?;
             }
@@ -123,5 +135,6 @@ pub(super) fn open(
         path,
         _lock: Some(lock),
         isolated: true,
+        local_repository: source.is_some(),
     })
 }

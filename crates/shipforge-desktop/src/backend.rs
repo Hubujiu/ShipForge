@@ -22,6 +22,7 @@ pub enum Request {
         stop: bool,
     },
     Read {
+        language: &'static str,
         people: (&'static str, String),
         handler: Option<(String, String)>,
         chat: Option<String>,
@@ -118,6 +119,7 @@ impl Backend {
                             let _ = events.send(Event::Reply { ticket, result });
                         }
                         Request::Read {
+                            language,
                             people,
                             handler,
                             chat,
@@ -143,6 +145,8 @@ impl Backend {
                                     let mut q=json!({"op":"assistant.history","space":space});
                                     if chat.is_some(){q["room_scope"]=json!(space);}
                                     q
+                                } else if kind=="assistant_catalog" {
+                                    json!({"op":"task_assistant.catalog","space":space,"language":language})
                                 } else if kind=="status_library" {
                                     json!({"op":"status.library","space":space})
                                 } else if kind=="organization_settings" {
@@ -183,6 +187,8 @@ impl Backend {
                                         }).collect::<Vec<_>>())
                                     } else if kind=="assistant_home" {
                                         json!([{"kind":kind,"id":"personal","space":space,"title":value["title"],"fields":value}])
+                                    } else if kind=="assistant_catalog" {
+                                        json!(value.as_array().into_iter().flatten().map(|v|json!({"kind":kind,"id":format!("{}/{}",v["space"].as_str().unwrap_or(""),v["provider"].as_str().unwrap_or("")),"space":v["space"],"title":v["title"],"rev":v["rev"],"fields":v})).collect::<Vec<_>>())
                                     } else if kind=="organization_settings" {
                                         json!([{"kind":kind,"id":value["id"],"space":space,"title":value["name"],"rev":value["rev"],"fields":value}])
                                     }else if kind=="agent_settings" && let Some((_,id))=&handler{

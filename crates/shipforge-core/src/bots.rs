@@ -5,11 +5,15 @@ use uuid::Uuid;
 mod deliveries;
 mod lark;
 mod turns;
+mod wecom;
 pub(crate) use lark::run_files;
 
 pub(crate) const READS: &[&str] = &["bot.bindings"];
 pub(crate) const WRITES: &[&str] = &[
     "bot.attach",
+    "bot.wecom.reserve",
+    "bot.wecom.release",
+    "bot.wecom.event",
     "bot.policy",
     "bot.detach",
     "bot.lark.policy",
@@ -38,6 +42,7 @@ pub(crate) fn init(db: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS external_bot_deliveries (id TEXT PRIMARY KEY,turn TEXT NOT NULL,part INTEGER NOT NULL,
             payload TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',lease TEXT,expires INTEGER,available INTEGER NOT NULL DEFAULT 0,
             receipt TEXT, UNIQUE(turn,part));").map_err(storage)?;
+    wecom::init(db)?;
     lark::init(db)
 }
 pub(crate) fn external_room(c: &Context<'_>, id: &str) -> Result<bool> {
@@ -89,7 +94,7 @@ impl Binding {
     fn permits(&self, scene: &str) -> bool {
         match scene {
             "direct" => self.dm,
-            "group" => self.provider == "qq" && self.groups,
+            "group" => matches!(self.provider.as_str(), "qq" | "wecom") && self.groups,
             _ => false,
         }
     }
@@ -124,7 +129,7 @@ fn attach(c: &Context<'_>, q: &Value) -> Result<Value> {
     let id = short(q, "id")?;
     identifier(id)?;
     let provider = required(q, "provider")?;
-    if !matches!(provider, "wechat" | "qq" | "feishu" | "lark") {
+    if !matches!(provider, "wechat" | "qq" | "feishu" | "lark" | "wecom") {
         return Err(invalid("unknown external bot provider"));
     }
     let account = short(q, "account")?;
@@ -157,7 +162,10 @@ fn attach(c: &Context<'_>, q: &Value) -> Result<Value> {
         }
         return Err(conflict("binding identifier is already in use"));
     }
-    if lark::provider(provider) && c.db.query_row("SELECT EXISTS(SELECT 1 FROM external_bots WHERE (space=? AND agent=? OR account=?) AND provider=? AND state='connected')",params![c.space,agent,account,provider],|r|r.get::<_,bool>(0)).map_err(storage)?{return Err(conflict("this Agent or application is already connected to this cloud"));}
+    if provider == "wecom" {
+        wecom::consume(c, q)?;
+    }
+    if (lark::provider(provider)||provider=="wecom") && c.db.query_row("SELECT EXISTS(SELECT 1 FROM external_bots WHERE (space=? AND agent=? OR account=?) AND provider=? AND state='connected')",params![c.space,agent,account,provider],|r|r.get::<_,bool>(0)).map_err(storage)?{return Err(conflict("this Agent or application is already connected to this cloud"));}
     if let Some(old)=c.db.query_row(&format!("SELECT {COLS} FROM external_bots WHERE provider=? AND account=? AND state='connected'"),params![provider,account],row).optional().map_err(storage)?{
         if old.space!=c.space||old.owner!=c.actor||provider=="wechat"&&old.agent!=agent{return Err(conflict("disconnect the existing account binding before rebinding"));}
         deactivate(c,&old,"replaced")?;
@@ -194,10 +202,11 @@ fn bindings(c: &Context<'_>, q: &Value) -> Result<Value> {
     }
     let mut data = json!({"workspace":crate::saved_views::workspace(c)?,"actor":c.actor,"space":c.space,"items":items});
     if let Some(cloud) = q.get("available_for").and_then(Value::as_str) {
-        if !lark::provider(cloud) {
-            return Err(invalid("choose feishu or lark"));
+        if !lark::provider(cloud) && cloud != "wecom" {
+            return Err(invalid("choose feishu, lark or wecom"));
         }
         let mut available = Vec::new();
+        let mut occupied = Vec::new();
         if c.require_edit().is_ok() {
             let mut used=c.db.prepare("SELECT agent FROM external_bots WHERE space=? AND provider=? AND state='connected'").map_err(storage)?;
             let used = used
@@ -206,20 +215,35 @@ fn bindings(c: &Context<'_>, q: &Value) -> Result<Value> {
                 .collect::<rusqlite::Result<std::collections::HashSet<_>>>()
                 .map_err(storage)?;
             for agent in c.records("agent")? {
-                if !used.contains(&agent.id)
-                    && crate::agents::usable(c, "agent", &agent.id, None).is_ok()
-                {
+                if crate::agents::usable(c, "agent", &agent.id, None).is_err() {
+                    continue;
+                }
+                if !used.contains(&agent.id) {
                     available.push(json!({"id":agent.id,"title":agent.title}));
+                } else if cloud == "wecom"
+                    && !data["items"].as_array().into_iter().flatten().any(|b| {
+                        b["provider"] == cloud
+                            && b["agent"] == agent.id
+                            && b["state"] == "connected"
+                    })
+                {
+                    occupied.push(json!({"id":agent.id,"title":agent.title}));
                 }
             }
         }
         data["available_agents"] = json!(available);
+        if cloud == "wecom" {
+            data["occupied_agents"] = json!(occupied);
+        }
     }
     Ok(data)
 }
 pub(crate) fn execute(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
     if op == "bot.bindings" {
         return bindings(c, q);
+    }
+    if op == "bot.wecom.reserve" || op == "bot.wecom.release" {
+        return wecom::reserve(c, q, op == "bot.wecom.release");
     }
     if op == "bot.attach" {
         return attach(c, q);
@@ -266,10 +290,15 @@ pub(crate) fn execute(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
         deactivate(c, &b, "expired")?;
         return Ok(find(c, q)?.summary());
     }
-    if matches!(op, "bot.receive" | "bot.claim" | "bot.lark.event") {
+    if matches!(
+        op,
+        "bot.receive" | "bot.claim" | "bot.lark.event" | "bot.wecom.event"
+    ) {
         crate::agents::usable(c, "agent", &b.agent, None)?;
     }
     match op {
+        "bot.wecom.event" => wecom::event(c, &b, q),
+        "bot.receive" if b.provider == "wecom" => Err(invalid("use scoped WeCom event ingestion")),
         "bot.lark.event" => lark::event(c, &b, q),
         "bot.receive" if lark::provider(&b.provider) => {
             Err(invalid("use scoped Feishu/Lark event ingestion"))
@@ -282,6 +311,7 @@ pub(crate) fn execute(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
 }
 pub(crate) fn schema(s: &mut Value) {
     lark::schema(s);
+    wecom::schema(s);
     let rules = s["allOf"].as_array_mut().unwrap();
     for (op, req) in [
         (
@@ -310,6 +340,6 @@ pub(crate) fn schema(s: &mut Value) {
         ),
         ("bot.retry", vec!["id", "delivery", "decision"]),
     ] {
-        rules.push(json!({"if":{"properties":{"op":{"const":op}}},"then":{"required":req,"properties":{"dm":{"type":"boolean"},"groups":{"type":"boolean"},"provider":{"enum":["qq","wechat","feishu","lark"]},"device_key":{"type":"string","minLength":32,"maxLength":256},"scene":{"enum":["direct","group"]},"outcome":{"enum":["sent","retry","uncertain","failed"]},"decision":{"enum":["resend","confirm","discard"]}}}}));
+        rules.push(json!({"if":{"properties":{"op":{"const":op}}},"then":{"required":req,"properties":{"dm":{"type":"boolean"},"groups":{"type":"boolean"},"provider":{"enum":["qq","wechat","feishu","lark","wecom"]},"device_key":{"type":"string","minLength":32,"maxLength":256},"scene":{"enum":["direct","group"]},"outcome":{"enum":["sent","retry","uncertain","failed"]},"decision":{"enum":["resend","confirm","discard"]}}}}));
     }
 }

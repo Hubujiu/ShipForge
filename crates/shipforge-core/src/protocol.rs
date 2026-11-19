@@ -36,6 +36,7 @@ pub(crate) const KINDS: &[&str] = &[
     "note",
 ];
 const WRITES: &[&str] = &[
+    "git.configure",
     "inbox.configure",
     "inbox.bulk",
     "inbox.open",
@@ -128,6 +129,7 @@ const WRITES: &[&str] = &[
     "attachment.upload",
 ];
 const READS: &[&str] = &[
+    "git.settings",
     "inbox.settings",
     "inbox.query",
     "inbox.feed",
@@ -208,6 +210,8 @@ pub(crate) fn operation_names() -> Vec<&'static str> {
         .chain(crate::bots::READS)
         .chain(crate::vcs::forge::READS)
         .chain(crate::vcs::forge::WRITES)
+        .chain(crate::task_assistants::READS)
+        .chain(crate::task_assistants::WRITES)
         .chain(crate::bots::WRITES)
         .chain(crate::conversation_tools::READS)
         .chain(crate::conversation_tools::WRITES)
@@ -220,6 +224,7 @@ pub fn is_read_only(op: &str) -> bool {
         || worker::READ_OPS.contains(&op)
         || crate::bots::READS.contains(&op)
         || crate::vcs::forge::READS.contains(&op)
+        || crate::task_assistants::READS.contains(&op)
         || crate::conversation_tools::READS.contains(&op)
 }
 
@@ -250,6 +255,7 @@ pub fn schema() -> Value {
     });
     schema["properties"]["search_scope"] =
         json!({"enum":["space","organization"],"default":"space"});
+    crate::git_workspace::schema(&mut schema);
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"directory.people"}}},"then":{"properties":{"kind":{"enum":["agent","crew","member","machine"]}}}}));
     schema["properties"]["sidebar_visible"] = json!({"type":"boolean"});
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"organization.ownership"}}},"then":{"required":["expected_rev","action","target"],"properties":{"action":{"enum":["grant","revoke","transfer"]},"target":{"type":"string","minLength":1}}}}));
@@ -275,6 +281,7 @@ pub fn schema() -> Value {
     crate::iterations::extend_schema(&mut schema);
     crate::chat::extend_schema(&mut schema);
     crate::im::extend_schema(&mut schema);
+    crate::task_assistants::extend_schema(&mut schema);
     crate::preferences::extend_schema(&mut schema);
     crate::spaces::schema(&mut schema);
     schema["allOf"].as_array_mut().unwrap().extend([

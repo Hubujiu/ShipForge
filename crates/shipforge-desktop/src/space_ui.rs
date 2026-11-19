@@ -238,8 +238,10 @@ impl Workbench {
             let id = &space.id;
             let mut line = row()
                 .min_h(px(56.))
+                .flex_wrap()
                 .gap(px(7.))
                 .px(px(10.))
+                .py(px(6.))
                 .border_1()
                 .border_color(rgb(LINE))
                 .rounded(px(6.))
@@ -247,7 +249,7 @@ impl Workbench {
                 .child(icon("boxes", 16.))
                 .child(
                     col()
-                        .min_w_0()
+                        .min_w(px(110.))
                         .flex_1()
                         .child(headline(space.title.clone(), 14.))
                         .child(text(
@@ -264,6 +266,9 @@ impl Workbench {
                 outlined(self.button(format!("space-{name}-{id}"), label, do_it, cx))
                     .child(locale::label(label))
             };
+            if flag(space, "joined") {
+                line = line.child(self.git_entry(super::git_workspace_ui::Target::space(id), cx));
+            }
             if flag(space, "can_manage") && !archived {
                 line = line.child(action(
                     "settings",

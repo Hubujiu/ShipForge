@@ -121,6 +121,10 @@ GitHub 连接器的字段为 `{"provider":"github","repository":"OWNER/REPO","en
 
 After binding an official account to an Agent, run `shipforge-worker bot-sync --space default --binding <id> --watch` from the same device profile. An optional `--directory` selects the data directory, and omitting `--watch` processes a single cycle. The desktop starts the watcher on successful binding. Each bound ID has one watcher per profile. The machine supervisor that executes Agent runs can operate independently. [Account setup, delivery states and provider limits](../../docs/personal-bots.md)
 
+### 企业微信智能体
+
+在配置机器人的 Windows 用户下运行 `shipforge-worker bot-sync --directory <设备配置目录> --space default --binding <绑定ID> --watch`。此进程维持企业微信订阅并将结果送回原私聊或群，Agent 运行则由能领取该 Runtime 的工作机执行。收到网关授权拒绝或连接被替代时接收程序退出，在 Windows 的「企业微信智能体」中检查状态后可以重新绑定。[配置、附件、回执与恢复方法](../../docs/wecom-agent.md)
+
 ### 飞书与 Lark 智能体
 
 在绑定设备使用 `shipforge-worker bot-sync --space default --binding <绑定ID> --watch` 收取对应云端长连接消息并回传 Agent 结果。消息里的可用文件在该次私有运行的 `fields.chat_context.messages` 中给出 `input_files`，每个条目的 `local_path` 指向运行期间的临时文件。外部 Runtime 可在处理请求时读它。运行结束即清理该目录。[授权、运行和消息格式](../../docs/lark-agent.md)

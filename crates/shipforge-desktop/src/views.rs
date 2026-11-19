@@ -47,6 +47,9 @@ impl Render for DraggedTask {
 impl Workbench {
     pub fn page_body(&mut self, w: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = self.loc.page;
+        if p == Page::Connectors && self.loc.section == "task-assistants" {
+            return self.task_assistant_panel(cx).into_any_element();
+        }
         if p == Page::Members && self.loc.section == "people" {
             return self.people_panel(cx).into_any_element();
         }
@@ -366,6 +369,17 @@ impl Workbench {
                 .into_any_element(),
             Page::Connectors => root
                 .child(self.repository_toolbar(None, cx))
+                .child(
+                    row().px(px(14.)).child(
+                        outlined(self.button(
+                            "task-assistant-browser",
+                            "空间任务助手",
+                            UiAction::TaskAssist(crate::app::task_assistant_ui::Action::Browse),
+                            cx,
+                        ))
+                        .child(crate::locale::label("空间任务助手")),
+                    ),
+                )
                 .child(self.bot_toolbar(None, cx))
                 .child(
                     row().px(px(14.)).py(px(8.)).child(
@@ -1902,6 +1916,17 @@ impl Workbench {
         }
         match r.kind.as_str() {
             "task" => {
+                if let Some(label) = r
+                    .fields
+                    .get("created_by_assistant")
+                    .and_then(|v| v["name"].as_str())
+                {
+                    body = body.child(text(
+                        format!("{} · {label}", crate::locale::label("任务助手")),
+                        13.,
+                        MUTED,
+                    ));
+                }
                 actions = actions
                     .child(self.repository_toolbar(Some(&r.id), cx))
                     .child(
@@ -2249,6 +2274,10 @@ impl Workbench {
                         ))
                         .child(crate::locale::label("模型与运行参数")),
                     );
+                    actions = actions.child(self.git_entry(
+                        crate::app::git_workspace_ui::Target::agent(&r.space, &r.id),
+                        cx,
+                    ));
                 }
                 actions = actions.child(
                     outlined(self.button(

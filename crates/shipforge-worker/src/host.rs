@@ -141,6 +141,7 @@ impl Host {
         let mut authorization = Client::from_env()?;
         let progress = ProgressFile::new(&self.dir)?;
         let mut context = claim["run"].clone();
+        context["git"] = claim["git"].clone();
         context["fields"]["progress_file"] = json!(progress.0);
         let mut sent_progress = None;
         let heartbeat = || {

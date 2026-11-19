@@ -23,6 +23,9 @@ pub(super) fn scoped(connector: &Record, route: &Value) -> bool {
 
 pub(crate) fn changed(c: &Context<'_>, before: Option<&Record>, record: &Record) -> Result<()> {
     if record.kind == "connector" {
+        if let Some(old) = before {
+            crate::task_assistants::connector_changed(c, old, record)?;
+        }
         if before.is_some_and(|old| {
             old.fields["slack_assignment"] == true
                 && (record.fields["slack_assignment"] != true
@@ -234,8 +237,14 @@ fn claim(c: &Context<'_>, connector: &Record) -> Result<Value> {
             return Ok(Value::Null);
         };
         let address: Value = serde_json::from_str(&route).map_err(storage)?;
-        let active = super::thread(c, id, &route)?.is_some_and(|(target, on)| on && target == task);
-        let visible = if kind == "card" {
+        let active = if kind == "task_assistant" {
+            crate::task_assistants::deliverable(c, &source, &task, &route)?
+        } else {
+            super::thread(c, id, &route)?.is_some_and(|(target, on)| on && target == task)
+        };
+        let visible = if kind == "task_assistant" {
+            active
+        } else if kind == "card" {
             connector.fields["slack_assignment"] == true
         } else if let Some(record) = c.find(&kind, &source)? {
             record.fields["visibility"] != "private"

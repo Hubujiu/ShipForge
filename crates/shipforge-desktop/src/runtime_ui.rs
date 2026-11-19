@@ -117,10 +117,10 @@ impl Workbench {
             })
         };
         let machine = choice("machine_id").and_then(|id| self.find("machine", id));
-        let mode = if choice("directory_mode") == Some("direct") {
-            "direct"
-        } else {
-            "git"
+        let mode = match choice("directory_mode") {
+            Some("temporary") => return vec![],
+            Some("direct") => "direct",
+            _ => "git",
         };
         machine
             .and_then(|m| m.fields.get("directories"))

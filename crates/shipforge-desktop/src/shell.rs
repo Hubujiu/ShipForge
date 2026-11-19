@@ -698,6 +698,9 @@ impl Workbench {
         if let Mode::Device(dialog) = &mode {
             body = body.child(self.device_content(dialog, cx));
         }
+        if let Mode::GitWorkspace(dialog) = &mode {
+            body = body.child(self.git_content(dialog, cx));
+        }
         if let Mode::Output { content, .. } = &mode {
             body = body.child(text(content.clone(), 13., INK)).child(
                 outlined(self.button(
@@ -885,10 +888,18 @@ impl Workbench {
                 .find(|e| e.spec.key == "mode")
                 .map(|e| e.raw(cx))
                 .unwrap_or_default();
+            let hidden_git_fields = if matches!(mode, Mode::GitWorkspace(_)) {
+                crate::app::git_workspace_ui::hidden_fields(&entries, cx)
+            } else {
+                Vec::new()
+            };
             for (i, e) in entries.into_iter().enumerate().filter(|(_, e)| {
                 if let Mode::Device(dialog) = &mode
                     && !dialog.field_visible(e.spec.key, &proxy_mode)
                 {
+                    return false;
+                }
+                if hidden_git_fields.contains(&e.spec.key) {
                     return false;
                 }
                 if matches!(mode, Mode::DeactivateSpace { .. })

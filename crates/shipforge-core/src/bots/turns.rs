@@ -20,7 +20,8 @@ pub(super) fn receive(c: &Context<'_>, b: &Binding, q: &Value) -> Result<Value> 
     if body.is_empty() || body.len() > 262144 {
         return Err(invalid("external message text is empty or too long"));
     }
-    let fingerprint = if lark::provider(&b.provider) {
+    let media = lark::provider(&b.provider) || b.provider == "wecom";
+    let fingerprint = if media {
         json!([sender, body, q["files"]])
     } else {
         json!([sender, body])
@@ -49,7 +50,7 @@ pub(super) fn receive(c: &Context<'_>, b: &Binding, q: &Value) -> Result<Value> 
         }
         return Ok(json!({"turn":turn,"chat":chat,"message":message,"run":run,"duplicate":true}));
     }
-    let new_prompt = if lark::provider(&b.provider) {
+    let new_prompt = if media {
         body.strip_prefix("/new")
             .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
             .map(str::trim)
@@ -76,6 +77,8 @@ pub(super) fn receive(c: &Context<'_>, b: &Binding, q: &Value) -> Result<Value> 
                     "飞书"
                 } else if b.provider == "lark" {
                     "Lark"
+                } else if b.provider == "wecom" {
+                    "企业微信"
                 } else if b.provider == "wechat" {
                     "微信"
                 } else if scene == "group" {
@@ -105,9 +108,7 @@ pub(super) fn receive(c: &Context<'_>, b: &Binding, q: &Value) -> Result<Value> 
         fields["external_author"] = json!(sender);
         fields["external_scene"] = json!(scene);
         let mut current = c.update(&msg, &msg.title, fields)?;
-        if lark::provider(&b.provider)
-            && let Some(files) = q["files"].as_array()
-        {
+        if media && let Some(files) = q["files"].as_array() {
             if files.len() > 6 {
                 return Err(invalid("up to six inbound files are supported"));
             }

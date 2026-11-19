@@ -9,6 +9,9 @@ use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
 pub(crate) use variants::{effective, resource};
+pub(crate) fn git_setup_parent(c: &Context<'_>, agent: &Record) -> Result<Record> {
+    variants::source(c, agent).map(|(_, record)| record)
+}
 pub(crate) fn init(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS agent_grants(space TEXT,agent TEXT,actor TEXT,permission TEXT NOT NULL,PRIMARY KEY(space,agent,actor));
         CREATE TABLE IF NOT EXISTS crew_workspaces(space TEXT NOT NULL, crew TEXT NOT NULL, task TEXT NOT NULL, audience TEXT NOT NULL, token TEXT NOT NULL UNIQUE, PRIMARY KEY(space,crew,task,audience));
@@ -139,6 +142,9 @@ pub(crate) fn run_source_visible(c: &Context<'_>, run: &Record) -> Result<bool> 
     Ok(true)
 }
 pub(crate) fn requester_can_continue(c: &Context<'_>, run: &Record) -> Result<bool> {
+    if run.fields["handler_kind"] == crate::task_assistants::KIND {
+        return crate::task_assistants::current(c, run);
+    }
     let requester = Context {
         actor: required(&run.fields, "requested_by")?,
         ..*c

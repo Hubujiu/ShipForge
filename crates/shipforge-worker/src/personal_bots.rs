@@ -92,7 +92,9 @@ pub(super) fn run(
                     || e.contains("disconnected or replaced")
                     || e.contains("WeChat session expired")
                     || e.contains("QQ credentials rejected")
-                    || e.contains("Lark application revoked") =>
+                    || e.contains("Lark application revoked")
+                    || e.contains("WeCom authorization rejected")
+                    || e.contains("WeCom session replaced") =>
             {
                 return Err(e);
             }

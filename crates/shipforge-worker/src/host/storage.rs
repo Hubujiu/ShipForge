@@ -185,7 +185,11 @@ fn git(dir: &Path, args: &[&str], paths: &[&Path]) -> Result<String> {
     }
     Ok(String::from_utf8_lossy(&out.stdout).trim().into())
 }
-fn source(cfg: &Config, path: &Path) -> std::result::Result<Option<PathBuf>, &'static str> {
+fn source(
+    cfg: &Config,
+    state: &Path,
+    path: &Path,
+) -> std::result::Result<Option<PathBuf>, &'static str> {
     let bound: Vec<_> = cfg
         .profile_paths()
         .map(|(_, p)| p.canonicalize().map_err(|_| "unverified"))
@@ -237,6 +241,14 @@ fn source(cfg: &Config, path: &Path) -> std::result::Result<Option<PathBuf>, &'s
     if backlink != gitfile.canonicalize().ok() {
         return Err("unverified");
     }
+    let cache = state.join("git-cache");
+    if common.parent() == Some(cache.as_path())
+        && verified_dir(&cache).as_deref() == Ok(cache.as_path())
+        && verified_dir(&common).as_deref() == Ok(common.as_path())
+        && managed_cache(&common)
+    {
+        return Ok(Some(common));
+    }
     bound
         .into_iter()
         .find(|p| {
@@ -251,6 +263,23 @@ fn source(cfg: &Config, path: &Path) -> std::result::Result<Option<PathBuf>, &'s
         })
         .map(Some)
         .ok_or("unverified")
+}
+
+fn managed_cache(repo: &Path) -> bool {
+    let Some(key) = repo
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|key| hex(key, 64))
+    else {
+        return false;
+    };
+    git(repo, &["rev-parse", "--is-bare-repository"], &[]).is_ok_and(|value| value == "true")
+        && git(
+            repo,
+            &["config", "--local", "--get", "remote.origin.url"],
+            &[],
+        )
+        .is_ok_and(|remote| crate::config::hex_digest(remote.as_bytes()) == key)
 }
 fn candidates(state: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
@@ -335,7 +364,7 @@ fn inspect(
     {
         Some("pending")
     } else {
-        source(&host.cfg, path).err()
+        source(&host.cfg, &state, path).err()
     };
     Ok(
         json!({"id":key,"category":kind,"bytes":usage.bytes,"files":usage.files,"snapshot":h.finalize().iter().map(|b|format!("{b:02x}")).collect::<String>(),"runs":ids.into_iter().take(128).collect::<Vec<_>>(),"protection":reason}),
@@ -365,7 +394,7 @@ fn scan(host: &Host, history: &BTreeMap<PathBuf, BTreeSet<String>>) -> Result<Va
         json!({"entries":entries,"total_bytes":total.bytes,"other_bytes":total.bytes.saturating_sub(size),"pending_reclaim_bytes":retired.bytes,"omitted":count.saturating_sub(2048)}),
     )
 }
-fn purge_owned(cfg: &Config, trash: &Path, target: &Path) -> Result<()> {
+fn purge_owned(cfg: &Config, state: &Path, trash: &Path, target: &Path) -> Result<()> {
     let root = verified_dir(trash)?;
     let checked = verified_dir(target)?;
     if !target
@@ -382,7 +411,7 @@ fn purge_owned(cfg: &Config, trash: &Path, target: &Path) -> Result<()> {
     if usage.links || usage.nested_repo {
         return Err("quarantined worktree contains protected links or repositories".into());
     }
-    if let Some(repo) = source(cfg, &checked).map_err(str::to_owned)? {
+    if let Some(repo) = source(cfg, state, &checked).map_err(str::to_owned)? {
         git(&repo, &["worktree", "remove", "--force"], &[&checked])?;
     } else {
         fs::remove_dir_all(&checked).map_err(text_error)?;
@@ -412,7 +441,7 @@ fn resume_purge(host: &Host) -> Result<()> {
             continue;
         };
         let target = trash.join(id);
-        if !target.exists() || purge_owned(&host.cfg, &trash, &target).is_ok() {
+        if !target.exists() || purge_owned(&host.cfg, &state, &trash, &target).is_ok() {
             fs::remove_file(receipt).map_err(text_error)?;
         }
     }
@@ -447,7 +476,7 @@ fn clean(
     if checked["snapshot"] != command["expected_snapshot"] || !checked["protection"].is_null() {
         return Err("workspace changed".into());
     }
-    let repo = source(&host.cfg, &path).map_err(str::to_owned)?;
+    let repo = source(&host.cfg, &state, &path).map_err(str::to_owned)?;
     let trash = state.join("storage-trash");
     fs::create_dir_all(&trash).map_err(text_error)?;
     if verified_dir(&trash)? != trash {
@@ -493,7 +522,7 @@ fn clean(
         let _ = fs::remove_file(index);
     }
     drop(bucket_lock);
-    if purge_owned(&host.cfg, &trash, &retired).is_err() {
+    if purge_owned(&host.cfg, &state, &trash, &retired).is_err() {
         return Ok("reclaim_pending");
     }
     let _ = fs::remove_file(receipt);

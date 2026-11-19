@@ -653,6 +653,12 @@ impl Workbench {
                             r.field("external_provider"),
                             r.field("external_author")
                         )
+                    } else if let Some(name) = r
+                        .fields
+                        .get("created_by_assistant")
+                        .and_then(|v| v["name"].as_str())
+                    {
+                        name.to_owned()
                     } else if r.field("authored_by_agent").is_empty() {
                         self.name("member", r.field("creator"))
                     } else {

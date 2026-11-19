@@ -36,6 +36,10 @@ impl Workbench {
         let Some(org) = self.list("organization_settings").first() else {
             return actions;
         };
+        actions = actions.child(self.git_entry(
+            super::git_workspace_ui::Target::organization(&self.loc.space),
+            cx,
+        ));
         if org.fields["can_configure"] == true && self.access_identity["scope"] != "read" {
             actions = actions.child(
                 outlined(self.button(

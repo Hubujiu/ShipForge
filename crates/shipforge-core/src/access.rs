@@ -106,6 +106,9 @@ impl Context<'_> {
                 && r.space == self.org_id()?
                 && self.role().is_ok());
         }
+        if r.kind == crate::task_assistants::KIND {
+            return Ok(r.space == self.space && self.require_admin().is_ok());
+        }
         if r.space != self.space {
             return Ok(false);
         }
@@ -264,6 +267,9 @@ impl Context<'_> {
         }
         if op == "assistant.send" {
             return crate::chat::assistant::replay(self, result);
+        }
+        if crate::task_assistants::WRITES.contains(&op) {
+            return crate::task_assistants::replay(self, op, q);
         }
         if crate::statuses::WRITES.contains(&op) {
             if op == "task_type.workflow.save" {

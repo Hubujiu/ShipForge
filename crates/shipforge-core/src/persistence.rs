@@ -72,6 +72,7 @@ pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
         .map_err(storage)?;
     }
     crate::im::init(&tx)?;
+    crate::task_assistants::init(&tx)?;
     crate::vcs::init(&tx)?;
     crate::vendors::init(&tx)?;
     let c = Context {

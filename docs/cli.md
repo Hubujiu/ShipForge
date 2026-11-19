@@ -135,6 +135,7 @@ $task = (.\shipforge.exe --data-dir $workspace create task '发布前检查' | C
 | `attachment.upload`、`attachment.download` | 上传、读取任务、消息、文档或运行产物中的真实文件。单文件上限 4 MiB，下载核验 SHA-256。文档可按修订版本取文件。 |
 | `export`、`import.preview`、`import` | 导出可见业务对象、预检与事务导入，维护外部标识和引用。先预览导入结果再正式提交。 |
 | `agent.resolve`、`catalog.list`、`catalog.install`、`tool.authorize` | 查看 Agent 有效配置、浏览与安装内置模板/技能、核对工具授权。Agent、小队、技能及工具配置由通用对象操作维护。 |
+| `git.settings`、`git.configure` | 读取组织、空间或 Agent 的 Git 仓库、作者来源与修订号，按该修订号保存所选层设置。Agent 层需要 `id`。`run.enqueue` 可提交 `checkout_branch`。[Git 工作区示例](git-workspaces.md) |
 | `machine.register`、`machine.heartbeat`、`machine.disable`、`machine.enable` | 注册机器、更新实时能力、禁用或重新启用机器。机器凭据保存在机器配置旁的状态目录中。 |
 | `run.enqueue`、`run.claim`、`run.heartbeat`、`run.report`、`run.cancel`、`run.retry`、`run.reply`、`run.tool` | 创建运行、认领/续租、提交结果、请求取消、重试或回复。`run.tool` 使用机器密钥、当前租约、工具 ID 和调用 ID 复核并记录授权。 |
 | `automation.fire`、`automation.tick` | 触发启用的规则，或扫描到期时间计划。用相同事件 ID 重放同一次触发。 |
@@ -254,6 +255,14 @@ Slack 连接器管理员可用 `update` 设置布尔值 `fields.slack_assignment
 ## 对话指令、审阅与文档引用
 
 使用 `chat.slash` 查当前运行环境的命令，`chat.slash.send` 发送。任务快捷指令由 `shortcut.catalog`、`shortcut.save`、`shortcut.organize`、`shortcut.run`、`shortcut.history` 和 `shortcut.delete` 管理。用 `task.review.state` 查看当前待审轮次，`task.review` 发送确认。单独的 `chat.complete` 将会话及绑定任务标为完成。用 `shipforge share-image <分享码或链接> <新文件.png>` 或 `chat.share.image` 保存消息快照。文档的 `document.share`、`document.open`、`document.preview` 和 `document.embeds` 均按当前查看者权限读取。[请求示例、Windows 入口与权限](conversation-commands.md)
+
+## 企业微信智能体
+
+在绑定设备上用 `bot.wecom.connect` 传入 `agent`、`bot_id` 和 `secret`，可选 `dm`、`groups`。`bot.bindings` 设置 `available_for` 为 `wecom` 时返回可绑定的 Agent，以及本空间中本人有权使用、已被其他成员绑定的 Agent 名称与 ID。`bot.policy` 分别开关单聊和群 @。`bot.sync` 收取消息、回传 Agent 文字和文件，`bot.retry` 处理待确认的投递，`bot.disconnect` 解绑。长连接适配器在订阅前用 `bot.wecom.reserve` 占用空闲的机器人和 Agent，验证失败时调用 `bot.wecom.release`，成功后通过 `bot.wecom.event` 提交来源已验证的消息。`device_key` 由绑定设备生成和保存。[Windows 操作、JSON 示例与真实租户验收条件](wecom-agent.md)
+
+## 空间任务助手
+
+用 `task_assistant.catalog` 浏览当前组织内已加入空间的渠道助手。空间管理员用 `task_assistant.settings` 读取配置，用 `task_assistant.bind` 绑定启用的连接器、Runtime 及外部用户映射，用 `task_assistant.configure` 修改运行参数及单一语言的描述、指令覆盖。用 `task_assistant.history` 查看活动，用 `task_assistant.unbind` 解除当前渠道，用 `task_assistant.remove` 移除助手。组织管理员可用 `task_assistant.template` 与 `task_assistant.template.save` 维护中英文模板。每次修改提交读到的 `expected_rev`，首次创建填 0。[渠道能力、管理员配置与群内命令](space-task-assistants.md)
 
 ## 飞书和 Lark 智能体
 

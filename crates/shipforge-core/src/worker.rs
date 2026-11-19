@@ -127,7 +127,10 @@ pub(crate) fn extend_schema(schema: &mut Value) {
     let rules = schema["allOf"].as_array_mut().expect("schema rules");
     rules.push(json!({
         "if":{"required":["kind"],"properties":{"op":{"enum":["create","update"]},"kind":{"const":"agent"}}},
-        "then":{"properties":{"fields":{"properties":{"working_hours":working_hours::schema()}}}}
+        "then":{"properties":{"fields":{"properties":{
+            "working_hours":working_hours::schema(),
+            "directory_mode":{"enum":["isolated","direct","temporary",null]}
+        }}}}
     }));
     for (ops, required) in [
         (
@@ -345,7 +348,7 @@ pub(crate) fn validate(c: &Context<'_>, before: Option<&Record>, item: &Record) 
                 read(c, "machine", id)?;
             }
             if let Some(mode) = fields["directory_mode"].as_str()
-                && !matches!(mode, "direct" | "isolated")
+                && !matches!(mode, "direct" | "isolated" | "temporary")
             {
                 return Err("unknown directory mode".into());
             }
@@ -448,6 +451,9 @@ fn resolved(c: &Context<'_>, id: &str) -> Result<Value> {
 }
 
 pub(crate) fn snapshot(c: &Context<'_>, handler: &str, kind: &str) -> Result<Value> {
+    if kind == crate::task_assistants::KIND {
+        return crate::task_assistants::snapshot(c, handler);
+    }
     let (agent, crew) = if kind == "crew" {
         let crew = read(c, "crew", handler)?;
         (req(&crew.fields, "leader_id")?.to_owned(), Some(crew))
@@ -457,6 +463,7 @@ pub(crate) fn snapshot(c: &Context<'_>, handler: &str, kind: &str) -> Result<Val
         return Err("handler must be agent or crew".into());
     };
     let mut data = resolved(c, &agent)?;
+    data.as_object_mut().unwrap().remove("git_setup");
     data["agent_id"] = json!(agent);
     if let Some(crew) = crew {
         data["crew_members"] = crew.fields["members"].clone();
@@ -600,6 +607,11 @@ pub(crate) fn task_context(c: &Context<'_>, task: &Record) -> Result<Value> {
     )
 }
 fn manual_enqueue(c: &Context<'_>, q: &Value) -> Result<Value> {
+    if q["handler_kind"] == crate::task_assistants::KIND {
+        return Err(crate::forbidden(
+            "the space task assistant runs from its bound external channel",
+        ));
+    }
     let handler = req(q, "handler_id")?;
     let kind = q["handler_kind"].as_str().unwrap_or("agent");
     if kind == "assistant" {
@@ -607,6 +619,7 @@ fn manual_enqueue(c: &Context<'_>, q: &Value) -> Result<Value> {
     }
     let mut fields =
         json!({"instruction":q["instruction"],"task_id":q["task_id"],"chat_id":q["chat_id"]});
+    fields["checkout_branch"] = json!(crate::git_workspace::checkout_branch(q)?);
     fields["scheduled_at"] = scheduling::parse_date(&q["scheduled_at"])?;
     for (key, dest) in [
         ("model", "model_override"),
@@ -986,7 +999,26 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
             continue;
         }
         let mut f = run.fields.clone();
-        let directory = directories::select(c, run, &machine, &runs, &busy)?;
+        let git = crate::git_workspace::execution(c, run)?;
+        let config = &f["config"];
+        let mode = config["directory_mode"].as_str().unwrap_or("isolated");
+        let explicit_profile = config["profile"]
+            .as_str()
+            .is_some_and(|name| !name.is_empty())
+            || config["profiles"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty());
+        let use_remote = mode == "isolated"
+            && !explicit_profile
+            && git["repositories"]
+                .as_array()
+                .is_some_and(|items| !items.is_empty());
+        let directory = if use_remote || mode == "temporary" {
+            f["assigned_directory"] = Value::Null;
+            directories::Choice::Legacy
+        } else {
+            directories::select(c, run, &machine, &runs, &busy)?
+        };
         if let Some(reason) = current_reason(run, &machine, &runs, at)
             .or_else(|| directory.reason())
             .or(machine_full.then_some("machine_capacity"))
@@ -1070,7 +1102,7 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
         }
         c.db.execute("INSERT INTO sf_run_leases(space,run,machine,lease_hash,expires,response_hash) VALUES(?,?,?,?,?,NULL) ON CONFLICT(space,run) DO UPDATE SET machine=excluded.machine,lease_hash=excluded.lease_hash,expires=excluded.expires,response_hash=NULL",
             params![c.space,run.id,machine.id,digest(&lease),at+LEASE_MS]).map_err(db_error)?;
-        return Ok(json!({"run":current,"lease":lease,"expires_at":at+LEASE_MS}));
+        return Ok(json!({"run":current,"lease":lease,"expires_at":at+LEASE_MS,"git":git}));
     }
     Ok(Value::Null)
 }
@@ -1098,6 +1130,12 @@ fn heartbeat(c: &Context<'_>, q: &Value) -> Result<Value> {
     }
     let timed_out = scheduling::has_timed_out(&run.fields, at);
     let mut fields = run.fields.clone();
+    if run.fields["handler_kind"] == crate::task_assistants::KIND
+        && !crate::task_assistants::current(c, &run)?
+    {
+        fields["status"] = json!("cancelling");
+        fields["stop_reason"] = json!("assistant_access_changed");
+    }
     if timed_out {
         fields["status"] = json!("cancelling");
         fields["stop_reason"] = json!("run_timeout");
@@ -1184,7 +1222,9 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
         }
         fingerprint.push(review);
     }
-    if run.fields["chat_conversion"] == true {
+    if run.fields["chat_conversion"] == true
+        || run.fields["handler_kind"] == crate::task_assistants::KIND
+    {
         fingerprint.push(&q["task_draft"]);
     }
     if let Some(progress) = q.get("progress").filter(|v| !v.is_null()) {
@@ -1294,6 +1334,9 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
         f["status"] = json!("waiting_children");
     }
     crate::chat::apply_conversion(c, &run, q, &mut f)?;
+    if run.fields["handler_kind"] == crate::task_assistants::KIND {
+        crate::task_assistants::finish(c, &run, q, &mut f)?;
+    }
     if matches!(f["status"].as_str(), Some("done" | "failed" | "cancelled")) {
         f["finished_at"] = json!(at);
     }

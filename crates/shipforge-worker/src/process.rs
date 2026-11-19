@@ -8,12 +8,15 @@ use std::thread;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
 mod crew_workspace;
+mod git_author;
+mod repositories;
 mod run_skills;
 
 struct WorkingDir {
     path: PathBuf,
     _lock: Option<File>,
     isolated: bool,
+    local_repository: bool,
 }
 fn git_at(source: &Path, args: &[&str], destination: &Path) -> Result<()> {
     let out = Command::new(program_path(Path::new("git"))?)
@@ -50,7 +53,18 @@ fn directory(
         .as_str()
         .or(settings["directory_mode"].as_str())
         .unwrap_or("isolated");
-    let source = if let Some(profile) = chosen {
+    let git_repositories = &run["git"]["repositories"];
+    let explicit_local = chosen.is_some()
+        || assigned["profile"] == "@workspace"
+        || settings["profile"] == "@workspace";
+    let use_remote = mode != "direct"
+        && !explicit_local
+        && git_repositories
+            .as_array()
+            .is_some_and(|items| !items.is_empty());
+    let source = if mode == "temporary" || use_remote {
+        None
+    } else if let Some(profile) = chosen {
         Some(
             cfg.profiles
                 .get(profile)
@@ -74,7 +88,19 @@ fn directory(
     }
     if !run["fields"]["crew_workspace"].is_null() || run["fields"]["isolated_workspace"].is_object()
     {
-        return crew_workspace::open(cfg, run, state, source.as_deref(), pulse, timeout);
+        return crew_workspace::open(
+            cfg,
+            run,
+            state,
+            source.as_deref(),
+            if use_remote {
+                git_repositories
+            } else {
+                &Value::Null
+            },
+            pulse,
+            timeout,
+        );
     }
     if mode == "direct" {
         if !cfg.permits_direct(chosen.unwrap_or("@workspace")) {
@@ -102,19 +128,28 @@ fn directory(
             path,
             _lock: Some(lock),
             isolated: false,
+            local_repository: true,
         });
     }
     let root = state.join("work");
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let path = root.join(format!("run-{}", Uuid::new_v4().simple()));
-    if let Some(source) = source {
-        if path.starts_with(&source) {
+    if let Some(source) = source.as_deref() {
+        if path.starts_with(source) {
             return Err(
                 "keep machine config/state outside the bound repository for isolated worktrees"
                     .into(),
             );
         }
-        git_at(&source, &["worktree", "add", "--detach"], &path)?;
+        git_at(source, &["worktree", "add", "--detach"], &path)?;
+    } else if use_remote {
+        repositories::checkout(
+            state,
+            &path,
+            git_repositories,
+            pulse,
+            Instant::now() + timeout,
+        )?;
     } else {
         fs::create_dir(&path).map_err(|e| e.to_string())?;
     }
@@ -122,6 +157,7 @@ fn directory(
         path,
         _lock: None,
         isolated: true,
+        local_repository: source.is_some(),
     })
 }
 const CAPTURE_BYTES: usize = 96 * 1024;
@@ -337,7 +373,7 @@ pub(crate) fn spawn_command(spec: &Runtime, dir: &Path) -> Result<Child> {
 fn spawn_with_options(
     spec: &Runtime,
     dir: &Path,
-    environment: &std::collections::BTreeMap<String, String>,
+    environment: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
 ) -> Result<Child> {
     let program = program_path(&spec.program)?;
     #[cfg(windows)]
@@ -420,8 +456,23 @@ pub fn execute(
     } else {
         None
     };
+    let mut git = git_author::prepare(
+        &workspace,
+        state,
+        &run["git"]["author"],
+        &run["git"]["repositories"],
+        &spec.inherit_env,
+    )?;
+    git.values.extend(
+        environment
+            .into_iter()
+            .map(|(key, value)| (key.into(), value.into())),
+    );
     let until = began + timeout;
     let mut context = run.clone();
+    if let Some(fields) = context.as_object_mut() {
+        fields.remove("git");
+    }
     let _inputs = crate::personal_bots::stage_inputs(state, &mut context)?;
     let _skills = run_skills::stage(state, &mut context)?;
     for round in 0..=4 {
@@ -430,7 +481,7 @@ pub fn execute(
         }
         let mut result = execute_round(
             &spec,
-            &environment,
+            &git.values,
             &canonical,
             &context,
             &mut pulse,
@@ -468,7 +519,7 @@ pub fn execute(
 }
 fn execute_round(
     spec: &Runtime,
-    environment: &std::collections::BTreeMap<String, String>,
+    environment: &std::collections::BTreeMap<std::ffi::OsString, std::ffi::OsString>,
     canonical: &Path,
     run: &Value,
     mut pulse: impl FnMut() -> Result<bool>,
