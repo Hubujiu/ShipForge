@@ -11,7 +11,7 @@ use crate::{
 use gpui_kit::{prelude::*, *};
 use shipforge_client::Client;
 
-const A: &str = "ssh://git@git.example.test/team/desktop.git";
+const A: &str = "git@git.example.test:team/desktop.git";
 const B: &str = "https://git.example.test/team/shared";
 const C: &str = "https://git.example.test/team/agent";
 const D: &str = "https://git.example.test/team/variant";
