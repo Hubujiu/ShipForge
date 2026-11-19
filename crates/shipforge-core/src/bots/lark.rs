@@ -223,11 +223,11 @@ pub(crate) fn run_files(
     };
     if !message.fields["external_provider"]
         .as_str()
-        .is_some_and(provider)
+        .is_some_and(|p| provider(p) || p == "wecom")
     {
         return Ok(());
     }
-    let bound:bool=c.db.query_row("SELECT EXISTS(SELECT 1 FROM lark_bot_targets d JOIN external_bot_turns t ON t.id=d.turn JOIN external_bots b ON b.id=t.bot WHERE t.message=? AND t.run=? AND b.space=? AND b.owner=? AND t.provider IN('feishu','lark'))",params![message.id,run.id,c.space,c.actor],|r|r.get(0)).map_err(storage)?;
+    let bound:bool=c.db.query_row("SELECT EXISTS(SELECT 1 FROM external_bot_turns t JOIN external_bots b ON b.id=t.bot WHERE t.message=? AND t.run=? AND b.space=? AND b.owner=? AND (t.provider='wecom' OR t.provider IN('feishu','lark') AND EXISTS(SELECT 1 FROM lark_bot_targets d WHERE d.turn=t.id)))",params![message.id,run.id,c.space,c.actor],|r|r.get(0)).map_err(storage)?;
     if !bound {
         return Ok(());
     }
@@ -250,7 +250,7 @@ pub(crate) fn run_files(
 }
 pub(super) fn schema(s: &mut Value) {
     let rules = s["allOf"].as_array_mut().unwrap();
-    rules.push(json!({"if":{"properties":{"op":{"const":"bot.bindings"}}},"then":{"properties":{"available_for":{"enum":["feishu","lark"]}}}}));
+    rules.push(json!({"if":{"properties":{"op":{"const":"bot.bindings"}}},"then":{"properties":{"available_for":{"enum":["feishu","lark","wecom"]}}}}));
     rules.push(json!({"if":{"properties":{"op":{"const":"bot.lark.event"}}},"then":{"required":["id","device_key","app_id","tenant","event_id","source","channel","scene","sender"],"properties":{"trigger":{"enum":["message","reaction"]},"scene":{"enum":["direct","group"]},"root":{"type":"string"},"mentions_bot":{"type":"boolean"},"mentions_other":{"type":"boolean"},"topic_group":{"type":"boolean"},"topic_reply":{"type":"boolean"},"reaction":{"type":"string"}}}}));
     rules.push(json!({"if":{"properties":{"op":{"const":"bot.lark.policy"}}},"then":{"required":["id"],"properties":{"dm":{"type":"boolean"},"groups":{"type":"boolean"},"plain_chats":{"type":"array","maxItems":64,"items":{"type":"string","pattern":"^oc_[A-Za-z0-9_]+$"}},"reactions":{"type":"boolean"},"thread_followup":{"type":"boolean"},"trigger_emoji":{"type":"string"},"stop_emoji":{"type":"string"}}}}));
 }

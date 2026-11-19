@@ -16,6 +16,12 @@ Windows GPUI 窗口通过辅助功能树打开代理设置，切换模式并检�
 
 隐藏的原生 Windows D3D 窗口从机器详情进入存储面板。取消清理后保留原有操作历史，选择确认后独立客户端读到绑定同一指纹的清理请求。随后在 Agent 详情读取机器提供的模型和思考深度，配置后通过独立客户端读回。工作机进程在临时 Git 仓库中验证内容改变后的冲突、绑定和恢复保护、只删除选中 worktree，以及子进程运行期间继续统计并拒绝清理。第二组运行用 Python 读取实际 argv 与环境，验证单次覆盖和整段含空格参数。[原生窗口验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/storage_ui_test.rs) · [工作机验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/tests/storage_and_launch.rs)
 
+## 三层 Git 设置与仓库继承
+
+隐藏 Windows GPUI 窗口通过原生辅助功能树确认组织页、已加入空间和 Agent 详情的 Git 入口。测试从空配置开始，在组织填写提交者姓名，在空间填写邮箱，在 Agent 单独改变共同作者设置，逐项核对实际生效值与来源。所有设置经桌面表单提交，再由独立客户端读取同一临时数据库。
+
+空间用 SSH 简写绑定仓库，并写入说明和检出分支。Agent 依次选用指定空间仓库、全部和无。跨空间分身添加仓库后，测试核对本体原有清单、分身移除绑定前的确认以及恢复继承后的结果。另一客户端抢先修改同一条配置时，旧表单显示冲突，重新读取后呈现新值。测试也用只读身份取得真实响应，验证其原生面板只提供查看操作，核心拒绝该身份写入。[Windows 原生 Git 专项测试](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/git_workspace_ui/native_test.rs)
+
 ## 工作机服务、托盘与运行时能力
 
 隔离的 Windows D3D 窗口通过辅助功能树找到「本机服务设置」。读取临时配置后，切换为打开桌面时启动、关闭收起到托盘，再次读取验证设置已保存。关窗会打开退出确认。在同一个隐藏窗口中，Windows 通知区域接受了真实图标，验收检查隐藏状态并移除了该图标。随后从机器详情打开「运行时能力」，验证重扫、升级和模型测试按钮，确认模型测试后从独立客户端读回已排队的请求。[Windows 原生验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/machine_management_ui_test.rs)
@@ -142,6 +148,14 @@ Windows 隐藏 D3D 窗口使用独立临时资料，打开分拣模块与待分�
 ## Windows 对话指令和文档引用
 
 独立本机测试工作区打开隐藏的原生 D3D 窗口，经 Windows 辅助功能树定位任务指令、管理、文档引用和 PNG 保存入口。测试向编辑器派发 Tab 后确认仅插入命令，派发 Esc 后确认输入框仍在，再发送并核对后端消息。工作机报告结果后，从详情发送审阅确认，任务保持原状态。PNG 在测试目录写出并核对文件签名。测试未接外部商业 Runtime。[原生测试](https://github.com/Hubujiu/ShipForge/blob/v0.11.0/crates/shipforge-desktop/src/conversation_ui_test.rs)
+
+## 企业微信智能体
+
+在真实 Windows 隐藏 D3D 窗口中，用临时工作区打开「外部应用集成 → 企业微信智能体」，从可用 Agent 列表选择 Agent，检查 BotID 文本框和掩码 Secret 字段，再向本机隔离的企业微信服务验证绑定。桌面显示接收范围和解绑入口。通过 Agent 详情的入口关闭群 @ 并提交，独立客户端重读到单聊启用、群 @ 关闭。解绑后，Agent 重新出现在候选中。企微企业账号、真实外部群及其消息不在这项原生验收中。[原生控件与数据读回](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/wecom_ui_test.rs) · [独立网络与多身份测试](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-wecom-bots.py)
+
+## Windows 空间任务助手
+
+使用临时工作区和隐藏的原生 D3D 窗口打开「外部应用集成 → 空间任务助手」，选择启用的 Slack 渠道并绑定。窗口测试保存英文组织模板的描述，覆盖并恢复继承，通过解除绑定确认相应状态。独立的多身份验收用实际工作机执行签名群消息，写入该空间的任务。原话题的回执由出站工作机向本机模拟的 Slack 服务提交。企业微信空间助手提供配置入口，普通 Agent 的长连接另列。[Windows 控件与状态](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/task_assistant_ui_test.rs) · [服务器与工作机](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-space-task-assistants.py) · [Slack 出站](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/src/slack/tests.rs) · [配置和渠道范围](space-task-assistants.md)
 
 ## 邮件通知与管理权转让
 

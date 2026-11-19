@@ -259,6 +259,9 @@ fn apply(c: &Context<'_>, input: &[Value]) -> Result<Value> {
         f.remove("creator");
         f.remove("number");
         f.remove("system");
+        if let Some(value) = f.remove("created_by_assistant") {
+            f.insert("source_task_assistant".into(), value);
+        }
         if let Some(files) = f.remove("attachments") {
             let mut metadata = files;
             if let Some(entries) = metadata.as_array_mut() {

@@ -23,6 +23,7 @@ pub(crate) const FIELDS: &[&str] = &[
     "machine_id",
     "profile",
     "repository",
+    "git_setup",
     "tools",
     "skills",
     "visibility",

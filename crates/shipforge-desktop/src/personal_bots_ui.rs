@@ -10,6 +10,7 @@ pub enum BotForm {
     List(Value),
     Candidates(&'static str, Value),
     Start(&'static str),
+    Wecom(String),
     Qr(Value),
     Policy(Value),
     Disconnect(Value),
@@ -38,9 +39,11 @@ impl BotForm {
             Self::List(q) => match cloud(&q["cloud"]) {
                 Some("feishu") => "飞书智能体",
                 Some("lark") => "Lark 智能体",
+                Some("wecom") => "企业微信智能体",
                 _ => "微信与 QQ",
             },
             Self::Candidates(_, _) => "选择要绑定的 Agent",
+            Self::Wecom(_) => "连接企业微信智能机器人",
             Self::Start("wechat") => "连接个人微信",
             Self::Start("qq") => "连接 QQ 机器人",
             Self::Start(_) => "使用 QQ 机器人凭据",
@@ -53,7 +56,7 @@ impl BotForm {
     pub fn submit(&self) -> &'static str {
         match self {
             Self::List(_) | Self::Candidates(_, _) => "关闭",
-            Self::Start("credentials") => "验证并绑定",
+            Self::Wecom(_) | Self::Start("credentials") => "验证并绑定",
             Self::Start(_) => "生成二维码",
             Self::Qr(_) => "检查授权状态",
             Self::Policy(_) => "保存范围",
@@ -63,6 +66,12 @@ impl BotForm {
     }
     pub fn specs(&self) -> Vec<Spec> {
         match self {
+            Self::Wecom(_) => vec![
+                item("bot_id", "BotID", Format::Text, ""),
+                item("secret", "长连接 Secret", Format::Secret, ""),
+                item("dm", "响应私聊", Format::Bool, "true"),
+                item("groups", "响应群内 @", Format::Bool, "true"),
+            ],
             Self::Start(provider) => {
                 let mut fields = vec![item("agent", "绑定 Agent", Format::Ref("agent"), "")];
                 if *provider == "credentials" {
@@ -85,7 +94,7 @@ impl BotForm {
                 if data["provider"] == "qq" || cloud(&data["provider"]).is_some() {
                     fields.push(item("groups", "接收群内 @机器人", Format::Bool, "true"));
                 }
-                if cloud(&data["provider"]).is_some() {
+                if matches!(cloud(&data["provider"]), Some("feishu" | "lark")) {
                     fields.extend([
                         item("plain_chats", "免 @ 群聊 ID（逗号分隔）", Format::Csv, ""),
                         item("reactions", "接收群消息表情触发", Format::Bool, "false"),
@@ -174,6 +183,7 @@ fn cloud(v: &Value) -> Option<&'static str> {
     match v.as_str() {
         Some("feishu") => Some("feishu"),
         Some("lark") => Some("lark"),
+        Some("wecom") => Some("wecom"),
         _ => None,
     }
 }
@@ -182,6 +192,7 @@ fn provider(v: &Value) -> &'static str {
         Some("qq") => "QQ 机器人",
         Some("feishu") => "飞书智能体",
         Some("lark") => "Lark 智能体",
+        Some("wecom") => "企业微信智能体",
         _ => "个人微信",
     }
 }
@@ -230,6 +241,7 @@ impl Workbench {
             ("open-personal-bots", "微信与 QQ", ""),
             ("open-feishu-bots", "飞书智能体", "feishu"),
             ("open-lark-bots", "Lark 智能体", "lark"),
+            ("open-wecom-bots", "企业微信智能体", "wecom"),
         ] {
             let action = if brand.is_empty() {
                 Action::List
@@ -287,6 +299,11 @@ impl Workbench {
                     .into_iter()
                     .flatten()
                     .filter(|b| cloud(&b["provider"]) == brand);
+                for agent in data["occupied_agents"].as_array().into_iter().flatten() {
+                    if let Some(title) = agent["title"].as_str() {
+                        body = body.child(text(format!("{title} · 已由其他成员绑定"), 13., MUTED));
+                    }
+                }
                 for b in bindings {
                     let id = b["id"].as_str().unwrap_or("");
                     let agent = b["agent"].as_str().unwrap_or("");
@@ -299,7 +316,11 @@ impl Workbench {
                             provider(&b["provider"]),
                             b["account"].as_str().unwrap_or(""),
                             title,
-                            state(&b["state"])
+                            if b["provider"] == "wecom" && b["state"] == "expired" {
+                                "长连接授权已失效"
+                            } else {
+                                state(&b["state"])
+                            }
                         ),
                         13.,
                         INK,
@@ -398,6 +419,12 @@ impl Workbench {
                     },
                 ));
             }
+            BotForm::Wecom(agent) => {
+                let name = self
+                    .find("agent", agent)
+                    .map_or(agent.as_str(), |r| r.title.as_str());
+                body=body.child(text(format!("绑定 Agent　{name}"),14.,INK)).child(text("在企业微信管理后台的智能机器人设置中选择 API 模式与长连接，复制 BotID 和 Secret。",13.,MUTED)).child(button("wecom-manager".into(),"打开企业微信管理后台",UiAction::OpenSourceUrl("https://work.weixin.qq.com/wework_admin/frame".into())));
+            }
             BotForm::Disconnect(_) => {
                 body = body.child(text(
                     "解绑会停止接收和回传，已有对话保存在工作区。",
@@ -416,8 +443,13 @@ impl Workbench {
         }
         body.into_any_element()
     }
-    pub(super) fn bot_action(&mut self, a: Action, _: &mut Window, _: &mut Context<Self>) {
+    pub(super) fn bot_action(&mut self, a: Action, w: &mut Window, cx: &mut Context<Self>) {
         match a {
+            Action::Cloud("wecom") => self.send(
+                json!({"op":"bot.bindings","space":self.loc.space,"available_for":"wecom"}),
+                After::Bot(Reply::List(Some("wecom"))),
+                false,
+            ),
             Action::Cloud(brand) => self.send(
                 json!({"op":"bot.bindings","space":self.loc.space}),
                 After::Bot(Reply::List(Some(brand))),
@@ -428,11 +460,17 @@ impl Workbench {
                 After::Bot(Reply::Candidates(brand)),
                 false,
             ),
+            Action::Agent("wecom", id) => self.send(
+                json!({"op":"bot.bindings","space":self.loc.space,"available_for":"wecom"}),
+                After::Bot(Reply::Agent("wecom", id)),
+                false,
+            ),
             Action::Agent(brand, id) => self.send(
                 json!({"op":"bot.bindings","space":self.loc.space}),
                 After::Bot(Reply::Agent(brand, id)),
                 false,
             ),
+            Action::Pair("wecom", id) => self.open_form(Mode::Bot(BotForm::Wecom(id)), w, cx),
             Action::Pair(brand, id) => self.send(
                 json!({"op":"bot.qr.start","space":self.loc.space,"provider":brand,"agent":id}),
                 After::Bot(Reply::Pair(None)),
@@ -474,6 +512,11 @@ impl Workbench {
                 self.close_form(w, cx);
                 return Ok(());
             }
+            BotForm::Wecom(agent) => {
+                q["op"] = json!("bot.wecom.connect");
+                q["agent"] = json!(agent);
+                Reply::Pair(None)
+            }
             BotForm::Start(provider) => {
                 q["op"] = json!(if provider == "credentials" {
                     "bot.qq.connect"
@@ -491,11 +534,13 @@ impl Workbench {
                 Reply::Pair(Some(data))
             }
             BotForm::Policy(data) => {
-                q["op"] = json!(if cloud(&data["provider"]).is_some() {
-                    "bot.lark.policy"
-                } else {
-                    "bot.policy"
-                });
+                q["op"] = json!(
+                    if matches!(cloud(&data["provider"]), Some("feishu" | "lark")) {
+                        "bot.lark.policy"
+                    } else {
+                        "bot.policy"
+                    }
+                );
                 q["id"] = data["id"].clone();
                 Reply::Refresh(cloud(&data["provider"]))
             }
@@ -544,6 +589,14 @@ impl Workbench {
                     b["provider"] == brand && b["agent"] == id && b["state"] == "connected"
                 }) {
                     self.open_form(Mode::Bot(BotForm::Policy(b.clone())), w, cx);
+                } else if brand == "wecom"
+                    && data["occupied_agents"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .any(|a| a["id"] == id)
+                {
+                    self.bot_reply(Reply::List(Some("wecom")), data, w, cx);
                 } else {
                     self.bot_action(Action::Pair(brand, id), w, cx);
                 }

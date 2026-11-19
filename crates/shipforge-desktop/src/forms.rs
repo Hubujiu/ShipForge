@@ -69,6 +69,7 @@ const TRIGGERS: &[(&str, &str)] = &[
 ];
 #[derive(Clone)]
 pub enum Mode {
+    GitWorkspace(crate::app::git_workspace_ui::Dialog),
     MachineManagement(crate::app::machine_management::Dialog),
     Device(crate::app::device_ui::Dialog),
     QuickCreate,
@@ -172,6 +173,7 @@ impl Mode {
             MachineManagement(f) => f.title().into(),
             Device(f) => f.title().into(),
             Forge(f) => f.title().into(),
+            GitWorkspace(f) => f.title().into(),
             Bot(f) => f.title().into(),
             Identity(f) => f.title().into(),
             QuickCreate => "快捷新建".into(),
@@ -267,6 +269,7 @@ impl Mode {
             Self::MachineManagement(f) => f.submit(),
             Self::Device(f) => f.submit(),
             Self::Forge(f) => f.submit(),
+            Self::GitWorkspace(f) => f.submit_label(),
             Self::Bot(f) => f.submit(),
             Self::Identity(f) => f.submit(),
             Self::QuickCreate => "关闭",
@@ -554,7 +557,11 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             item(
                 "directory_mode",
                 "工作目录策略",
-                Choice(&[("isolated", "独立工作树"), ("direct", "指定目录串行")]),
+                Choice(&[
+                    ("isolated", "独立工作树"),
+                    ("direct", "指定目录串行"),
+                    ("temporary", "纯临时目录"),
+                ]),
                 "isolated",
             ),
             item("skills", "技能", Many("skill"), ""),
@@ -857,6 +864,9 @@ pub fn workflow_name(op: &str) -> &'static str {
         "chat.manage" => "管理对话成员",
         "assistant.send" => "给小助手发消息",
         "chat.avatar.set" => "更换群头像",
+        "task_assistant.bind" => "绑定空间任务助手",
+        "task_assistant.configure" => "设置空间任务助手",
+        "task_assistant.template.save" => "编辑任务助手模板",
         "chat.agents" => "管理群内 Agent",
         "provider.preview" => "预览平台事件",
         "zoho.projects" => "发现 Zoho 项目",
@@ -905,6 +915,7 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
         MachineManagement(f) => f.specs(),
         Device(f) => f.specs(),
         Forge(f) => f.specs(),
+        GitWorkspace(f) => f.specs(),
         Bot(f) => f.specs(),
         Identity(f) => f.specs(),
         QuickCreate => vec![],
@@ -1119,6 +1130,9 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
                 Text,
                 "",
             )],
+            "task_assistant.bind" | "task_assistant.configure" | "task_assistant.template.save" => {
+                crate::app::task_assistant_ui::specs(op)
+            }
             "status.library.save" => vec![
                 item("title", "显示名称", Text, ""),
                 item("category", "状态类别", Choice(STATUS), "todo"),

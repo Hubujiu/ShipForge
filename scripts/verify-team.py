@@ -135,6 +135,7 @@ def verify(bin_dir):
             if p is not None:stop(p)
     print("Verified member scopes, two clients, request replay, concurrent writes, offline drafts, reconnect and revocation.")
     import_module("verify-slack").verify(bin_dir, start, stop)
+    import_module("verify-space-task-assistants").verify(bin_dir)
     import_module("verify-vcs").verify(bin_dir, start, stop)
     import_module("verify-forge").verify(bin_dir)
     import_module("verify-chat").verify(bin_dir, start, stop)
@@ -155,6 +156,7 @@ def verify(bin_dir):
     import_module("verify-asana-projects").verify(bin_dir, start, stop)
     import_module("verify-personal-bots").verify(bin_dir)
     import_module("verify-lark-bots").verify(bin_dir)
+    import_module("verify-wecom-bots").verify(bin_dir)
     import_module("verify-personal-tokens").verify(bin_dir, start, stop, connect)
     import_module("verify-accounts").verify(bin_dir, start, stop, connect)
     import_module("verify-identity").verify(bin_dir)
@@ -162,6 +164,7 @@ def verify(bin_dir):
     import_module("verify-device-network").verify(bin_dir)
     import_module("verify-inbox").verify(bin_dir)
     import_module("verify-agent-directory").verify(bin_dir)
+    import_module("verify-git-workspaces").verify(bin_dir)
     import_module("verify-skill-market").verify(bin_dir)
 
 

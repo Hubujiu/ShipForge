@@ -59,6 +59,9 @@ pub(super) fn validate_agent(c: &Context<'_>, f: &Value) -> Result<()> {
             .filter(|v| !v.is_null())
             .or_else(|| inherited.get(key))
     };
+    if setting("directory_mode").and_then(Value::as_str) == Some("temporary") {
+        return Ok(());
+    }
     let Some(raw) = setting("profiles") else {
         return Ok(());
     };

@@ -101,6 +101,32 @@ Enter 换行	Enter inserts a new line
 请选择在线 Runtime	Select an online runtime
 请输入消息	Enter a message
 头像文件（PNG、JPEG、GIF 或 WebP，最大 2 MiB）	Avatar image (PNG, JPEG, GIF or WebP, up to 2 MiB)
+空间任务助手	Space task assistants
+绑定空间任务助手	Connect space task assistant
+设置空间任务助手	Configure space task assistant
+编辑任务助手模板	Edit task assistant template
+模板描述	Template description
+模板指令	Template instructions
+已授权的渠道连接器	Authorized channel connector
+运行机器	Run machine
+外部用户 ID 与空间成员 ID 映射	External user IDs mapped to space member IDs
+覆盖当前语言的模板描述	Override the template description for this language
+覆盖当前语言的模板指令	Override the template instructions for this language
+指令	Instructions
+中文组织模板	Chinese organization template
+英文组织模板	English organization template
+绑定任务助手	Connect task assistant
+中文设置	Chinese settings
+英文设置	English settings
+任务助手活动	Task assistant activity
+解绑渠道	Disconnect channel
+移除任务助手	Remove task assistant
+仅支持助手设置	Assistant settings only
+任务助手设置已保存	Task assistant settings saved
+请选择 Runtime	Select a runtime
+请选择已授权的渠道连接器	Select an authorized channel connector
+已绑定	Connected
+待绑定	Ready to connect
 市场	Marketplace
 任务	Tasks
 任务标签	Task labels
@@ -542,6 +568,7 @@ Slack 频道 ID	Slack channel ID
 状态工作流	Status workflow
 状态类别	Status category
 独立工作树	Isolated worktree
+纯临时目录	Empty temporary directory
 用来重新提交的服务器版本号	Server revision for resubmission
 目标任务	Target task
 空间分拣台	Space triage
@@ -1482,3 +1509,69 @@ Agent 并发已满	Agent at capacity
 跟随运行时默认模型	Use runtime default model
 该运行时尚未公布模型与参数。	This runtime has not advertised its model and launch options.
 已保存模型设置	Model settings saved
+Agent Git 设置	Agent Git settings
+Agent 本体	Parent agent
+Agent 仓库清单	Agent repositories
+Agent 所有者	Agent owner
+Git 仓库 URL	Git repository URL
+Git 设置已保存	Git settings saved
+绑定的空间仓库	Space repositories
+包含全部空间仓库	Include all space repositories
+保存后，本体的现有清单将成为此 Agent 的独立清单。	Saving creates an independent list for this agent from the parent agent’s current repositories.
+编辑 Git 仓库	Edit Git repository
+编辑仓库	Edit repository
+编辑提交身份	Edit commit identity
+不包含空间仓库	Exclude space repositories
+仓库清单已变更，请重新读取。	The repository list changed. Reload Git settings.
+仓库说明	Repository description
+查看空间仓库	View space repositories
+触发者	Requester
+触发者与 Agent	Requester and agent
+此 Agent	This agent
+此 Agent 将重新使用继承的仓库清单。提交身份和空间仓库选择将被保留。	This agent will use its inherited repository list again. Its commit identity and space repository selection will be preserved.
+此空间尚未绑定仓库。	This space has no repositories.
+当前任务没有待检出的 Git 仓库。	No Git repositories will be checked out.
+当前身份仅可查看 Git 设置。	Your account has read-only access to these Git settings.
+返回组织 Git 设置	Back to organization Git settings
+分支留空时使用远程默认分支。	Leave the branch empty to use the remote’s default branch.
+分支留空时优先继承空间中同地址仓库的分支，再使用远程默认分支。	An empty branch uses the branch on the matching space repository, then the remote’s default branch.
+继承空间分支	Branch inherited from space
+供此 Agent 使用的空间仓库	Space repositories for this agent
+共同作者标记	Co-author trailer
+恢复仓库清单继承	Use inherited repository list
+机器 Git 配置	Machine Git configuration
+继承或自动选择	Inherit or choose automatically
+继承上一级	Inherit
+检出分支（可选）	Checkout branch (optional)
+仅包含选定仓库	Include selected repositories
+空间 Git 设置	Space Git settings
+空间仓库来源	Space repository inclusion
+清单来源	List source
+请输入 Git 仓库 URL。	Enter a Git repository URL.
+请填入自定义的提交者信息。	Enter the custom commit identity value.
+确认从这份清单移除以下仓库绑定。	Remove this repository from the list?
+确认清除本层的提交身份与仓库配置，并重新计算生效设置。	Clear this level’s commit identity and repository configuration and recalculate its effective settings?
+确认移除绑定	Confirm removal
+确认重置	Confirm reset
+尚未绑定仓库。	No repositories are bound.
+尚未加入空间。	You have not joined any spaces.
+生效的提交身份	Effective commit identity
+省略共同作者	Omit co-author
+所有者与 Agent	Owner and agent
+提交者姓名	Commit author name
+提交者邮箱	Commit author email
+添加 Git 仓库	Add Git repository
+添加共同作者	Add co-author
+系统默认	System default
+选择继承的空间仓库	Choose inherited space repositories
+移除仓库绑定	Remove repository binding
+已加入空间的仓库	Repositories in joined spaces
+远程默认分支	Remote default branch
+执行时检出的仓库	Repositories checked out for runs
+重新读取 Git 设置	Reload Git settings
+重置本层 Git 设置	Reset this level’s Git settings
+自定义提交者姓名	Custom author name
+自定义提交者邮箱	Custom author email
+自定义值	Custom value
+自动选择会在 Agent 仓库清单为空时包含全部空间仓库。	Automatic selection includes all space repositories when the agent repository list is empty.
+组织 Git 设置	Organization Git settings

@@ -289,7 +289,7 @@ impl Binding {
         let event = &p["event"];
         if !matches!(
             event["type"].as_str(),
-            Some("message" | "message_metadata_posted")
+            Some("message" | "app_mention" | "message_metadata_posted")
         ) || event_channel(event).as_str() != Some(&self.channel)
         {
             // Slack sends other subscribed workspace channels to the same URL.

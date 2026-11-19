@@ -17,6 +17,8 @@ pub(crate) mod chat_actions;
 pub(crate) mod conversation_ui;
 #[path = "device_ui.rs"]
 pub(crate) mod device_ui;
+#[path = "git_workspace_ui.rs"]
+pub(crate) mod git_workspace_ui;
 #[path = "identity_ui.rs"]
 pub(crate) mod identity_ui;
 #[path = "inbox_ui.rs"]
@@ -43,6 +45,8 @@ pub(crate) mod runtime_ui;
 pub(crate) mod space_ui;
 #[path = "status_ui.rs"]
 pub(crate) mod status_ui;
+#[path = "task_assistant_ui.rs"]
+pub(crate) mod task_assistant_ui;
 #[path = "workspace_ui.rs"]
 pub(crate) mod workspace_ui;
 use serde_json::{Map, Value, json};
@@ -82,6 +86,8 @@ impl Default for Location {
 #[derive(Clone)]
 pub enum UiAction {
     SendAssistantDraft,
+    TaskAssist(task_assistant_ui::Action),
+    GitWorkspace(git_workspace_ui::Target),
     FoldStatuses(String, bool),
     MachineManagement(machine_management::Action),
     Device(device_ui::Action),
@@ -160,6 +166,8 @@ enum After {
     AssistantSent(u64),
     MachineManagement(machine_management::Reply),
     Device(device_ui::Reply),
+    TaskAssist(task_assistant_ui::Reply),
+    GitWorkspace(git_workspace_ui::Reply),
     Library(market_ui::Reply),
     Forge(repository_ui::Next),
     Bot(personal_bots_ui::Reply),
@@ -497,6 +505,9 @@ impl Workbench {
             Page::Dashboard | Page::Projects | Page::Views => kinds.extend(["task", "status"]),
             Page::Assistant => kinds.push("assistant_home"),
             Page::Chats => kinds.extend(["agent", "chat", "chat_invitation"]),
+            Page::Connectors if self.loc.section == "task-assistants" => {
+                kinds.extend(["assistant_catalog", "machine", "skill", "connector"])
+            }
             Page::Connectors => kinds.push("agent"),
             Page::Market => kinds.extend(["skill", "agent"]),
             Page::Skills => kinds.extend(["machine", "agent"]),
@@ -600,6 +611,7 @@ impl Workbench {
         kinds.sort_unstable();
         kinds.dedup();
         let _ = self.backend.sender.send(Request::Read {
+            language: crate::locale::language(),
             people: (self.people_kind, self.people_query.clone()),
             handler: self
                 .loc
@@ -964,6 +976,7 @@ impl Workbench {
         match after {
             After::MachineManagement(reply) => self.machine_management_reply(reply, value, w, cx),
             After::Device(reply) => self.device_reply(reply, value, w, cx),
+            After::GitWorkspace(reply) => self.git_reply(reply, value, w, cx),
             After::Library(reply) => self.library_reply(reply, value, w, cx),
             After::Forge(reply) => self.repository_result(reply, value, w, cx),
             After::Bot(reply) => self.bot_reply(reply, value, w, cx),
@@ -1014,6 +1027,7 @@ impl Workbench {
                     self.send(json!({"op":"get","kind":"chat","space":scope,"id":id,"allow_cached":false}),After::SearchTarget{space:scope.to_owned(),revision},false);
                 }
             }
+            After::TaskAssist(reply) => self.assistant_reply(reply, value, w, cx),
             After::OpenChat => {
                 self.close_form(w, cx);
                 if let Ok(room) = serde_json::from_value(value) {
@@ -1525,6 +1539,7 @@ impl Workbench {
             Mode::MachineManagement(f) => value = f.prefill(),
             Mode::Device(f) => value = f.prefill(),
             Mode::Forge(f) => value = f.prefill(),
+            Mode::GitWorkspace(f) => value = f.prefill(),
             Mode::Bot(f) => {
                 value = f.prefill();
                 if matches!(f, personal_bots_ui::BotForm::Start(_))
@@ -1561,6 +1576,9 @@ impl Workbench {
                 record,
             } => {
                 value = self.assistant_values(record, cx);
+            }
+            Mode::Workflow { op, record } if op.starts_with("task_assistant.") => {
+                value = record.fields.clone()
             }
             Mode::Create(k) if k == "agent" => {
                 if let Some(default) = self
@@ -1662,6 +1680,7 @@ impl Workbench {
             MachineManagement(action)=>self.machine_management_action(action,w,cx),
             Device(action)=>self.device_action(action,w,cx),
             Forge(action)=>self.repository_action(action),
+            GitWorkspace(target)=>self.git_open(target),
             Bot(action)=>self.bot_action(action,w,cx),
             IdentityProfile => self.send(
                 json!({"op":"access.account.profile"}),
@@ -1680,6 +1699,7 @@ impl Workbench {
             ),
             Directory(a) => self.directory_action(a, w, cx),
             Conversation(a) => self.communication_action(a, w, cx),
+            TaskAssist(a)=>self.task_assist(a),
             Review(a) => self.review_action(a, w, cx),
             Work(a) => self.work_action(a, w, cx),
             Inbox(a) => self.inbox_action(a, w, cx),
@@ -2207,6 +2227,7 @@ cx);
             Mode::MachineManagement(f)=>self.machine_management_submit(f,Value::Object(values),w,cx)?,
             Mode::Device(f)=>self.device_submit(f,Value::Object(values),w,cx),
             Mode::Forge(f)=>self.repository_submit(f,Value::Object(values),w,cx),
+            Mode::GitWorkspace(f)=>self.git_submit(f,Value::Object(values),w,cx)?,
             Mode::Bot(f)=>self.bot_submit(f,Value::Object(values),w,cx)?,
             Mode::Identity(f) => self.identity_submit(f, Value::Object(values))?,
             Mode::Directory(f) => self.directory_submit(f, values, w, cx)?,
@@ -2582,6 +2603,7 @@ cx);
                 let ticket=self.register(After::Notice("已更新群头像".into()),true);
                 self.backend.sender.send(Request::Attachment{ticket,command,path}).map_err(|e|e.to_string())?;
             }
+            Mode::Workflow{op,record} if op.starts_with("task_assistant.")=>self.save_task_assistant(op,&record,values)?,
             Mode::Workflow { op, record } => {
                 let mut q = Value::Object(values);
                 if op == "iteration.configure" {
@@ -2730,6 +2752,16 @@ cx);
         Ok(())
     }
     pub fn options(&self, source: &str) -> Vec<(String, String)> {
+        if source == "$git_space_repositories" {
+            return self
+                .form
+                .as_ref()
+                .and_then(|form| match &form.mode {
+                    Mode::GitWorkspace(dialog) => Some(dialog.space_choices()),
+                    _ => None,
+                })
+                .unwrap_or_default();
+        }
         let from = |kind: &str| {
             self.list(kind)
                 .iter()
@@ -2737,6 +2769,7 @@ cx);
                 .collect::<Vec<_>>()
         };
         match source {
+            "$task_assistant_connectors" => self.task_assistant_connectors(),
             "$approved_directories" => self.runtime_directory_choices(),
             "$machine_skills" => self.library.sources.clone(),
             "$org_non_owners" | "$org_successors" | "$org_current_owners" => self
@@ -3129,8 +3162,14 @@ mod storage_ui_test;
 #[path = "tag_ui.rs"]
 mod tag_ui;
 #[cfg(all(test, windows))]
+#[path = "task_assistant_ui_test.rs"]
+mod task_assistant_ui_test;
+#[cfg(all(test, windows))]
 #[path = "tracker_ui_test.rs"]
 mod tracker_ui_test;
+#[cfg(all(test, windows))]
+#[path = "wecom_ui_test.rs"]
+mod wecom_ui_test;
 #[cfg(all(test, windows))]
 #[path = "workspace_ui_test.rs"]
 mod workspace_ui_test;

@@ -52,7 +52,7 @@
 | S07 | 全局与空间任务标签、名称筛选、分组、互斥、合并及归档 | 图 补02 · [标签][labels] | 有对应 | 测试 · [标签范围与批量事务][tag-tests] · [Windows 标签表单][tag-ui] | 行为、数据、权限 | 组织与空间标签可并用，同组后选替换先选。回归覆盖归档保留历史、合并更新任务和视图、多标签交集筛选、跨空间保留组织标签及批量失败回滚。 |
 | S08 | 组织状态库的类别、用量、顺序、默认值及多语言名 | 图 UI14 · [状态][statuses] · [11 月更新][changes] | 有对应 | 实机 · [Windows 验收][native] · [窗口用例][status-window] · [独立身份 HTTP][status-team] · [迁移回归][status-tests] | 行为、数据、权限 | 已验中英文及缺译回退、状态分组折叠与展开、空间同 ID 冲突保留、跨空间用量、默认值、过期预览以及停用空间迁入。 |
 | S09 | 组织默认的字段、关联类型及空间任务类型管理 | 图 UI34、UI35 · [类型][types] · [关联][relations] | 有对应 | 测试 · [工作区][workspace-tests] · [类型工作流][status-tests] | 行为、数据、权限 | 已验空间管理员可配置各类型默认状态及顺序，移除在用状态会被拒绝；字段与关联另有工作区回归。 |
-| S10 | 组织、空间、Agent 三级代码库与提交作者设置 | 图 补03 · 菜单 UI29 · [代码库][repos] | 部分 | 测试 · [工作树][worker-tests] | 行为、数据、权限 | 本地已批准仓库能执行。核验空间继承、Agent 覆盖、作者邮箱、共同署名和实际 Git 提交作者。 |
+| S10 | 组织、空间、Agent 三级代码库与提交作者设置 | 图 补03 · 菜单 UI29 · [代码库][repos] | 有对应 | 实机 · [Windows 记录][native] · [三层原生表单][git-workspace-native] · 测试 · [实际 Git 进程][git-workspace-qa] | 行为、数据、权限 | Windows 验证三层读写、逐项继承、分身覆盖、仓库增删和修订冲突。实际提交验证中文作者、邮箱、共同署名开关和机器提交者。本地目录读自己的 Git 作者配置。[操作说明][git-workspace-guide] |
 | S11 | 个人资料、第三方账号绑定、重新绑定与外部账号归属 | 菜单 UI33 · [账号][account] · [GitHub][i-github] | 部分 | 测试 · [已验证账号的个人资料][verified-identity] · [身份][auth] | 行为、数据、权限、待联调 | 姓名、头像地址及简介可编辑，两个设备共享，覆盖并发版本冲突。第三方身份绑定、换绑和外部评论归属仍待实现与联调。 |
 | S12 | 偏好设置含五种主题、界面语言、任务会话自动打开开关 | 图 补04 · [更新日志][changes] | 有对应 | 测试 · [原生偏好和输入][personal-ui] · [个人设置手册][personal-doc] | 行为、数据 | 已在 Windows 原生窗口切换全部主题与 English、验证两种发送设置。设置按成员持久化。操作系统主题切换仍受 Windows 配色控制。 |
 | S13 | 快捷键，发送消息组合、录制、冲突与恢复默认 | 图 补05 | 有对应 | 测试 · [原生键盘录制与输入法][personal-ui] · [设置持久化][personal-regression] | 行为 | 已验证组合冲突、恢复、重开及实际消息文本框的 Enter/Shift+Enter 输入与提交。 |
@@ -124,14 +124,14 @@
 | W06 | 空闲时段外的等待原因、立即触发、已运行任务跨下班时刻 | [工作时间][hours] | 有对应 | 实机 · [Windows 预约横幅][native] · [调度与触发][runtime-tests] · [执行队列][worker-core] | 行为、数据、权限 | 指派、评论提及、直接聊天各有开关。计划时间可推迟至下一窗口；首次开班前不消耗等待额度。手动触发保留权限和并发约束。 |
 | W07 | 独立 Git 工作树或空目录，多任务并行与清理 | 图 UI30 · [目录][directory] | 有对应 | 测试 · [两个真正工作树][worker-tests] | 行为、数据、权限、待联调 | 已验证隔离仓库。还需在桌面展示 Git 改动、review、合并/丢弃及清理状态。 |
 | W08 | 选择目标机器目录、多路径择空闲、直接目录互斥 | 图 UI30 · [目录][directory] | 有对应 | 实机 · [Windows 目标机器目录选择器][native] · [真实进程与路径互斥][worker-tests] · [同一任务沿用原目录][runtime-tests] | 行为、数据、权限 | 本机用户授权目录后可按机器选择。直接模式按优先顺序选空闲路径，已占满的任务排队。授权仍有效时，既有任务或对话保留路径与模式。远程列表展示获准项目目录。 |
-| W09 | 组织/空间/Agent 绑定仓库、平台凭据、默认分支及 PR/MR | 图 补03 · [代码库][repos] · [官网][home] | 部分 | 实现 · [工作机][worker-manual] | 行为、数据、权限、待联调 | 本地 Git 工作树与托管平台自动拉取/推送、生成 PR、独立作者设置分别核验。 |
+| W09 | 组织/空间/Agent 绑定仓库、平台凭据、默认分支及 PR/MR | 图 补03 · [代码库][repos] · [官网][home] | 部分 | 测试 · [实际 Git 进程][git-workspace-qa] · [工作树][worker-tests] · [工作机][worker-manual] | 行为、数据、权限、待联调 | 已验基线分支与单次覆盖、机器目录优先级、共享 Git 缓存及独立工作树。生产私库凭据、托管分支推送与创建 PR/MR 考核仍待完成。 |
 | W10 | 运行状态、租约、心跳、人工回复、取消、产物和重试 | 图 UI36 · [执行][run-help] | 部分 | 测试 · [租约][execution] · [实际进程][worker-tests] | 行为、数据、权限、待联调 | 核心/进程路径已测。参考只有空历史截图；需非空、运行中、等待、失败、离线重连同场比对。 |
 | W11 | 模型错误、限流、额度、凭据失效、机器诊断和本机日志 | [执行排障][run-help] · [CLI][h-cli] | 部分 | 实机 · [原生诊断入口][native] · [运行隔离与分类][runtime-tests] · [本机进程日志][worker-tests] | 行为、数据、权限、待联调 | 结构化错误码覆盖认证、权限、账单、限流、模型、上下文和图片。真实子进程验证 429、PID 和日志脱敏。尚待使用真实供应商账户验证各适配器错误语料。 |
 | W12 | 本地存储占用、清理已结束的工作目录、迁移和升级 | [CLI][h-cli] · [变更记录][changes] | 部分 | 实机 · [原生验收][native] · [执行端实测][storage-model-test] · [机器配置][storage-models] | 行为、数据、权限、待联调 | 已验证容量预览、确认、内容冲突、活动租约和恢复保护及单个 Git worktree 回收。跨磁盘迁移与操作系统低空间告警仍待验。 |
 | W13 | 空间自动化的空态、创建、执行者及多触发器启停 | 图 UI01、UI26、UI27 · [规则][automations] | 有对应 | 实机 · [原生表单][native] · 测试 · [规则][execution] | 行为、数据 | 实际保存过一条每日规则。分别触发状态变化、评论关键词与手动执行，观察同一运行回链。 |
 | W14 | 间隔、每日/每周，IANA 时间、规则暂停后重启与补发 | 图 UI26、UI27 · [规则][automations] | 有对应 | 实机 · [保存时间][native] · 测试 · [时区计划][schedule] | 行为、数据 | 表单保存与 Worker 按时执行需分别举证；测试夏令时与持续在线的实际规则。 |
-| W15 | 规则 Webhook 的地址、绑定凭据、去重、结果通知 | 图 UI27 · [自动化产品页][p-auto] | 部分 | 测试 · [团队回调][team] | 行为、数据、权限、待联调 | 绑定服务回调与重复投递可测。外部系统真实调用、目标收件人与原生通知另验。 |
-| W16 | 规则历史、成功率/健康度、无人值守会话、暂停恢复归档 | [规则][automations] · [产品页][p-auto] | 部分 | 实现 · [规则与运行][automation-code] | 行为、数据、权限、待联调 | 运行记录存在。核验暂停保留历史、手动补跑、失败重试策略与无人值守会话访问。 |
+| W15 | 规则 Webhook 的私密 URL、轮换、可选签名与 IP 白名单、投递历史 | 图 UI27 · [规则][automations] · [自动化产品页][p-auto] | 部分 | 测试 · [团队回调][team] | 行为、数据、权限、待联调 | 绑定凭据支持规则级范围和重复投递检查。官网列出的单次展示完整 URL、轮换后立即失效、逐触发器签名和 IP 白名单、投递历史仍需实现与验证。 |
+| W16 | 规则健康度、可续聊的运行历史、无人值守会话、暂停恢复归档 | [规则][automations] · [产品页][p-auto] | 部分 | 实现 · [规则与运行][automation-code] | 行为、数据、权限、待联调 | 现有运行记录和结果通知可读。仍需核验每次运行的负责人和触发来源、从记录续聊、无人值守下请求人工输入时的快速失败，以及分页查看旧运行。 |
 
 ## 外部集成、导入与实际供应商条件
 
@@ -153,10 +153,10 @@
 | I14 | CNB 组令牌、仓库配对与 CI 配置，提交/议题/MR 回链 | [CNB][i-cnb] | 部分 | 实机 · [Windows 记录][native] · [原生表单][enterprise-native] · [签名回调及供应商 HTTP][enterprise-http] | 行为、数据、权限、待联调 | 已验子组仓库、组令牌、配对密钥轮换、CI 签名、末次提交/议题/MR 活动及回链丢响应后的去重。生产仓库的受保护密钥、真正的云构建及评论仍待联调。[配置指引][enterprise-guide] |
 | I15 | Linear 项目、工作流状态映射、增量与评论 | [Linear][i-linear] · [概念对照][mapping] | 部分 | 测试 · [GraphQL、OAuth、状态及评论核验][cloud-tracker-http] · [协议][cloud-tracker-guide] | 行为、数据、权限、待联调 | 已验证同名状态映射、关系两端归属、OAuth PKCE 与刷新、按项目唤醒、旧任务接管及按批撤回。凭据按设备与身份保存，真实组织授权与配额待联调。 |
 | I16 | Gitee、Bitbucket、Codeup 等官网列名平台 | [官网][home] · [项目产品页][p-planning] | 待核 | 未证 · [供应商基线][providers] | 行为、数据、权限、待联调 | 按具体平台和账号核验账户绑定、字段映射及 PR 工作流。 |
-| I17 | IM 浏览目录、空间任务助手与面向 Agent 的机器人两种关系 | 图 UI10 · 菜单 UI29 · [飞书][i-feishu] · [Discord][i-discord] | 部分 | 测试 · [代表性消息][provider-tests] · [飞书智能体][lark-http] | 行为、数据、权限、待联调 | 显式配置的空间入站连接器可建单。飞书/Lark 的 Agent 入口已验证普通消息与 /new 仅发起对话；官方内置空间助手的独立身份、Runtime、模板及生命周期仍待实现。 |
+| I17 | IM 浏览目录、空间任务助手与面向 Agent 的机器人两种关系 | 图 UI10 · 菜单 UI29 · [飞书][i-feishu] · [企业微信][i-wecom] · [钉钉][i-dingtalk] · [Discord][i-discord] | 有对应 | 实机 · [Windows 记录][native] · [独立身份、权限和模板][space-im-tests] · [签名 HTTP、工作机与原话题][space-im-http] · [普通 Agent][lark-http] | 行为、数据、权限、待联调 | 已验空间×渠道助手目录、Runtime、中英文模板与单项覆盖、解绑保留身份、移除重建、发送成员权限与独立署名。Slack 已验本机签名入站和回执，飞书/Lark 与钉钉支持授权中继，企业微信仅支持助手配置。其他渠道、生产租户及各端接入进度见[操作说明][space-im-guide]。 |
 | I18 | 飞书国内云，任务助手、Agent 机器人、资源连接器、组织助手 | [飞书][i-feishu] · [群聊流程][bp-feishu] | 部分 | 测试 · [实现说明][lark-guide] · [三身份双云][lark-http] · [Windows 操作][lark-native] | 行为、数据、权限、待联调 | 飞书智能体可扫码，处理单聊、群 @、指定群、话题和表情，回复原消息并收发文件。空间助手、组织预览通知与资源连接器各有独立授权，真实租户与前述能力仍需联调。 |
 | I19 | Lark 国际云的 OAuth/机器人/任务助手和通知 | 图 补06 · [Lark 与飞书][i-feishu] | 部分 | 测试 · [双云注册与传输][lark-http] · [Windows 双入口][lark-native] | 行为、数据、权限、待联调 | 同一个 Agent 可同时接飞书与国际 Lark，验证了同名应用和会话标识、不同令牌与撤销彼此隔离。正式国际租户扫码、应用审批及客户端呈现待联调。 |
-| I20 | 企业微信的空间助手与 Agent 智能体、验签/解密、回复 | [企业微信][i-wecom] | 部分 | 测试 · [解密后的样例][provider-tests] | 行为、数据、权限、待联调 | 需要真实企业权限、回调认证和可见成员；普通入站建单不能证明群/单聊双向。 |
+| I20 | 企业微信的空间任务助手与 Agent 智能体、长连接认证、收发与文件 | [企业微信][i-wecom] | 部分 | 实机 · [Windows 记录][native] · [原生绑定][wecom-window] · [三身份消息与文件][wecom-stream] · [企微指南][wecom-guide] | 行为、数据、权限、待联调 | 普通 Agent 的私聊、群 @、新会话、加密入站文件、产物回传、凭据撤销与解绑已在隔离环境验证。空间助手已有设置入口，企业微信消息建单与回注仍待接入。真实企业的可见范围、加群策略和部署网关待联调。 |
 | I21 | 钉钉机器人与任务助手、通知与链接预览、Stream 生命周期 | [钉钉][i-dingtalk] | 部分 | 测试 · [已验证的 Stream/HTTP 载荷][provider-tests] | 行为、数据、权限、待联调 | 需凭据获取、续连、不同身份消息回复、任务卡片及租户授权状态。 |
 | I22 | 个人微信扫码绑定一个 Agent、过期重新扫码 | [微信][i-wechat] | 部分 | 测试 · [iLink 与手机流程][personal-bots] · [三身份契约][bot-http] · [Windows 授权控件][bot-native] | 行为、数据、权限、待联调 | 本人扫码、验证码、私有对话、/new 及向原会话回传文字和加密附件。真实手机确认、账号可用性与平台风控需授权联调。 |
 | I23 | QQ 官方机器人，单聊/群 @ 绑定 Agent | [QQ][i-qq] | 部分 | 测试 · [官方授权与网关][personal-bots] · [三身份契约][bot-http] · [Windows 入口][bot-native] | 行为、数据、权限、待联调 | 官方扫码、凭据绑定、独立单聊/群 @ 开关、WebSocket 重连与原会话回复。跨绑定用户先解绑；真实 QQ 权限、事件订阅和平台回复限额待联调。 |
@@ -226,6 +226,9 @@
 [directory]: https://help.hifox.com/docs/agent-and-computer/working-directory
 [hours]: https://help.hifox.com/docs/agent-and-computer/working-hours
 [repos]: https://help.hifox.com/docs/agent-and-computer/repositories
+[git-workspace-guide]: git-workspaces.md
+[git-workspace-native]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/git_workspace_ui/native_test.rs
+[git-workspace-qa]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-git-workspaces.py
 [comments]: https://help.hifox.com/docs/agent-and-computer/comments-and-replies
 [inbox]: https://help.hifox.com/docs/agent-and-computer/inbox
 [chat]: https://help.hifox.com/docs/agent-and-computer/chat-with-agent
@@ -359,6 +362,9 @@
 [cloud-tracker-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-cloud-trackers.py
 [cloud-tracker-guide]: cloud-trackers.md
 [provider-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/providers.rs
+[space-im-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/space_task_assistants.rs
+[space-im-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-space-task-assistants.py
+[space-im-guide]: space-task-assistants.md
 [schedule]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/src/automation/schedule.rs
 [automation-code]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/src/automation.rs
 [checker]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/check-parity-inventory.py
@@ -408,6 +414,9 @@
 
 [personal-bots]: personal-bots.md
 [lark-guide]: lark-agent.md
+[wecom-guide]: wecom-agent.md
+[wecom-stream]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-wecom-bots.py
+[wecom-window]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/wecom_ui_test.rs
 [lark-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-lark-bots.py
 [lark-native]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/lark_ui_test.rs
 [bot-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-personal-bots.py

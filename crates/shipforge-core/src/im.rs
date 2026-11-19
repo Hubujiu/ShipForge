@@ -4,7 +4,7 @@ mod origin;
 mod outbox;
 mod replies;
 use crate::{Context, Record, Result, conflict, forbidden, invalid, required, storage};
-use origin::Origin;
+pub(crate) use origin::Origin;
 pub(crate) use origin::origin;
 pub(crate) use replies::{decorate, options};
 use rusqlite::{Connection, OptionalExtension, params};

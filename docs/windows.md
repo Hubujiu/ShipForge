@@ -59,7 +59,7 @@ $config = "$env:LOCALAPPDATA\ShipForgeExample\machine.json"
 .\shipforge-worker.exe run --config $config
 ```
 
-让上面的进程保持运行。在同一空间的机器列表中确认已登记的机器，然后建立使用 `inspect-context` Runtime 的 Agent，把处于待办的任务指派给它。在运行历史查看返回结果。运行自有工具时，在机器配置的 `runtimes` 中填写固定程序、参数、超时和允许传给子进程的环境变量。使用 Git 工作树隔离时选择本机已批准的仓库。直接目录执行需在机器配置中显式开启。
+让上面的进程保持运行。在同一空间的机器列表中确认已登记的机器，然后建立使用 `inspect-context` Runtime 的 Agent，把处于待办的任务指派给它。在运行历史查看返回结果。运行自有工具时，在机器配置的 `runtimes` 中填写固定程序、参数、超时和允许传给子进程的环境变量。需要代码时可在空间或 Agent 设置绑定远端仓库，也可为指定 Agent 选择本机已批准的目录。直接目录执行需在机器配置中显式开启。[Git 仓库和作者设置](git-workspaces.md)
 
 团队执行端需连接同一服务。为执行身份分配目标空间的成员权限，并单独签发 `worker` 令牌。在执行端的 PowerShell 中设置 `$env:SHIPFORGE_SERVER` 和 `$env:SHIPFORGE_TOKEN` 后再启动 Worker。服务机、桌面与执行机可以分别运行。通过 `.\shipforge-worker.exe --help` 查看探测、同步和停止命令。
 

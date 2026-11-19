@@ -10,6 +10,7 @@ mod defaults;
 mod discussions;
 pub use conversation_tools::documents::parts as document_link_parts;
 mod domain;
+mod git_workspace;
 mod identity;
 mod im;
 mod inbox;
@@ -34,6 +35,7 @@ mod spaces;
 mod statuses;
 pub use statuses::display_name as status_display_name;
 mod tags;
+mod task_assistants;
 mod task_commands;
 mod task_fields;
 mod tasks;
@@ -228,7 +230,7 @@ impl Store {
                 op,
                 "organization.depart" | "organization.configure" | "organization.ownership"
             )
-            && !matches!(op, "delivery.retry" | "space.transfer")
+            && !matches!(op, "delivery.retry" | "space.transfer" | "git.configure")
             && !op.starts_with("imports.")
             && !op.starts_with("bugly.")
             && !op.starts_with("im.")
@@ -281,6 +283,7 @@ impl Store {
             "delivery.history" | "delivery.open" | "delivery.retry" => {
                 mail::command(&c, op, &request)
             }
+            "git.settings" | "git.configure" => git_workspace::execute(&c, op, &request),
             "organization.settings"
             | "organization.configure"
             | "organization.depart"
@@ -302,6 +305,7 @@ impl Store {
             {
                 triage::execute(&c, op, &request)
             }
+            op if task_assistants::handles(op) => task_assistants::execute(&c, op, &request),
             op if bots::handles(op) => bots::execute(&c, op, &request),
             op if conversation_tools::handles(op) => conversation_tools::execute(&c, op, &request),
             "project.timeline" => project_timeline::timeline(&c, &request),

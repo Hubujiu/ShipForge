@@ -28,6 +28,10 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, preview: bool) -> Result<Value
         return Err(invalid("payload must be an event object"));
     }
     let f = &connector.fields;
+    let assistant = crate::task_assistants::route(c, id)?;
+    if assistant.is_none() && provider == "slack" && p["event"]["type"] == "app_mention" {
+        return Ok(json!({"action":"ignored","reason":"no task assistant"}));
+    }
     if provider == "github"
         || (provider == "gitlab"
             && matches!(p["object_kind"].as_str(), Some("push" | "merge_request")))
@@ -39,7 +43,7 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, preview: bool) -> Result<Value
         "jira" => jira(p, f)?,
         "slack" => slack(p, f)?,
         "telegram" => telegram(p, f)?,
-        "feishu" | "lark" => feishu(p, f)?,
+        "feishu" | "lark" => feishu(p, f, assistant.is_some())?,
         "linear" => extended::linear(p, f)?,
         "asana" => extended::asana(p, f)?,
         "teams" => extended::teams(p, f)?,
@@ -82,6 +86,11 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, preview: bool) -> Result<Value
     let origin = crate::im::origin(provider, p)?;
     if let Some(origin) = &origin {
         mapped["thread"] = origin.route();
+    }
+    if let Some(binding) = assistant {
+        return crate::task_assistants::receive(
+            c, &connector, &binding, p, &mapped, origin, preview,
+        );
     }
     if preview {
         return Ok(mapped);
@@ -322,7 +331,7 @@ fn adf_text(node: &Value, out: &mut String, depth: usize) -> Result<()> {
 fn slack(p: &Value, f: &Value) -> Result<Incoming> {
     let e = &p["event"];
     if p["type"] != "event_callback"
-        || e["type"] != "message"
+        || !matches!(e["type"].as_str(), Some("message" | "app_mention"))
         || !e["subtype"].is_null()
         || !e["bot_id"].is_null()
         || !e["bot_profile"].is_null()
@@ -385,14 +394,14 @@ fn telegram(p: &Value, f: &Value) -> Result<Incoming> {
         required(m, "text")?,
     )
 }
-fn feishu(p: &Value, f: &Value) -> Result<Incoming> {
+fn feishu(p: &Value, f: &Value, assistant: bool) -> Result<Incoming> {
     let h = &p["header"];
     let e = &p["event"];
     let m = &e["message"];
     if p["schema"] != "2.0"
         || h["event_type"] != "im.message.receive_v1"
         || e["sender"]["sender_type"] != "user"
-        || m["message_type"] != "text"
+        || !(m["message_type"] == "text" || assistant && m["message_type"] == "post")
     {
         return Err(invalid("expected a Feishu v2 user text message"));
     }
@@ -402,10 +411,15 @@ fn feishu(p: &Value, f: &Value) -> Result<Incoming> {
     let body: Value = serde_json::from_str(required(m, "content")?)
         .map_err(|_| invalid("invalid Feishu message content"))?;
     let micros = timestamp_ms(&m["create_time"])?;
+    let text = if m["message_type"] == "post" {
+        crate::task_assistants::post(&body)?
+    } else {
+        required(&body, "text")?.to_owned()
+    };
     message(
         upstream_id(h, "event_id")?,
         format!("feishu:{chat}:{msg}"),
         micros,
-        required(&body, "text")?,
+        &text,
     )
 }

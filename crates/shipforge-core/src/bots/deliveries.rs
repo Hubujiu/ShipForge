@@ -49,7 +49,8 @@ fn prepare(c: &Context<'_>, b: &Binding) -> Result<()> {
         {
             let status = run.fields["status"].as_str().unwrap_or("");
             if !matches!(status, "done" | "failed" | "cancelled")
-                && !(status == "interrupted" && lark::provider(&b.provider))
+                && !(status == "interrupted"
+                    && (lark::provider(&b.provider) || b.provider == "wecom"))
             {
                 continue;
             }
@@ -71,7 +72,10 @@ fn prepare(c: &Context<'_>, b: &Binding) -> Result<()> {
                 )?;
                 part += 1;
             }
-            if status == "done" && (b.provider == "wechat" || lark::provider(&b.provider)) {
+            if status == "done"
+                && (matches!(b.provider.as_str(), "wechat" | "wecom")
+                    || lark::provider(&b.provider))
+            {
                 for file in c.records("artifact")? {
                     if file.fields["run"] != run_id || !c.visible(&file)? {
                         continue;

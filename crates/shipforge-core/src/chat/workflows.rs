@@ -466,5 +466,5 @@ pub(super) fn schema(schema: &mut Value) {
     ] {
         rules.push(json!({"if":{"properties":{"op":{"const":op}}},"then":{"required":[key],"properties":{(key):{"type":"string","minLength":1}}}}));
     }
-    rules.push(json!({"if":{"properties":{"op":{"const":"run.report"}}},"then":{"properties":{"task_draft":{"type":["object","null"],"properties":{"title":{"type":"string"},"description":{"type":"string"}},"required":["title","description"]}}}}));
+    rules.push(json!({"if":{"properties":{"op":{"const":"run.report"}}},"then":{"properties":{"task_draft":{"type":["object","null"],"properties":{"title":{"type":"string"},"description":{"type":"string"},"action":{"enum":["create","update","show","comment"]},"status":{"type":"string"},"body":{"type":"string"},"task":{"type":"string"}},"anyOf":[{"required":["title","description"]},{"required":["action"]}]}}}}));
 }

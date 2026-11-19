@@ -140,6 +140,11 @@ fn write_inner(
         return Ok(as_value(r.clone()));
     }
     let mut patch = fields_object(q.get("fields"))?;
+    if patch.contains_key("created_by_assistant") {
+        return Err(invalid(
+            "task assistant attribution is maintained by the service",
+        ));
+    }
     if kind == "task"
         && from_source
         && let Some(level) = patch.get_mut("priority")
@@ -336,6 +341,7 @@ fn write_inner(
     if infer_iteration {
         crate::iterations::auto_assign(c, old.as_ref(), &mut row)?;
     }
+    crate::git_workspace::validate_record(&row)?;
     worker::validate(c, old.as_ref(), &row)?;
     if matches!(kind, "status" | "task_type")
         && row.fields["default"] == true
