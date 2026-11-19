@@ -1,4 +1,21 @@
 偏好设置	Preferences
+邮件待发送	Email queued
+正在提交邮件	Submitting email
+邮件稍后重试	Email will retry
+邮件服务已接收	Accepted by the mail service
+邮件服务拒收	Rejected by the mail service
+投递结果待确认	Delivery needs confirmation
+邮件已取消	Email canceled
+重试邮件	Retry email
+邮件已排入重试	Email queued for retry
+邮件投递记录	Email delivery history
+添加组织所有者	Add an organization owner
+转让组织所有权	Transfer organization ownership
+将所有者改为管理员	Change an owner to administrator
+组织所有者已更新	Organization owners updated
+转让空间管理权	Transfer space ownership
+确认转让	Confirm transfer
+空间管理权已转让	Space ownership transferred
 按任务编号关联提交和合并请求	Link commits and pull requests by task number
 新建或重开合并请求时运行的规则（可选）	Review rule for opened or reopened requests (optional)
 GitLab 主机（默认 gitlab.com）	GitLab host (defaults to gitlab.com)
@@ -1159,6 +1176,7 @@ Agent 已完成工作	Agent run completed
 解散多人组织	Dissolve organization with other members
 退出组织	Leave organization
 请先处理共享机器权限	Resolve shared machine access first
+请先转让空间管理权	Transfer management of these spaces first
 打开验证邮件，在浏览器输入设备配对码，然后返回此处完成操作。	Open the email, enter the device pairing code in your browser, then return here to finish.
 注销将清除个人资料并退出所有组织，无法恢复。	Closing this account permanently clears your profile and removes you from all organizations.
 同机成员共用任务目录	Share a task directory on the same machine
@@ -1345,3 +1363,64 @@ Agent 并发已满	Agent at capacity
 执行时限	Execution deadline
 预计开始	Expected start
 请填写自定义工作时段	Enter the custom working schedule
+本机服务设置	Local service settings
+退出 ShipForge	Quit ShipForge
+重新启动工作机	Restart worker
+运行时能力	Runtime capabilities
+读取配置	Read configuration
+确认退出	Confirm exit
+确认重启	Confirm restart
+确认执行	Confirm action
+工作机配置文件	Worker configuration file
+启动方式	Start mode
+手动启动	Start manually
+打开桌面时启动	Start when the desktop opens
+登录 Windows 时启动	Start at Windows sign-in
+退出桌面后继续运行工作机	Keep workers running after quitting
+关闭窗口时收起到托盘	Close the window to the notification area
+重新检测	Check again
+安装运行时	Install runtime
+升级运行时	Upgrade runtime
+测试模型连接	Test model connection
+安装与登录指南	Installation and sign-in guide
+未检测到	Not detected
+检测失败	Detection failed
+安装中	Installing
+升级中	Upgrading
+测试中	Testing
+检测中	Checking
+需要登录	Sign-in required
+模型返回不符合测试要求	Unexpected model reply
+包管理器不可用	Package manager unavailable
+选择这台电脑上已初始化的工作机配置。	Choose an initialized worker configuration on this computer.
+重启会中断本机正在执行的工作，然后重新连接。	Restarting interrupts active work on this machine, then reconnects.
+关闭后台运行会中断本机正在执行的工作。	Stopping background workers interrupts active work on this machine.
+已保存本机服务设置	Local service settings saved
+工作机已上线。	The worker is online.
+工作机正在注册。	The worker is registering.
+编辑组织状态	Edit organization status
+新建组织状态	New organization status
+预览状态迁移	Preview status migration
+配置类型工作流	Configure type workflow
+简体中文名称	Simplified Chinese name
+英文名称	English name
+状态颜色（#RRGGBB）	Status color (#RRGGBB)
+列表默认折叠	Collapse in grouped lists by default
+组织默认状态	Organization default status
+迁入组织状态	Destination organization status
+按流转顺序选择状态	Choose statuses in workflow order
+新任务默认状态	Default for new tasks
+组织状态已保存	Organization status saved
+类型工作流已保存	Type workflow saved
+类型工作流	Type workflow
+仅此空间	This space only
+组织状态库	Organization status library
+请先选择其他组织默认状态	Choose another organization default first
+每个类别至少保留一个状态	Keep at least one status in each category
+请选择非终态迁入状态	Choose a nonterminal destination
+请选择迁入状态	Choose the destination status
+删除组织状态	Delete organization status
+涉及的空间未启用分拣台	Triage is disabled in an affected space
+新建空间状态	New space status
+显示顺序	Display order
+显示名称	Display name

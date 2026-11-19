@@ -40,7 +40,7 @@ fn address(input: &str) -> Result<String, String> {
     }
     Ok(input)
 }
-fn configured_url(name: &str, default: Option<&str>) -> Result<String, String> {
+pub(crate) fn configured_url(name: &str, default: Option<&str>) -> Result<String, String> {
     let raw = std::env::var(name)
         .ok()
         .or_else(|| default.map(str::to_owned))
@@ -63,35 +63,16 @@ fn configured_url(name: &str, default: Option<&str>) -> Result<String, String> {
     Ok(url.to_string().trim_end_matches('/').to_string())
 }
 fn send_mail(email: &str, purpose: &str, link: &str, id: &str) -> Result<(), String> {
-    let endpoint = configured_url(
-        "SHIPFORGE_IDENTITY_MAIL_URL",
-        Some("https://api.resend.com/emails"),
-    )?;
-    let from = std::env::var("SHIPFORGE_IDENTITY_MAIL_FROM")
-        .map_err(|_| "unavailable: email login is not configured")?;
-    let key = std::env::var("SHIPFORGE_IDENTITY_MAIL_TOKEN")
-        .map_err(|_| "unavailable: email login is not configured")?;
     let action = if purpose == "close" {
         "验证账号注销"
     } else {
         "登录 ShipForge"
     };
-    let body = json!({"from":from,"to":[email],"subject":format!("ShipForge · {action}"),"text":format!("请在十分钟内打开以下链接，输入发起操作的设备上显示的配对码。\n{link}\n如果并非你本人操作，可以忽略这封邮件。")});
-    let http = ureq::Agent::config_builder()
-        .max_redirects(0)
-        .timeout_global(Some(Duration::from_secs(12)))
-        .build()
-        .new_agent();
-    let response = http
-        .post(endpoint)
-        .header("Authorization", format!("Bearer {key}"))
-        .header("Idempotency-Key", id)
-        .send_json(&body)
-        .map_err(|_| "unavailable: verification email could not be sent")?;
-    if !response.status().is_success() {
-        return Err("unavailable: verification email could not be sent".into());
-    }
-    Ok(())
+    let text = format!(
+        "请在十分钟内打开以下链接，输入发起操作的设备上显示的配对码。\n{link}\n如果并非你本人操作，可以忽略这封邮件。"
+    );
+    let transport = crate::mail::Transport::load()?;
+    transport.verify(id, email, &format!("ShipForge · {action}"), &text)
 }
 
 fn immediate(db: &Connection) -> Result<Transaction<'_>, String> {

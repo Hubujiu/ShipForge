@@ -5,6 +5,8 @@ mod host;
 mod mcp;
 mod personal_bots;
 mod process;
+mod runtime_tools;
+mod service;
 mod slack;
 use clap::{Parser, Subcommand};
 use config::{Config, Result};
@@ -24,6 +26,21 @@ struct Options {
 }
 #[derive(Subcommand)]
 enum Action {
+    /// Manage this user's machine supervisor and Windows login policy.
+    Service {
+        #[arg(value_enum)]
+        action: service::Operation,
+        #[arg(long)]
+        config: Option<PathBuf>,
+        #[arg(long)]
+        directory: Option<PathBuf>,
+        #[arg(long, value_enum)]
+        mode: Option<service::StartMode>,
+        #[arg(long,action=clap::ArgAction::Set)]
+        keep_background: Option<bool>,
+        #[arg(long,action=clap::ArgAction::Set)]
+        close_to_tray: Option<bool>,
+    },
     /// Create a new machine configuration. Existing files are preserved.
     Init {
         #[arg(long)]
@@ -149,6 +166,30 @@ enum Action {
 }
 fn execute() -> Result<serde_json::Value> {
     match Options::parse().command {
+        Action::Service {
+            action,
+            config,
+            directory,
+            mode,
+            keep_background,
+            close_to_tray,
+        } => {
+            let data = directory
+                .map(Ok)
+                .unwrap_or_else(shipforge_client::data_dir)?;
+            if let Some(file) = config {
+                service::execute(action, &file, &data, mode, keep_background, close_to_tray)
+            } else if matches!(
+                action,
+                service::Operation::DesktopOpen
+                    | service::Operation::DesktopExit
+                    | service::Operation::Status
+            ) {
+                service::desktop(action, &data, keep_background)
+            } else {
+                Err("supply the local machine --config".into())
+            }
+        }
         Action::Init {
             config,
             workspace,

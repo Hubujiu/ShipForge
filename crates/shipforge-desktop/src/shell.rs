@@ -18,6 +18,13 @@ impl Workbench {
     fn topbar(&self, width: f32, cx: &Context<Self>) -> impl IntoElement {
         let brand = icon("layers", 17.).text_color(rgb(GREEN));
         TitleBar::new()
+            .when(self.mode != "demo" && !self.smoke, |bar| {
+                bar.on_close_window(cx.listener(|s, _, w, cx| {
+                    if s.machine_window_close(w, cx) {
+                        w.remove_window();
+                    }
+                }))
+            })
             .h(px(40.))
             .bg(rgb(0xf2f2f8))
             .border_b_1()
@@ -495,7 +502,16 @@ impl Workbench {
                         }
                     }
                 }
-                let display = if multi {
+                let display = if e.spec.format == Format::Many("$workflow_statuses")
+                    && let crate::forms::Selection::Many(selected) = &value
+                {
+                    selected
+                        .iter()
+                        .filter_map(|id| options.iter().find(|(key, _)| key == id))
+                        .map(|(_, label)| label.as_str())
+                        .collect::<Vec<_>>()
+                        .join(" → ")
+                } else if multi {
                     options
                         .iter()
                         .filter(|(v, _)| !v.is_empty() && value.contains(v))
@@ -672,6 +688,9 @@ impl Workbench {
         }
         if let Mode::Bot(f) = &mode {
             body = body.child(self.bot_content(f, cx));
+        }
+        if let Mode::MachineManagement(f) = &mode {
+            body = body.child(self.machine_management_content(f, cx));
         }
         if let Mode::Output { content, .. } = &mode {
             body = body.child(text(content.clone(), 13., INK)).child(

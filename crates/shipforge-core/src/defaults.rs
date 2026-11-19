@@ -10,6 +10,12 @@ const STATUSES: &[(&str, &str)] = &[
     ("duplicate", "重复"),
 ];
 const TYPES: &[(&str, &str)] = &[("task", "任务"), ("requirement", "需求"), ("bug", "缺陷")];
+pub(crate) fn status_names(id: &str) -> Option<(&'static str, &'static str)> {
+    STATUSES
+        .iter()
+        .find(|(k, _)| *k == id)
+        .map(|(k, zh)| (*zh, initial_name(k, zh, true)))
+}
 const RELATIONS: &[(&str, &str, &str)] = &[
     ("related", "关联", "关联"),
     ("blocks", "阻塞", "被阻塞"),
@@ -28,6 +34,9 @@ pub(crate) fn builtin(kind: &str, id: &str) -> bool {
 pub(crate) fn seed(c: &Context<'_>) -> Result<()> {
     let english = crate::organization::defaults(c)?.0 == "en";
     for (order, (id, title)) in STATUSES.iter().enumerate() {
+        if crate::statuses::retired(c, id)? {
+            continue;
+        }
         let title = initial_name(id, title, english);
         if c.find("status", id)?.is_none() {
             c.create("status",Some(id),title,json!({"creator":c.actor,"system":true,"category":id,"order":order,"default":*id=="todo"}))?;
@@ -39,6 +48,7 @@ pub(crate) fn seed(c: &Context<'_>) -> Result<()> {
             c.create("task_type",Some(id),title,json!({"creator":c.actor,"system":true,"statuses":[],"required_fields":[],"order":order,"default":*id=="task"}))?;
         }
     }
+    crate::statuses::seed(c)?;
     for (order, (id, forward, reverse)) in RELATIONS.iter().enumerate() {
         if c.find("relation_type", id)?.is_none() {
             c.create("relation_type",Some(id),forward,json!({"creator":c.actor,"system":true,"forward":forward,"reverse":reverse,"order":order}))?;

@@ -28,7 +28,9 @@ def verify(directory):
             assert self.path=="/emails" and self.headers["Authorization"]=="Bearer loopback-key"
             message=json.loads(self.rfile.read(int(self.headers["Content-Length"])))
             assert self.headers["Idempotency-Key"] and len(message["to"])==1
-            mail.put((message["to"][0],re.search(r"http://[^\s]+",message["text"]).group()))
+            link=re.search(r"http://[^\s]+",message["text"]).group()
+            if urlsplit(link).path == "/identity/approve":
+                mail.put((message["to"][0],link))
             self.send_response(200)
             self.end_headers()
             self.wfile.write(b'{"id":"local-mail-receipt"}')

@@ -3,6 +3,7 @@ mod bugly;
 mod conversation_http;
 mod github;
 mod jira;
+mod mail;
 mod slack;
 
 use auth::{Auth, Principal};
@@ -136,6 +137,7 @@ fn serve(
     let database = dir.join("workspace.sqlite3");
     let server = Server::http(addr).map_err(|e| format!("server: {e}"))?;
     let bugly_origin = bugly::origin(&server.server_addr().to_string())?;
+    mail::start(&database)?;
     let mut scheduler = Store::open(&database)?;
     std::thread::Builder::new()
         .name("shipforge-iteration-clock".into())
@@ -175,6 +177,10 @@ fn serve(
             let bugly_origin = &bugly_origin;
             scope.spawn(move||{
                 for mut request in server.incoming_requests() {
+                    if request.url().starts_with("/open/") {
+                        mail::landing(request);
+                        continue;
+                    }
                     if conversation_http::matches(request.url()) {
                         conversation_http::respond(request, &auth, &mut store);
                         continue;

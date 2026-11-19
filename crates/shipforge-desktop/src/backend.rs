@@ -139,6 +139,8 @@ impl Backend {
                                     let mut q=json!({"op":"directory.people","space":space,"query":people.1,"limit":5000});
                                     if !people.0.is_empty(){q["kind"]=json!(people.0);}
                                     q
+                                } else if kind=="status_library" {
+                                    json!({"op":"status.library","space":space})
                                 } else if kind=="organization_settings" {
                                     json!({"op":"organization.settings","space":space})
                                 } else if kind == "catalog" {
@@ -167,7 +169,15 @@ impl Backend {
                                     json!({"op":"list","kind":kind,"space":space})
                                 };
                                 let result = execute(&mut client, command).and_then(|value| {
-                                    let value = if kind=="organization_settings" {
+                                    let value = if kind=="status_library" {
+                                        json!(value["statuses"].as_array().into_iter().flatten().map(|row|{
+                                            let mut fields=row["fields"].clone();
+                                            fields["usage"]=row["usage"].clone();
+                                            fields["local_id"]=row["local_id"].clone();
+                                            fields["can_manage"]=value["can_manage"].clone();
+                                            json!({"kind":kind,"id":row["id"],"title":row["title"],"space":space,"rev":row["rev"],"fields":fields})
+                                        }).collect::<Vec<_>>())
+                                    } else if kind=="organization_settings" {
                                         json!([{"kind":kind,"id":value["id"],"space":space,"title":value["name"],"rev":value["rev"],"fields":value}])
                                     }else if kind=="agent_settings" && let Some((_,id))=&handler{
                                         json!([{"kind":"agent_settings","id":id,"space":space,"fields":value}])

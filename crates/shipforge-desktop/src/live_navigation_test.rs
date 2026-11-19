@@ -313,6 +313,7 @@ fn hidden_organization_priority_windows() {
     let dir = temp.path().to_path_buf();
     let mut client = Client::local(&dir).unwrap();
     client.execute(json!({"op":"onboarding.setup","organization_name":"Organization defaults","organization_slug":"defaults-qa","work_type":"software","task_types":["task"]})).unwrap();
+    client.execute(json!({"op":"create","kind":"member","id":"partner","title":"QA Partner","fields":{"role":"admin"}})).unwrap();
     gpui_kit::application()
         .with_assets(crate::assets::Assets)
         .run(move |cx| {
@@ -338,6 +339,24 @@ fn hidden_organization_priority_windows() {
                     settle(&view, w, cx);
                     act(&view, UiAction::Go(Page::Organizations), w, cx);
                     assert!(buttons(w).iter().any(|s| s == "组织默认设置"));
+                    assert!(buttons(w).iter().any(|s| s == "添加组织所有者"));
+                    let org = view.read(cx).list("organization_settings")[0].clone();
+                    act(
+                        &view,
+                        UiAction::Form(Mode::OrgOwnership(org, "grant")),
+                        w,
+                        cx,
+                    );
+                    act(&view, UiAction::Pick(0), w, cx);
+                    assert!(buttons(w).iter().any(|s| s.contains("QA Partner")));
+                    act(&view, UiAction::Choose(0, "partner".into()), w, cx);
+                    act(&view, UiAction::Submit, w, cx);
+                    assert_eq!(
+                        client
+                            .execute(json!({"op":"organization.settings"}))
+                            .unwrap()["owners"],
+                        2
+                    );
                     let change = |levels: &str, w: &mut Window, cx: &mut App| {
                         let org = view.read(cx).list("organization_settings")[0].clone();
                         act(&view, UiAction::Form(Mode::OrgDefaults(org)), w, cx);
@@ -380,6 +399,94 @@ fn hidden_organization_priority_windows() {
                     );
                 })
                 .unwrap();
+            cx.quit();
+        });
+}
+
+#[::core::prelude::v1::test]
+#[ignore = "Opens a real delivery link in a signed-in native Windows window"]
+fn hidden_mail_link_opens_the_permission_checked_task() {
+    let tmp = tempfile::tempdir().unwrap();
+    let service = tmp.path().join("service");
+    std::fs::create_dir(&service).unwrap();
+    let device = tmp.path().join("native");
+    let mut store = shipforge_core::Store::open(&service.join("workspace.sqlite3")).unwrap();
+    let recipient = store.verified_login("native@example.test").unwrap()["actor"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    store.execute("owner",json!({"op":"onboarding.setup","organization_name":"Delivery","organization_slug":"delivery","work_type":"software","task_types":["task"]})).unwrap();
+    store.execute("owner",json!({"op":"create","kind":"member","id":recipient,"title":"Recipient","fields":{"role":"member"}})).unwrap();
+    store
+        .execute(
+            &recipient,
+            json!({"op":"inbox.configure","channel":"inbox","key":"all","enabled":false}),
+        )
+        .unwrap();
+    store.execute("owner",json!({"op":"create","kind":"task","id":"mail-target","title":"Delivery target","fields":{"assignees":[recipient]}})).unwrap();
+    let link = store.claim_email().unwrap().unwrap().link;
+    let token = team_command(&service)
+        .args(["token", "issue", "--actor", &recipient, "--scope", "write"])
+        .output()
+        .unwrap();
+    let token: Value = serde_json::from_slice(&token.stdout).unwrap();
+    let mut team = Team(
+        team_command(&service)
+            .args(["serve", "--listen", "127.0.0.1:0"])
+            .stdout(Stdio::piped())
+            .spawn()
+            .unwrap(),
+    );
+    let mut line = String::new();
+    BufReader::new(team.0.stdout.take().unwrap())
+        .read_line(&mut line)
+        .unwrap();
+    let listen: Value = serde_json::from_str(&line).unwrap();
+    Client::save_connection(
+        Some(&device),
+        &format!("http://{}", listen["listen"].as_str().unwrap()),
+        token["token"].as_str().unwrap(),
+    )
+    .unwrap();
+    gpui_kit::application()
+        .with_assets(crate::assets::Assets)
+        .run(move |cx| {
+            gpui_kit::init(cx);
+            let (window, view) = gpui_kit::open_window(
+                WindowOptions {
+                    focus: false,
+                    show: false,
+                    ..Default::default()
+                },
+                cx,
+                |w, cx| {
+                    cx.new(|cx| {
+                        let mut wb = Workbench::new(Some(device.clone()), false, false, w, cx);
+                        wb.inbox.initial_link = Some(link.clone());
+                        wb
+                    })
+                },
+            )
+            .unwrap();
+            window
+                .update(cx, |_, w, cx| {
+                    activate_accessibility(w);
+                    wait_for(&view, w, cx, "email landing in task", |wb| {
+                        wb.loc
+                            .selected
+                            .as_ref()
+                            .is_some_and(|r| r.id == "mail-target" && r.title == "Delivery target")
+                    });
+                    act(
+                        &view,
+                        UiAction::Inbox(super::inbox_ui::Action::Settings(Some("email".into()))),
+                        w,
+                        cx,
+                    );
+                    assert!(buttons(w).iter().any(|v| v == "邮件投递记录"));
+                })
+                .unwrap();
+            drop(team);
             cx.quit();
         });
 }

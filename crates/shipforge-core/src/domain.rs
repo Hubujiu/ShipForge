@@ -106,6 +106,9 @@ fn write_inner(
     }
     if op == "delete" {
         let r = old.as_ref().ok_or_else(|| invalid("missing record"))?;
+        if kind == "status" {
+            crate::statuses::protect_delete(c, r)?;
+        }
         validate_delete(c, r)?;
         crate::conversation_tools::reviews::forget(c, kind, &r.id)?;
         if kind == "task" {
@@ -353,6 +356,9 @@ fn write_inner(
     {
         crate::iterations::record_override(c, &row)?;
     }
+    if kind == "status" {
+        crate::statuses::changed(c, old.as_ref(), &row)?;
+    }
     crate::iterations::supplement(c, old.as_ref(), &row)?;
     if notify {
         crate::actions::after(c, old.as_ref(), &row)?;
@@ -430,7 +436,7 @@ fn create_space(c: &Context<'_>, q: &Value) -> Result<Value> {
         "member",
         Some(c.actor),
         c.actor,
-        json!({"actor":c.actor,"role":if c.actor=="owner"{"owner"}else{"admin"},"creator":c.actor}),
+        json!({"actor":c.actor,"role":if is_org || c.actor=="owner"{"owner"}else{"admin"},"creator":c.actor}),
     )?;
     crate::defaults::seed(&dest)?;
     if let Some(work) = work {
@@ -610,12 +616,32 @@ fn validate(
             ) {
                 return Err(invalid("unknown member role"));
             }
-            if (row.id == "owner") != (f["role"] == "owner") {
-                return Err(forbidden("the workspace owner role is reserved"));
+            if org_id == c.space {
+                let was_owner = old.is_some_and(|r| r.fields["role"] == "owner");
+                if f["role"]
+                    .as_str()
+                    .is_some_and(|role| (role == "owner") != was_owner)
+                    || (row.id == "owner" && f["role"] != "owner")
+                {
+                    return Err(forbidden(
+                        "use organization.ownership to change organization owners",
+                    ));
+                }
+            } else if (row.id == "owner") != (f["role"] == "owner") {
+                return Err(forbidden(
+                    "the installation owner role is reserved in child spaces",
+                ));
+            } else if c.get("space", c.space)?.fields["creator"] == row.id
+                && !matches!(f["role"].as_str(), Some("admin" | "owner"))
+            {
+                return Err(forbidden(
+                    "transfer the space before demoting its current owner",
+                ));
             }
         }
         "relation" => validate_relation(c, &row.id, f)?,
         "status" => {
+            crate::statuses::validate(c, old, f)?;
             let category = required(f, "category")?;
             if !BASE_STATUS.contains(&category) {
                 return Err(invalid("unknown status category"));
@@ -633,6 +659,7 @@ fn validate(
             }
         }
         "task_type" => {
+            crate::statuses::validate_workflow(c, old, &row.id, f)?;
             if let Some(v) = f.get("statuses") {
                 for id in strings(v, "statuses")? {
                     c.category_for(id)?;
@@ -854,9 +881,6 @@ fn validate_body(f: &mut Value, title: &str) -> Result<()> {
 }
 impl Context<'_> {
     pub(crate) fn category_for(&self, status: &str) -> Result<String> {
-        if BASE_STATUS.contains(&status) {
-            return Ok(status.to_owned());
-        }
         Ok(required(&self.readable("status", status)?.fields, "category")?.to_owned())
     }
     pub(crate) fn status_category(&self, task: &Record) -> Result<String> {

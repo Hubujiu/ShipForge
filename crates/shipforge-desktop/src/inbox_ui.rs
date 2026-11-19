@@ -240,6 +240,14 @@ impl Workbench {
         self.mode != "team" || self.access_identity["scope"] == "write"
     }
     fn inbox_link(&mut self, link: &str) {
+        if let Ok((_, space, _)) = shipforge_core::delivery_link_parts(link) {
+            self.inbox_call(
+                json!({"op":"delivery.open","space":space,"link":link,"allow_cached":false}),
+                Reply::Opened,
+                false,
+            );
+            return;
+        }
         if let Ok((origin, space, id)) = shipforge_core::inbox_link_parts(link) {
             self.inbox_call(json!({"op":if self.inbox_can_write(){"inbox.open"}else{"inbox.locate"},"origin":origin,"space":space,"id":id}),Reply::Opened,self.inbox_can_write());
         }

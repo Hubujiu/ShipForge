@@ -62,6 +62,7 @@ const WRITES: &[&str] = &[
     "bugly.settle",
     "space.join",
     "space.leave",
+    "space.transfer",
     "space.deactivate",
     "space.restore",
     "space.pin",
@@ -76,6 +77,8 @@ const WRITES: &[&str] = &[
     "chat.start",
     "organization.configure",
     "organization.depart",
+    "organization.ownership",
+    "delivery.retry",
     "chat.organize",
     "chat.fork",
     "chat.bind_task",
@@ -156,6 +159,8 @@ const READS: &[&str] = &[
     "search",
     "directory.people",
     "organization.settings",
+    "delivery.history",
+    "delivery.open",
     "space.list",
     "organization.list",
     "events",
@@ -192,6 +197,8 @@ pub(crate) fn operation_names() -> Vec<&'static str> {
     READS
         .iter()
         .chain(WRITES)
+        .chain(crate::statuses::READS)
+        .chain(crate::statuses::WRITES)
         .chain(worker::OPS)
         .chain(crate::bots::READS)
         .chain(crate::bots::WRITES)
@@ -202,6 +209,7 @@ pub(crate) fn operation_names() -> Vec<&'static str> {
 }
 pub fn is_read_only(op: &str) -> bool {
     READS.contains(&op)
+        || crate::statuses::READS.contains(&op)
         || worker::READ_OPS.contains(&op)
         || crate::bots::READS.contains(&op)
         || crate::conversation_tools::READS.contains(&op)
@@ -236,6 +244,12 @@ pub fn schema() -> Value {
         json!({"enum":["space","organization"],"default":"space"});
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"directory.people"}}},"then":{"properties":{"kind":{"enum":["agent","crew","member","machine"]}}}}));
     schema["properties"]["sidebar_visible"] = json!({"type":"boolean"});
+    schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"organization.ownership"}}},"then":{"required":["expected_rev","action","target"],"properties":{"action":{"enum":["grant","revoke","transfer"]},"target":{"type":"string","minLength":1}}}}));
+    schema["allOf"].as_array_mut().unwrap().extend([
+        json!({"if":{"properties":{"op":{"const":"delivery.open"}}},"then":{"required":["link"],"properties":{"link":{"type":"string","pattern":"^shipforge://activity/"}}}}),
+        json!({"if":{"properties":{"op":{"const":"delivery.retry"}}},"then":{"required":["id"]}}),
+        json!({"if":{"properties":{"op":{"const":"delivery.history"}}},"then":{"properties":{"invitations":{"type":"boolean"},"limit":{"type":"integer","minimum":1,"maximum":500}}}}),
+    ]);
     schema["allOf"].as_array_mut().unwrap().extend([
         json!({"if":{"properties":{"op":{"const":"organization.configure"}}},"then":{"required":["expected_rev"],"anyOf":[{"required":["default_language"]},{"required":["priority_levels"]}],"properties":{"default_language":{"enum":["zh-CN","en"]},"priority_levels":{"enum":[4,5]}}}}),
         json!({"if":{"properties":{"op":{"const":"organization.depart"}}},"then":{"required":["expected_rev","action","confirmation"],"properties":{"action":{"enum":["leave","dissolve"]},"confirmation":{"type":"string","minLength":1}},"if":{"properties":{"action":{"const":"dissolve"}}},"then":{"required":["members"],"properties":{"members":{"type":"integer","minimum":1}}}}})
@@ -262,6 +276,7 @@ pub fn schema() -> Value {
     ]);
     crate::task_commands::assignees::schema(&mut schema);
     crate::task_fields::schema(&mut schema);
+    crate::statuses::schema(&mut schema);
     crate::inbox::schema(&mut schema);
     crate::bots::schema(&mut schema);
     crate::conversation_tools::schema(&mut schema);

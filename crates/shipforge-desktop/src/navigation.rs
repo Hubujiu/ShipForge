@@ -48,6 +48,34 @@ impl Workbench {
             );
         }
         if self.access_identity["personal"] != true && self.access_identity["scope"] != "read" {
+            if org.fields.get("can_manage_owners") == Some(&Value::Bool(true)) {
+                for (action, label) in [
+                    ("grant", "添加组织所有者"),
+                    ("transfer", "转让组织所有权"),
+                    ("revoke", "将所有者改为管理员"),
+                ] {
+                    if (action == "transfer" && self.actor == "owner")
+                        || (action == "revoke"
+                            && org
+                                .fields
+                                .get("owners")
+                                .and_then(Value::as_u64)
+                                .unwrap_or(1)
+                                <= 1)
+                    {
+                        continue;
+                    }
+                    actions = actions.child(
+                        outlined(self.button(
+                            format!("org-owners-{action}"),
+                            label,
+                            UiAction::Form(Mode::OrgOwnership(org.clone(), action)),
+                            cx,
+                        ))
+                        .child(crate::locale::label(label)),
+                    );
+                }
+            }
             for (permission, label, action) in [
                 ("can_leave", "离开组织", "leave"),
                 ("can_dissolve", "删除组织", "dissolve"),

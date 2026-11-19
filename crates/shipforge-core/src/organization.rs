@@ -1,6 +1,19 @@
 use crate::{Context, Record, Result, conflict, domain, forbidden, invalid, json, required};
 use serde_json::Value;
 
+pub(crate) fn migrate_owners(db: &rusqlite::Connection) -> Result<()> {
+    // Older verified-account organizations stored their creator as an administrator.
+    db.execute("UPDATE records AS m SET fields=json_set(fields,'$.role','owner'),rev=rev+1
+        WHERE m.kind='member' AND EXISTS(SELECT 1 FROM records o WHERE o.space=m.space AND o.kind='organization' AND o.id=m.space AND json_extract(o.fields,'$.creator')=m.id)
+        AND NOT EXISTS(SELECT 1 FROM records p WHERE p.space=m.space AND p.kind='member' AND json_extract(p.fields,'$.role')='owner')",[]).map_err(crate::storage)?;
+    Ok(())
+}
+fn set_role(c: &Context<'_>, member: &Record, role: &str) -> Result<Record> {
+    let mut fields = member.fields.clone();
+    fields["role"] = json!(role);
+    c.update(member, &member.title, fields)
+}
+
 pub(crate) fn defaults(c: &Context<'_>) -> Result<(String, u64)> {
     let org = c.org_id()?;
     let root = Context { space: &org, ..*c };
@@ -46,10 +59,23 @@ pub(crate) fn imported_priority(c: &Context<'_>, value: &str) -> Result<()> {
 }
 fn details(c: &Context<'_>, org: &Record) -> Result<Value> {
     let (language, levels) = defaults(c)?;
-    let members = c.records("member")?.len();
-    let owner = org.fields["creator"] == c.actor;
+    let roster = c.records("member")?;
+    let members = roster.len();
+    let owners = roster
+        .iter()
+        .filter(|m| m.fields["role"] == "owner")
+        .count();
+    let owner = roster
+        .iter()
+        .any(|m| m.id == c.actor && m.fields["role"] == "owner");
+    let mut choices = Vec::new();
+    if owner {
+        for m in &roster {
+            choices.push(json!({"id":m.id,"name":m.title,"role":m.fields["role"]}));
+        }
+    }
     Ok(
-        json!({"id":org.id,"name":org.title,"rev":org.rev,"default_language":language,"priority_levels":levels,"members":members,"can_configure":matches!(c.role()?.as_str(),"owner"|"admin"),"can_leave":!owner && c.actor!="owner","can_dissolve":owner && org.id!="default"}),
+        json!({"id":org.id,"name":org.title,"rev":org.rev,"default_language":language,"priority_levels":levels,"members":members,"owners":owners,"ownership_choices":choices,"can_manage_owners":owner,"can_configure":matches!(c.role()?.as_str(),"owner"|"admin"),"can_leave":(!owner||owners>1) && c.actor!="owner","can_dissolve":owner && org.id!="default"}),
     )
 }
 pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
@@ -64,6 +90,42 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
         return Err(invalid("expected_rev is required"));
     }
     domain::check_rev(q, &org)?;
+    if op == "organization.ownership" {
+        let impact = details(&root, &org)?;
+        if impact["can_manage_owners"] != true {
+            return Err(forbidden("organization owner required"));
+        }
+        let target = root.get("member", required(q, "target")?)?;
+        let action = required(q, "action")?;
+        match action {
+            "grant" | "transfer" => {
+                if target.id == c.actor {
+                    return Err(invalid("select another organization member"));
+                }
+                if action == "transfer" && c.actor == "owner" {
+                    return Err(forbidden("the installation owner must remain an owner"));
+                }
+                if target.fields["role"] != "owner" {
+                    set_role(&root, &target, "owner")?;
+                }
+                if action == "transfer" {
+                    set_role(&root, &root.get("member", c.actor)?, "admin")?;
+                }
+            }
+            "revoke" => {
+                if target.fields["role"] != "owner" {
+                    return Err(invalid("select an organization owner"));
+                }
+                if target.id == "owner" || impact["owners"].as_u64().unwrap_or(0) <= 1 {
+                    return Err(conflict("at least one organization owner must remain"));
+                }
+                set_role(&root, &target, "admin")?;
+            }
+            _ => return Err(invalid("choose grant, transfer or revoke")),
+        }
+        let next = root.update(&org, &org.title, org.fields.clone())?;
+        return details(&root, &next);
+    }
     if op == "organization.configure" {
         root.require_admin()?;
         if q.get("default_language").is_none() && q.get("priority_levels").is_none() {
@@ -90,11 +152,18 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
                     "organization owner must retain ownership or dissolve the organization",
                 ));
             }
-            let member = root.get("member", c.actor)?;
+            let mut member = root.get("member", c.actor)?;
+            if member.fields["role"] == "owner" {
+                member = set_role(&root, &member, "admin")?;
+            }
             crate::tasks::cleanup(&root, &member)?;
             crate::worker::allow_delete(&root, &member)?;
             crate::chat::forget_grants(&root, c.actor)?;
             root.remove(&member)?;
+            // The organization revision protects simultaneous owner changes and destructive confirmations.
+            if impact["can_manage_owners"] == true {
+                root.update(&org, &org.title, org.fields.clone())?;
+            }
         }
         "dissolve" => {
             if impact["can_dissolve"] != true {

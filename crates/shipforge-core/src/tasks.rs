@@ -14,26 +14,8 @@ pub(crate) fn validate_task(
             f["type"] = json!(crate::defaults::selected(c, "task_type", "task")?);
         }
         if f["status"].is_null() {
-            let default = crate::defaults::selected(c, "status", "todo")?;
             let config = c.find("task_type", required(f, "type")?)?;
-            let workflow = config
-                .as_ref()
-                .and_then(|r| r.fields["statuses"].as_array())
-                .filter(|r| !r.is_empty());
-            let chosen = workflow
-                .filter(|r| !r.iter().any(|v| v == &default))
-                .and_then(|ls| {
-                    ls.iter()
-                        .filter_map(Value::as_str)
-                        .find(|id| {
-                            c.category_for(id).is_ok_and(|v| {
-                                !matches!(v.as_str(), "triage" | "duplicate" | "cancelled" | "done")
-                            })
-                        })
-                        .or_else(|| ls.first().and_then(Value::as_str))
-                })
-                .unwrap_or(&default);
-            f["status"] = json!(chosen);
+            f["status"] = json!(crate::statuses::default_id(c, config.as_ref())?);
         }
         for (k, v) in [
             ("priority", json!("none")),
@@ -112,7 +94,12 @@ pub(crate) fn validate_task(
         && (intake || external && !historical && !terminal)
     {
         let candidate = match allowed.filter(|list| !list.is_empty()) {
-            None => Some("triage".into()),
+            None if c.find("status", "triage")?.is_some() => Some("triage".into()),
+            None => c
+                .records("status")?
+                .into_iter()
+                .find(|r| r.fields["category"] == "triage")
+                .map(|r| r.id),
             Some(list) => list
                 .iter()
                 .filter_map(Value::as_str)
@@ -391,7 +378,14 @@ pub(crate) fn target_status(c: &Context<'_>, task: &Record, category: &str) -> R
             .map(str::to_owned)
             .ok_or_else(|| invalid(&format!("workflow has no {category} status")));
     }
-    Ok(category.into())
+    if c.find("status", category)?.is_some() {
+        return Ok(category.into());
+    }
+    c.records("status")?
+        .into_iter()
+        .find(|r| r.fields["category"] == category)
+        .map(|r| r.id)
+        .ok_or_else(|| invalid("no available state in the requested category"))
 }
 
 pub(crate) fn cleanup(c: &Context<'_>, r: &Record) -> Result<()> {
@@ -411,10 +405,13 @@ pub(crate) fn cleanup(c: &Context<'_>, r: &Record) -> Result<()> {
             ));
         }
         "member" => {
-            if r.id == "owner" || c.get("space", c.space)?.fields["creator"] == r.id {
+            let org = c.org_id()?;
+            if r.id == "owner"
+                || (org == c.space && r.fields["role"] == "owner")
+                || (org != c.space && c.get("space", c.space)?.fields["creator"] == r.id)
+            {
                 return Err(forbidden("space owner membership is permanent"));
             }
-            let org = c.org_id()?;
             if org == c.space {
                 for child in c.all_spaces()? {
                     if child.id != org && child.fields["organization"] == org {

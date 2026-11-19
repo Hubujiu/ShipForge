@@ -1,12 +1,16 @@
 use crate::appearance::{paint as rgb, surface as white};
 use crate::{
     app::{UiAction, Workbench},
-    catalog::{Page, Record, STATUSES, label_value, summary, value_text},
+    catalog::{Page, Record, label_value, summary, value_text},
     controls::*,
     forms::Mode,
     motion,
 };
-use gpui_kit::{base::Button, prelude::*, *};
+use gpui_kit::{
+    base::{Button, TestSupportExt},
+    prelude::*,
+    *,
+};
 use serde_json::{Value, json};
 #[path = "chat_panel.rs"]
 mod chat_panel;
@@ -128,6 +132,15 @@ impl Workbench {
             );
         }
         if p == Page::Machines && self.mode != "demo" {
+            header = header.child(
+                outlined(self.button(
+                    "machine-service-policy",
+                    "本机服务设置",
+                    UiAction::MachineManagement(crate::app::machine_management::Action::Settings),
+                    cx,
+                ))
+                .child(crate::locale::label("本机服务设置")),
+            );
             for (diagnose, label) in [(false, "授权本机工作目录"), (true, "本机进程与日志")]
             {
                 header = header.child(
@@ -270,6 +283,7 @@ impl Workbench {
                 );
         }
         if p.creatable()
+            && p != Page::Statuses
             && if p == Page::Spaces {
                 self.can_create_space()
             } else {
@@ -303,7 +317,13 @@ impl Workbench {
                     .bg(rgb(0xf5efd9)),
             );
         }
-        if let Some(error) = self.error.as_ref().or_else(|| self.errors.get(info.kind)) {
+        if let Some(error) = self.error.as_ref().or_else(|| {
+            self.errors.get(if p == Page::Statuses {
+                "status_library"
+            } else {
+                info.kind
+            })
+        }) {
             root = root.child(
                 row()
                     .w_full()
@@ -320,6 +340,7 @@ impl Workbench {
             );
         }
         match p {
+            Page::Statuses => root.child(self.status_library_panel(cx)).into_any_element(),
             Page::Spaces => root.child(self.space_directory(cx)).into_any_element(),
             Page::SpaceModules => root.child(self.space_module_page(cx)).into_any_element(),
             page if self.module_disabled(page) => {
@@ -341,7 +362,7 @@ impl Workbench {
                 .child(self.record_page(cx))
                 .into_any_element(),
             Page::Connectors => root
-                .child(self.bot_toolbar(cx))
+                .child(self.bot_toolbar(None, cx))
                 .child(
                     row().px(px(14.)).py(px(8.)).child(
                         outlined(self.button(
@@ -400,6 +421,34 @@ impl Workbench {
                 )
                 .child(text(label_value("role", invite.field("role")), 12., MUTED))
                 .child(chip(status, PALE, INK));
+            if let Some(mail_status) = invite.fields.get("mail")
+                && let Some(state) = mail_status["state"].as_str()
+            {
+                let mail = match state {
+                    "queued" => "邮件待发送",
+                    "sending" => "正在提交邮件",
+                    "retry" => "邮件稍后重试",
+                    "accepted" => "邮件服务已接收",
+                    "failed" => "邮件服务拒收",
+                    "unconfirmed" => "投递结果待确认",
+                    _ => "邮件已取消",
+                };
+                item = item.child(text(crate::locale::label(mail), 12., MUTED));
+                if state == "failed" && invite.field("state") == "active" {
+                    item = item.child(
+                        outlined(self.button(
+                            format!("retry-mail-{}", invite.id),
+                            "重试邮件",
+                            UiAction::Apply(
+                                json!({"op":"delivery.retry","id":mail_status["id"]}),
+                                "邮件已排入重试".into(),
+                            ),
+                            cx,
+                        ))
+                        .child(crate::locale::label("重试邮件")),
+                    );
+                }
+            }
             if state == "active" || (state == "revoked" && invite.field("channel") == "link") {
                 let label = if state == "revoked" {
                     "启用并复制"
@@ -792,10 +841,17 @@ impl Workbench {
                     )
                     .collect()
             }
-            _ => STATUSES
-                .iter()
-                .filter(|s| s.0 != "triage" || self.loc.page == Page::Triage)
-                .map(|s| (s.0.into(), s.1.into(), s.2))
+            _ => self
+                .status_rows(&self.loc.task_type)
+                .into_iter()
+                .filter(|s| s.field("category") != "triage" || self.loc.page == Page::Triage)
+                .map(|s| {
+                    (
+                        s.id.clone(),
+                        s.localized_title().to_owned(),
+                        self.status_color(s),
+                    )
+                })
                 .collect(),
         };
         for key in tasks.iter().flat_map(|r| r.grouped_values(group)) {
@@ -868,7 +924,13 @@ impl Workbench {
                     .bg(white())
                     .gap(px(7.))
                     .child(mark(color))
-                    .child(text(label, 12., MUTED))
+                    .child(
+                        text(label.clone(), 12., MUTED)
+                            .id(format!("status-empty-{group}-{key}"))
+                            .test_support()
+                            .role(Role::Heading)
+                            .aria_label(label),
+                    )
                     .child(div().flex_1())
                     .child(text("0", 11., DIM));
                 empty = empty.child(self.drop_target(target, group, &key, cx));
@@ -903,7 +965,13 @@ impl Workbench {
                         .px(px(10.))
                         .gap(px(7.))
                         .child(mark(color))
-                        .child(headline(label, 13.))
+                        .child(
+                            headline(label.clone(), 13.)
+                                .id(format!("board-heading-{group}-{key}"))
+                                .test_support()
+                                .role(Role::Heading)
+                                .aria_label(label),
+                        )
                         .child(text(n.to_string(), 11., DIM)),
                 )
                 .child(cards);
@@ -1027,42 +1095,93 @@ impl Workbench {
                     .child(text("优先级", 11., MUTED).w(px(56.))),
             );
         }
-        for r in tasks {
-            let mut b = self
-                .button(
-                    format!("task-row-{}", r.id),
-                    r.title.clone(),
-                    UiAction::Open(r.clone()),
-                    cx,
-                )
-                .w_full()
-                .h(px(42.))
-                .px(px(4.))
-                .gap(px(12.))
-                .justify_start()
-                .rounded_none()
-                .border_b_1()
-                .border_color(rgb(LINE))
-                .child(text(r.code(), 11., DIM).w(px(85.)).truncate())
-                .child(text(r.title.clone(), 13., INK).flex_1().truncate())
-                .when(
-                    r.fields.get("awaiting_review") == Some(&Value::Bool(true)),
-                    |b| b.child(text("待审阅", 11., VIOLET)),
-                )
-                .child(text(label_value("status", r.field("status")), 12., MUTED).w(px(78.)));
-            if table {
-                b = b.child(
-                    text(self.handlers_summary(r), 12., MUTED)
-                        .w(px(95.))
-                        .truncate(),
+        let grouped = !table
+            && self
+                .loc
+                .view
+                .as_ref()
+                .is_none_or(|v| v.field("group") == "status");
+        let groups = if grouped {
+            self.status_task_groups(tasks)
+        } else {
+            vec![(None, tasks.iter().collect())]
+        };
+        for (group, items) in groups {
+            if let Some(status) = group {
+                let key = format!(
+                    "{}-{}-{}-{}",
+                    self.loc.space,
+                    self.loc.view.as_ref().map_or("", |r| r.id.as_str()),
+                    self.loc.task_type,
+                    status
                 );
+                let folded = self.status_folds.get(&key).copied().unwrap_or_else(|| {
+                    self.find("status", &status)
+                        .is_some_and(|r| r.fields.get("collapsed") == Some(&Value::Bool(true)))
+                });
+                let name = self.name("status", &status);
+                list = list.child(
+                    self.button(
+                        format!("fold-status-{status}"),
+                        name.clone(),
+                        UiAction::FoldStatuses(key, !folded),
+                        cx,
+                    )
+                    .w_full()
+                    .justify_start()
+                    .child(icon(
+                        if folded {
+                            "chevron-right"
+                        } else {
+                            "chevron-down"
+                        },
+                        13.,
+                    ))
+                    .child(name)
+                    .child(text(items.len().to_string(), 11., MUTED)),
+                );
+                if folded {
+                    continue;
+                }
             }
-            b = b.child(text(label_value("priority", r.field("priority")), 12., DIM).w(px(56.)));
-            list = list.child(motion::layout(
-                format!("{}-task-row-{}", self.loc.space, r.id),
-                self.revision,
-                b,
-            ));
+            for r in items {
+                let mut b = self
+                    .button(
+                        format!("task-row-{}", r.id),
+                        r.title.clone(),
+                        UiAction::Open(r.clone()),
+                        cx,
+                    )
+                    .w_full()
+                    .h(px(42.))
+                    .px(px(4.))
+                    .gap(px(12.))
+                    .justify_start()
+                    .rounded_none()
+                    .border_b_1()
+                    .border_color(rgb(LINE))
+                    .child(text(r.code(), 11., DIM).w(px(85.)).truncate())
+                    .child(text(r.title.clone(), 13., INK).flex_1().truncate())
+                    .when(
+                        r.fields.get("awaiting_review") == Some(&Value::Bool(true)),
+                        |b| b.child(text("待审阅", 11., VIOLET)),
+                    )
+                    .child(text(self.name("status", r.field("status")), 12., MUTED).w(px(78.)));
+                if table {
+                    b = b.child(
+                        text(self.handlers_summary(r), 12., MUTED)
+                            .w(px(95.))
+                            .truncate(),
+                    );
+                }
+                b = b
+                    .child(text(label_value("priority", r.field("priority")), 12., DIM).w(px(56.)));
+                list = list.child(motion::layout(
+                    format!("{}-task-row-{}", self.loc.space, r.id),
+                    self.revision,
+                    b,
+                ));
+            }
         }
         list.into_any_element()
     }
@@ -1095,18 +1214,21 @@ impl Workbench {
             .border_color(rgb(LINE))
             .bg(white())
             .child(headline("状态分布", 14.));
-        for (k, l, color) in STATUSES {
-            let count = tasks.iter().filter(|r| r.field("status") == *k).count();
+        for state in self.status_rows("") {
+            let count = tasks
+                .iter()
+                .filter(|r| r.field("status") == state.id)
+                .count();
             chart = chart.child(
                 row()
                     .gap(px(8.))
-                    .child(text((*l).to_owned(), 12., MUTED).w(px(50.)))
+                    .child(text(state.localized_title().to_owned(), 12., MUTED).w(px(70.)))
                     .child(
                         div()
                             .w(px((count as f32 / n.max(1) as f32) * 230.))
                             .h(px(8.))
                             .rounded(px(3.))
-                            .bg(rgb(*color)),
+                            .bg(rgb(self.status_color(state))),
                     )
                     .child(text(count.to_string(), 12., INK)),
             );
@@ -1731,6 +1853,23 @@ impl Workbench {
                 .child("迭代历史"),
             );
         }
+        if r.kind == "task_type"
+            && self.writable()
+            && matches!(self.role.as_str(), "admin" | "owner")
+        {
+            actions = actions.child(
+                outlined(self.button(
+                    "configure-type-workflow",
+                    "配置类型工作流",
+                    UiAction::Form(Mode::Workflow {
+                        op: "task_type.workflow.save",
+                        record: r.clone(),
+                    }),
+                    cx,
+                ))
+                .child(crate::locale::label("配置类型工作流")),
+            );
+        }
         if can_edit {
             actions = actions.child(
                 outlined(self.button("edit-object", "编辑", UiAction::Edit(r.clone()), cx))
@@ -2097,6 +2236,17 @@ impl Workbench {
                 body = self.related_runs(body, r, cx);
             }
             "machine" => {
+                actions = actions.child(
+                    outlined(self.button(
+                        "machine-runtime-management",
+                        "运行时能力",
+                        UiAction::MachineManagement(
+                            crate::app::machine_management::Action::Inventory(r.id.clone()),
+                        ),
+                        cx,
+                    ))
+                    .child(crate::locale::label("运行时能力")),
+                );
                 for (op, label) in [
                     ("machine.directories", "获准工作目录"),
                     ("machine.diagnostics", "机器诊断"),
@@ -2546,7 +2696,7 @@ impl Workbench {
             .gap(px(8.))
             .child(headline("属性", 13.));
         let entries = [
-            ("当前状态", label_value("status", r.field("status"))),
+            ("当前状态", self.name("status", r.field("status"))),
             ("类型", label_value("type", r.field("type"))),
             ("人员处理人", self.member_names(r)),
             ("执行者", self.executor_name(r)),
@@ -2627,13 +2777,11 @@ impl Workbench {
             {
                 actions = actions.child(self.review_actions(r, cx));
             } else {
-                for (status, label) in [
-                    ("todo", "待开始"),
-                    ("in_progress", "开始处理"),
-                    ("done", "标为完成"),
-                ] {
-                    if r.field("status") != status {
-                        actions=actions.child(outlined(self.button(format!("set-{status}"),label,UiAction::Apply(json!({"op":"update","kind":"task","id":r.id,"expected_rev":r.rev,"fields":{"status":status}}),"状态已更新".into()),cx)).child(crate::locale::label(label)));
+                for state in self.status_rows(r.field("type")) {
+                    let status = &state.id;
+                    if r.field("status") != status && state.field("category") != "triage" {
+                        let label = state.localized_title().to_owned();
+                        actions=actions.child(outlined(self.button(format!("set-{status}"),label.clone(),UiAction::Apply(json!({"op":"update","kind":"task","id":r.id,"expected_rev":r.rev,"fields":{"status":status}}),"状态已更新".into()),cx)).child(label));
                     }
                 }
             }
@@ -2653,7 +2801,15 @@ impl Workbench {
         .child(icon("arrow-right", 13.))
         .child(text(r.title.clone(), 13., INK))
         .child(div().flex_1())
-        .child(text(label_value("status", r.field("status")), 11., MUTED))
+        .child(text(
+            if r.kind == "task" {
+                self.name("status", r.field("status"))
+            } else {
+                label_value("status", r.field("status"))
+            },
+            11.,
+            MUTED,
+        ))
     }
     fn thread_items(&self, kind: &str, key: &str, id: &str, cx: &Context<Self>) -> Div {
         let mut col = col().gap(px(9.));

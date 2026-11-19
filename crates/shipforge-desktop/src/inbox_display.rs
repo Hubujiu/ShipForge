@@ -271,6 +271,9 @@ impl Workbench {
                     Action::Reset(ch.clone()),
                 ));
             }
+            if ch == "email" {
+                panel=panel.child(outlined(self.button("email-delivery-history","邮件投递记录",UiAction::Inspect(json!({"op":"delivery.history","space":self.loc.space,"allow_cached":false}),"邮件投递记录".into()),cx)).child(crate::locale::label("邮件投递记录")));
+            }
             let toggle = |key: &str, title: &str| {
                 let on = overrides[key] != false;
                 let text = format!(

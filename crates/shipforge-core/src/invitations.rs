@@ -67,6 +67,16 @@ pub(crate) fn active(row: &Record) -> bool {
             .as_i64()
             .is_none_or(|at| at > now())
 }
+pub(crate) fn mail_link(c: &Context<'_>, id: &str) -> Result<String> {
+    let row = c.get("invitation", id)?;
+    if row.fields["creator"] != c.actor || row.fields["channel"] != "email" || !active(&row) {
+        return Err(unavailable());
+    }
+    c.require_admin()?;
+    check_targets(c, &row.fields["spaces"])?;
+    let response = link(c, row)?;
+    Ok(required(&response, "link")?.to_string())
+}
 fn issue(c: &Context<'_>, q: &Value) -> Result<Value> {
     let channel = required(q, "channel")?;
     let role = required(q, "role")?;
@@ -152,6 +162,9 @@ fn issue(c: &Context<'_>, q: &Value) -> Result<Value> {
         )
         .map_err(storage)?;
     }
+    if channel == "email" {
+        crate::mail::invitation(c, &row)?;
+    }
     link(c, row)
 }
 fn manage(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
@@ -162,17 +175,16 @@ fn manage(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
         return issue(&org, q);
     }
     if op == "invitation.list" {
-        return Ok(json!(
-            org.records("invitation")?
-                .into_iter()
-                .map(|mut row| {
-                    if row.fields["state"] == "active" && !active(&row) {
-                        row.fields["state"] = json!("expired");
-                    }
-                    row
-                })
-                .collect::<Vec<_>>()
-        ));
+        let mut rows = org.records("invitation")?;
+        for row in &mut rows {
+            if row.fields["state"] == "active" && !active(row) {
+                row.fields["state"] = json!("expired");
+            }
+            if row.fields["channel"] == "email" {
+                row.fields["mail"] = crate::mail::invitation_status(&org, &row.id)?;
+            }
+        }
+        return Ok(json!(rows));
     }
     let id = required(q, "id")?;
     let mut row = org.get("invitation", id)?;
@@ -204,6 +216,7 @@ fn manage(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
                 let mut fields = row.fields.clone();
                 fields["state"] = json!("revoked");
                 row = org.update(&row, &row.title, fields)?;
+                crate::mail::cancel_invitation(&org, &row.id)?;
             }
             Ok(as_value(row))
         }

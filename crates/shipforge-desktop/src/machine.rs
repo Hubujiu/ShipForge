@@ -3,11 +3,34 @@ use serde_json::{Value, json};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::{
-    fs::{self, OpenOptions},
+    fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    time::Duration,
 };
+pub fn service(
+    dir: &Path,
+    op: &str,
+    config: Option<&Path>,
+    options: &Value,
+) -> Result<Value, String> {
+    let mut cmd = command(&binary()?, dir);
+    cmd.arg("service").arg(op).arg("--directory").arg(dir);
+    if let Some(file) = config {
+        cmd.arg("--config").arg(file);
+    }
+    if let Some(mode) = options["mode"].as_str() {
+        cmd.arg("--mode").arg(mode);
+    }
+    for (key, name) in [
+        ("keep_background", "--keep-background"),
+        ("close_to_tray", "--close-to-tray"),
+    ] {
+        if let Some(b) = options[key].as_bool() {
+            cmd.arg(name).arg(if b { "true" } else { "false" });
+        }
+    }
+    serde_json::from_str(&output(&mut cmd)?).map_err(|e| e.to_string())
+}
 pub fn default_config(dir: Option<&Path>, space: &str) -> Result<PathBuf, String> {
     let root = dir
         .map(Path::to_owned)
@@ -37,6 +60,20 @@ fn binary() -> Result<PathBuf, String> {
             })
         })
         .and_then(|p| {
+            #[cfg(test)]
+            if !p.is_file()
+                && p.parent()
+                    .and_then(Path::file_name)
+                    .is_some_and(|name| name == "deps")
+                && let Some(file) = p
+                    .parent()
+                    .and_then(Path::parent)
+                    .zip(p.file_name())
+                    .map(|(root, name)| root.join(name))
+                    .filter(|candidate| candidate.is_file())
+            {
+                return Ok(file);
+            }
             if p.is_file() {
                 Ok(p)
             } else {
@@ -91,15 +128,23 @@ pub fn control(
         return Ok(found);
     }
     let config = Path::new(fields["config"].as_str().unwrap_or_default());
+    if fields["all"] == true && fields["service_operation"] == "desktop-exit" {
+        return service(&dir, "desktop-exit", None, fields);
+    }
     if !config.is_absolute() {
         return Err("需要工作机配置文件的绝对路径。".into());
     }
-    if let Some(op) = fields["local_operation"].as_str() {
+    if fields["local_operation"].is_string() || fields["service_operation"].is_string() {
         let options: Value = serde_json::from_slice(&fs::read(config).map_err(|e| e.to_string())?)
             .map_err(|e| e.to_string())?;
         if options["space"].as_str().unwrap_or("default") != space {
             return Err("所选配置属于另一个空间。".into());
         }
+    }
+    if let Some(op) = fields["service_operation"].as_str() {
+        return service(&dir, op, Some(config), fields);
+    }
+    if let Some(op) = fields["local_operation"].as_str() {
         let mut cmd = command(&program, &dir);
         match op {
             "diagnose" => {
@@ -122,13 +167,8 @@ pub fn control(
         return serde_json::from_str(&output(&mut cmd)?).map_err(|e| e.to_string());
     }
     if stop {
-        output(
-            command(&program, &dir)
-                .arg("stop")
-                .arg("--config")
-                .arg(config),
-        )?;
-        return Ok(json!({"message":"已请求工作机停止，运行中的任务会先完成。"}));
+        service(&dir, "stop", Some(config), &Value::Null)?;
+        return Ok(json!({"message":"工作机已停止。"}));
     }
     let executable = fields["program"].as_str().unwrap_or_default().trim();
     let workspace = fields["workspace"].as_str().unwrap_or_default().trim();
@@ -175,28 +215,8 @@ pub fn control(
         }
         output(&mut init)?;
     }
-    let log = config.with_extension("worker.log");
-    let file = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&log)
-        .map_err(|e| e.to_string())?;
-    let mut child = command(&program, &dir)
-        .arg("run")
-        .arg("--config")
-        .arg(config)
-        .stdout(Stdio::null())
-        .stderr(file)
-        .spawn()
-        .map_err(|e| e.to_string())?;
-    std::thread::sleep(Duration::from_millis(220));
-    if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
-        return Err(format!(
-            "工作机已退出（{status}）。请查看 {}",
-            log.display()
-        ));
-    }
+    let live = service(&dir, "start", Some(config), &Value::Null)?;
     Ok(
-        json!({"message":format!("已启动工作机。当前空间的机器列表将在注册后更新。日志位于 {}",log.display())}),
+        json!({"message":if live["status"]=="online"{"工作机已上线。"}else{"工作机正在注册。"},"service":live}),
     )
 }

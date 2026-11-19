@@ -254,6 +254,23 @@ impl Context<'_> {
     }
     pub(crate) fn authorize_replay(&self, q: &Value, result: &Value) -> Result<()> {
         let op = required(q, "op")?;
+        if crate::statuses::WRITES.contains(&op) {
+            if op == "task_type.workflow.save" {
+                self.require_admin()?;
+                self.readable("task_type", required(q, "id")?)?;
+            } else {
+                let org = self.org_id()?;
+                let root = Context {
+                    space: &org,
+                    ..*self
+                };
+                root.require_admin()?;
+                if op == "status.library.save" {
+                    root.readable("status", required(result, "id")?)?;
+                }
+            }
+            return Ok(());
+        }
         if crate::conversation_tools::handles(op) {
             return crate::conversation_tools::replay(self, op, q, result);
         }

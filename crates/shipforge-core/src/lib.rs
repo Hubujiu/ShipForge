@@ -16,8 +16,10 @@ mod inbox;
 mod invitations;
 mod iterations;
 mod jira;
+mod mail;
 pub mod onboarding;
 mod organization;
+pub use mail::{MailDispatch, MailResult, delivery_link_parts};
 mod persistence;
 pub mod personal_tokens;
 pub mod preferences;
@@ -29,6 +31,8 @@ pub mod runtime_diagnostics;
 mod saved_views;
 pub mod skill_package;
 mod spaces;
+mod statuses;
+pub use statuses::display_name as status_display_name;
 mod tags;
 mod task_commands;
 mod task_fields;
@@ -197,6 +201,7 @@ impl Store {
                 | "chat.share.read"
                 | "view.open"
                 | "task.open"
+                | "delivery.open"
                 | "document.open"
                 | "document.preview"
                 | "chat.share.image"
@@ -217,7 +222,11 @@ impl Store {
             && op != "provider.ingest"
             && !op.starts_with("cnb.internal.")
             && op != "jira.write"
-            && !matches!(op, "organization.depart" | "organization.configure")
+            && !matches!(
+                op,
+                "organization.depart" | "organization.configure" | "organization.ownership"
+            )
+            && !matches!(op, "delivery.retry" | "space.transfer")
             && !op.starts_with("imports.")
             && !op.starts_with("bugly.")
             && !op.starts_with("im.")
@@ -264,9 +273,16 @@ impl Store {
             }
         }
         let mut result = match op {
-            "organization.settings" | "organization.configure" | "organization.depart" => {
-                organization::execute(&c, &request, op)
+            op if statuses::READS.contains(&op) || statuses::WRITES.contains(&op) => {
+                statuses::execute(&c, op, &request)
             }
+            "delivery.history" | "delivery.open" | "delivery.retry" => {
+                mail::command(&c, op, &request)
+            }
+            "organization.settings"
+            | "organization.configure"
+            | "organization.depart"
+            | "organization.ownership" => organization::execute(&c, &request, op),
             op if op.starts_with("space.") && op != "space.list" => {
                 spaces::execute(&c, &request, op)
             }

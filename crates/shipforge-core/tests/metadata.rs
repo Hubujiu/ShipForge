@@ -65,6 +65,40 @@ fn editable_builtin_configuration_and_portable_overrides() {
         run(&mut dest, json!({"op":"import","data":export}))["created"],
         0
     );
+
+    for first in ["todo", "review"] {
+        let mut ordered = export.clone();
+        ordered["records"]
+            .as_array_mut()
+            .unwrap()
+            .sort_by_key(|row| row["id"] != first);
+        let mut dest = Store::memory().unwrap();
+        let preview = run(&mut dest, json!({"op":"import.preview","data":ordered}));
+        assert_eq!(
+            (preview["updated"].as_u64(), preview["created"].as_u64()),
+            (Some(1), Some(2))
+        );
+        assert_eq!(
+            run(&mut dest, json!({"op":"get","kind":"status","id":"todo"}))["fields"]["default"],
+            true
+        );
+        assert_eq!(
+            run(&mut dest, json!({"op":"import","data":ordered})),
+            preview
+        );
+        let old = run(&mut dest, json!({"op":"get","kind":"status","id":"todo"}));
+        assert_eq!(old["fields"]["default"], false);
+        assert_eq!(old["title"], "待验证");
+        let task = run(
+            &mut dest,
+            json!({"op":"create","kind":"task","title":"After import"}),
+        );
+        assert_eq!(task["fields"]["status"], "review");
+        assert_eq!(
+            run(&mut dest, json!({"op":"import","data":ordered}))["skipped"],
+            3
+        );
+    }
 }
 
 #[test]

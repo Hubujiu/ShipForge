@@ -3,7 +3,10 @@ use std::time::Duration;
 use url::{Host, Url};
 
 pub(super) fn fixture() -> R<Option<Url>> {
-    let Ok(s) = std::env::var("SHIPFORGE_BOT_LOOPBACK") else {
+    fixture_from("SHIPFORGE_BOT_LOOPBACK")
+}
+pub(super) fn fixture_from(name: &str) -> R<Option<Url>> {
+    let Ok(s) = std::env::var(name) else {
         return Ok(None);
     };
     let u = Url::parse(&s).map_err(|_| "invalid: adapter fixture origin")?;
@@ -28,8 +31,15 @@ pub(super) fn root(official: &str) -> R<String> {
     ))
 }
 pub(super) fn trusted(input: &str, scheme: &str, domains: &[&str]) -> R<Url> {
+    trusted_with(input, scheme, domains, fixture()?)
+}
+pub(super) fn trusted_with(
+    input: &str,
+    scheme: &str,
+    domains: &[&str],
+    fixture: Option<Url>,
+) -> R<Url> {
     let u = Url::parse(input).map_err(|_| "provider: invalid service address")?;
-    let fixture = fixture()?;
     let local = fixture.is_some_and(|f| {
         u.host() == f.host()
             && u.port_or_known_default() == f.port_or_known_default()

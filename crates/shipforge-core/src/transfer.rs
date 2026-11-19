@@ -263,7 +263,14 @@ fn apply(c: &Context<'_>, input: &[Value]) -> Result<Value> {
         let entry = json!({"op":op,"kind":kind,"id":id,"title":title,"fields":f});
         pending.push(entry);
     }
-    pending.sort_by_key(|e| PORTABLE.iter().position(|k| Some(*k) == e["kind"].as_str()));
+    // Choosing the incoming default releases the previous one before its overrides are applied.
+    pending.sort_by_key(|entry| {
+        let kind = entry["kind"].as_str();
+        (
+            PORTABLE.iter().position(|k| Some(*k) == kind),
+            kind == Some("status") && entry["fields"]["default"] != true,
+        )
+    });
     let mut created = 0usize;
     let mut updated = 0usize;
     let mut warnings = Vec::new();

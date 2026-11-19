@@ -153,6 +153,7 @@ pub(crate) fn task_notice(
         return Ok(());
     }
     let cfg = settings::Settings::load(c, recipient)?;
+    deliver_mail(c, recipient, event, ("task", &task.id), source)?;
     if !cfg.enabled("inbox", event) {
         return Ok(());
     }
@@ -191,6 +192,21 @@ fn signal(
 }
 pub(crate) fn channel_enabled(c: &Context<'_>, recipient: &str, event: &str) -> Result<bool> {
     Ok(settings::Settings::load(c, recipient)?.enabled("inbox", event))
+}
+pub(crate) fn email_enabled(c: &Context<'_>, recipient: &str, event: &str) -> Result<bool> {
+    Ok(settings::Settings::load(c, recipient)?.enabled("email", event))
+}
+pub(crate) fn deliver_mail(
+    c: &Context<'_>,
+    recipient: &str,
+    event: &str,
+    target: (&str, &str),
+    source: Option<(&str, &str)>,
+) -> Result<()> {
+    if email_enabled(c, recipient, event)? {
+        crate::mail::notification(c, recipient, event, target, source)?;
+    }
+    Ok(())
 }
 pub(crate) fn task_run(c: &Context<'_>, run: &Record) -> Result<()> {
     let Some(id) = run.fields["task_id"].as_str() else {

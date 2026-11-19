@@ -48,12 +48,15 @@ fn prepare(c: &Context<'_>, b: &Binding) -> Result<()> {
             && room_visible(c, &chat)?
         {
             let status = run.fields["status"].as_str().unwrap_or("");
-            if !matches!(status, "done" | "failed" | "cancelled") {
+            if !matches!(status, "done" | "failed" | "cancelled")
+                && !(status == "interrupted" && lark::provider(&b.provider))
+            {
                 continue;
             }
             let result = match status {
                 "done" => run.fields["result"].as_str().unwrap_or("").trim(),
                 "failed" => "Agent 执行失败",
+                "interrupted" => "Agent 执行已中断",
                 "cancelled" => "Agent 执行已取消",
                 _ => unreachable!(),
             };
@@ -68,7 +71,7 @@ fn prepare(c: &Context<'_>, b: &Binding) -> Result<()> {
                 )?;
                 part += 1;
             }
-            if status == "done" && b.provider == "wechat" {
+            if status == "done" && (b.provider == "wechat" || lark::provider(&b.provider)) {
                 for file in c.records("artifact")? {
                     if file.fields["run"] != run_id || !c.visible(&file)? {
                         continue;
@@ -109,6 +112,9 @@ pub(super) fn claim(c: &Context<'_>, b: &Binding) -> Result<Value> {
     )
     .map_err(storage)?;
     out["payload"] = serde_json::from_str(required(&out, "payload")?).map_err(storage)?;
+    if lark::provider(&b.provider) {
+        out["destination"] = lark::destination(c, b, required(&out, "delivery")?)?;
+    }
     out["lease"] = json!(lease);
     Ok(out)
 }
