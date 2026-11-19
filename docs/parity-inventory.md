@@ -394,5 +394,5 @@
 [commands-team]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-conversation-tools.py
 
 [personal-bots]: personal-bots.md
-[bot-http]: ../scripts/verify-personal-bots.py
-[bot-native]: ../crates/shipforge-desktop/src/personal_bots_ui_test.rs
+[bot-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-personal-bots.py
+[bot-native]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/personal_bots_ui_test.rs

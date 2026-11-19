@@ -41,4 +41,4 @@ shipforge-worker bot-sync --space default --binding <绑定ID> --watch
 
 ### 验收范围
 
-本地测试启动正式的 ShipForge CLI、团队服务、仿真 iLink HTTP 与 QQ WebSocket。合成账号验证扫码失效与验证码、QQ 凭据解封、断线恢复、权限隔离、向原会话回复以及微信附件解密。Windows 用例通过真实 GPUI 控件和无焦点 D3D 窗口检查二维码、凭据表单、范围设置和解绑。真实手机授权、上游帐号灰度、网络可达性、平台审核与反滥用限额需在经授权的独立微信和 QQ 账号上联调。当前微信入口采用本人扫码流程；其他所有者代绑和入站图片、文件解读属于后续能力。[三身份传输验收](../scripts/verify-personal-bots.py) · [Windows 控件验收](../crates/shipforge-desktop/src/personal_bots_ui_test.rs)
+本地测试启动正式的 ShipForge CLI、团队服务、仿真 iLink HTTP 与 QQ WebSocket。合成账号验证扫码失效与验证码、QQ 凭据解封、断线恢复、权限隔离、向原会话回复以及微信附件解密。Windows 用例通过真实 GPUI 控件和无焦点 D3D 窗口检查二维码、凭据表单、范围设置和解绑。真实手机授权、上游帐号灰度、网络可达性、平台审核与反滥用限额需在经授权的独立微信和 QQ 账号上联调。当前微信入口采用本人扫码流程；其他所有者代绑和入站图片、文件解读属于后续能力。[三身份传输验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-personal-bots.py) · [Windows 控件验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/personal_bots_ui_test.rs)
