@@ -154,4 +154,4 @@ Windows 原生窗口用已验证的临时成员登录，在其独立团队服务
 
 ## 仓库授权与配对
 
-在隔离 Windows 隐藏 D3D 窗口打开「集成」，辅助功能树中出现 GitHub、GitLab.com 和自建 GitLab。选择自建 GitLab，在真实文本控件输入模拟 HTTPS 实例和 PAT，提交后从项目列表选择测试仓库。将方向改为双向，提交后出现复制项目 Webhook 密钥的按钮。独立客户端读回双向配对。打开合成来源任务后，从任务详情的自建 GitLab 来源进入专用回复框，在原生多行文本控件输入正文并提交，回环项目服务收到发往该 Issue 的 HTTP POST。窗口提示已使用组织身份发送，测试从回执读回同一来源评论 ID。解除组织授权后，仓库列表为空。GitHub 与 GitLab.com 的 OAuth、浏览器回调及三身份收发通过独立 HTTP 夹具验证。真实租户仍待联调。[Windows 仓库控件](../crates/shipforge-desktop/src/repository_ui_test.rs) · [来源协议回归](../scripts/verify-forge.py)
+在隔离 Windows 隐藏 D3D 窗口打开「集成」，辅助功能树中出现 GitHub、GitLab.com 和自建 GitLab。选择自建 GitLab，在真实文本控件输入模拟 HTTPS 实例和 PAT，提交后从项目列表选择测试仓库。将方向改为双向，提交后出现复制项目 Webhook 密钥的按钮。独立客户端读回双向配对。打开合成来源任务后，从任务详情的自建 GitLab 来源进入专用回复框，在原生多行文本控件输入正文并提交，回环项目服务收到发往该 Issue 的 HTTP POST。窗口提示已使用组织身份发送，测试从回执读回同一来源评论 ID。解除组织授权后，仓库列表为空。GitHub 与 GitLab.com 的 OAuth、浏览器回调及三身份收发通过独立 HTTP 夹具验证。真实租户仍待联调。[Windows 仓库控件](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/repository_ui_test.rs) · [来源协议回归](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-forge.py)

@@ -32,6 +32,6 @@ GitLab 配对后复制 Webhook 路径和密钥，在该项目的 **Settings → 
 
 ## 验收范围
 
-隔离回归启用临时 GitHub RSA 密钥、模拟用户 OAuth、GitLab.com 与自建 GitLab HTTP 服务，使用 Owner 和两名成员验证授权范围、身份冲突、历史边界、方向、回退身份、重复投递、关闭重开、凭据撤销及保留任务。Windows 隐藏 D3D 窗口覆盖三个平台入口，并在自建 GitLab 表单中实际输入令牌、选择项目、提交双向配对、从任务详情发送来源回复和解除授权。[HTTP 回归](../scripts/verify-forge.py) · [Windows 控件回归](../crates/shipforge-desktop/src/repository_ui_test.rs)
+隔离回归启用临时 GitHub RSA 密钥、模拟用户 OAuth、GitLab.com 与自建 GitLab HTTP 服务，使用 Owner 和两名成员验证授权范围、身份冲突、历史边界、方向、回退身份、重复投递、关闭重开、凭据撤销及保留任务。Windows 隐藏 D3D 窗口覆盖三个平台入口，并在自建 GitLab 表单中实际输入令牌、选择项目、提交双向配对、从任务详情发送来源回复和解除授权。[HTTP 回归](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-forge.py) · [Windows 控件回归](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/repository_ui_test.rs)
 
 真实 GitHub 私有安装、企业组织审批、GitLab.com 真实租户与客户自建实例的网络路由仍待授权联调。选择一台在线 Agent 机器代理自建实例、组级共享 Webhook、组织外部身份管理目录和历史处理人回补仍待实现。任务改动向外发布采用显式推送。当前来源讨论针对 Issue；MR 讨论线程与按企业工作流映射 MR 状态仍待扩展。
