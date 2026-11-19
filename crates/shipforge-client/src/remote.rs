@@ -84,7 +84,7 @@ impl Remote {
         })
     }
 
-    fn send(&mut self, body: &Value) -> Result<Value, String> {
+    pub(super) fn send(&mut self, body: &Value) -> Result<Value, String> {
         let call = self
             .http
             .post(&self.command_url)
@@ -103,6 +103,11 @@ impl Remote {
             }
         };
         let status = response.status().as_u16();
+        if matches!(status, 502..=504) {
+            self.online = Some(false);
+            self.last_network_failure = Some(Instant::now());
+            return Err(format!("offline: team gateway returned HTTP {status}"));
+        }
         if matches!(status, 401 | 403 | 404) {
             self.cache
                 .execute("DELETE FROM reads", [])
@@ -187,7 +192,9 @@ impl Remote {
                         | "crew"
                         | "skill"
                 )
-            ) || (op == "search" && request["kind"].as_str().is_none()));
+            ) || (op == "search"
+                && (request["kind"].as_str().is_none()
+                    || request["search_scope"] == "organization")));
         let cacheable = !needs_live_access
             && matches!(
                 op.as_str(),

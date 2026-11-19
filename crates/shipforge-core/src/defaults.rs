@@ -26,12 +26,15 @@ pub(crate) fn builtin(kind: &str, id: &str) -> bool {
     }
 }
 pub(crate) fn seed(c: &Context<'_>) -> Result<()> {
+    let english = crate::organization::defaults(c)?.0 == "en";
     for (order, (id, title)) in STATUSES.iter().enumerate() {
+        let title = initial_name(id, title, english);
         if c.find("status", id)?.is_none() {
             c.create("status",Some(id),title,json!({"creator":c.actor,"system":true,"category":id,"order":order,"default":*id=="todo"}))?;
         }
     }
     for (order, (id, title)) in TYPES.iter().enumerate() {
+        let title = initial_name(id, title, english);
         if c.find("task_type", id)?.is_none() {
             c.create("task_type",Some(id),title,json!({"creator":c.actor,"system":true,"statuses":[],"required_fields":[],"order":order,"default":*id=="task"}))?;
         }
@@ -90,6 +93,7 @@ pub(crate) fn starting_task_types(
         if let Some(prior) = record {
             c.update(&prior, &prior.title, fields)?;
         } else {
+            let label = initial_name(id, label, crate::organization::defaults(c)?.0 == "en");
             c.create("task_type", Some(id), label, fields)?;
         }
     }
@@ -101,4 +105,24 @@ pub(crate) fn selected(c: &Context<'_>, kind: &str, fallback: &str) -> Result<St
         .find(|r| r.fields["default"] == true)
         .map(|r| r.id)
         .unwrap_or_else(|| fallback.to_owned()))
+}
+
+fn initial_name<'a>(id: &str, fallback: &'a str, english: bool) -> &'a str {
+    if !english {
+        return fallback;
+    }
+    match id {
+        "triage" => "Triage",
+        "backlog" => "Backlog",
+        "todo" => "To do",
+        "in_progress" => "In progress",
+        "done" => "Done",
+        "cancelled" => "Cancelled",
+        "duplicate" => "Duplicate",
+        "task" => "Task",
+        "requirement" => "Requirement",
+        "bug" => "Bug",
+        "story" => "User story",
+        _ => fallback,
+    }
 }

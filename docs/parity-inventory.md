@@ -30,8 +30,8 @@
 | A04 | 邀请链接、授权返回与机器配对入口 | 壳 · [成员][members] · [机器][computers] | 部分 | 测试 · [邀请协议][invites-tests] · [机器配对][execution] | 行为、数据、权限、待联调 | 邮箱和通用邀请覆盖身份、空间范围、过期与撤销，安装版通过系统链接打开接受窗口。真实认证回跳、邮件投递和设备配对另行核对。 |
 | A05 | 永久注销账号并退出各组织 | [账号][account] | 有对应 | 测试 · [隔离邮箱、两个设备与其他成员][verified-identity] · [影响说明][identity-guide] | 行为、数据、权限、待联调 | 核验邮箱及文字确认后关闭账号，保留他人组织的业务。共享机器权限阻断注销，多人组织解散须另行确认。另端会话与个人令牌立即失效，同邮箱重注册得到新身份。原版现用组织保持只读。 |
 | A06 | 标题栏后退、前进、刷新，恢复空间和对象 | 图 UI02、UI03、UI25 | 有对应 | 实现 · [导航][shell] · [桌面状态][app] | 行为 | 分别从抽屉、搜索结果和跨空间位置返回，检查筛选、焦点及滚动位置。 |
-| A07 | 全局搜索及命令菜单，按对象、操作、权限定位 | 图 UI25 · [空间][spaces] | 部分 | 测试 · [工作区][workspace-tests] | 行为、权限 | 有对象搜索及权限检查。核验命令分类、快捷跳转、撤权后结果和无结果提示。 |
-| A08 | 首页的快捷新建、双层导航、自定义导航、折叠更多模块 | 图 UI01、UI21 · 菜单 UI01 | 部分 | 实现 · [导航][shell] | 行为 | 核验新建任务/多种对话的逐级选择，以及自定义导航保存后重启。 |
+| A07 | 全局搜索及命令菜单，按对象、操作、权限定位 | 图 UI25 · [空间][spaces] | 有对应 | 测试 · [双窗口与撤权][live-windows] · [搜索][navigation-flow] | 行为、权限 | 按名称筛选新建、操作、导航及跨空间对象。两个空间中的同名任务显示独立位置，打开时重验权限，撤权后的搜索与后退均无法重现旧内容。 |
+| A08 | 首页的快捷新建、双层导航、自定义导航、折叠更多模块 | 图 UI01、UI21 · 菜单 UI01 | 有对应 | 测试 · [快捷新建][live-windows] · [空间导航][space-lifecycle-tests] | 行为 | 首页可选择任务或四种对话，空间功能可固定、取消、折叠到更多。按成员读取持久化导航，测试涵盖重开和不同账号。 |
 | A09 | 侧栏新手清单，展开四个快捷行动、更多、隐藏 | 图 指引 · 图 UI01 | 有对应 | 测试 · [原生侧栏操作][guide-ui] · [成员设置持久化][guide-tests] | 行为、数据 | 自建 Windows 隔离库实测四项行动、展开、隐藏、恢复和重开。 |
 | A10 | 新手全页，六组 36 项、进度、积分和名次 | 图 指引 · [快速上手][quick] | 有对应 | 测试 · [原生完整向导][guide-ui] · [36 项计分][guide-tests] · [用户手册][guide-manual] | 行为、数据 | Windows 原生窗口展开六组。公开业务操作可完成 36 项并达到 560 分。旧档恢复、同分名次及成员隔离分别核对。 |
 | A11 | 从新手行动进入工作流并返回，跨设备完成相同步骤 | 图 指引 · [快速上手][quick] | 有对应 | 测试 · [真实业务计分][guide-tests] · [Windows 工作流][guide-ui] · [两份独立设备资料][verified-identity] | 行为、数据、权限、待联调 | 36 个指引行动通过实际操作计分。同一账号从另一设备能读到首次设置和已获积分，重复完成不重复计分，其他成员有独立进度。原版多人或第三方事件归属待独立组织联调。 |
@@ -43,11 +43,11 @@
 
 | 编号 | 入口、操作与条件 | HiFox 证据 | 对照判断 | ShipForge 可查证据 | 验收维度 | 可重复条件、待核结果或已知差异 |
 | --- | --- | --- | --- | --- | --- | --- |
-| S01 | 组织设置中的默认语言、任务优先级档数与危险操作区 | 图 补01 · [成员][members] | 部分 | 实现 · [通用表单][forms] | 行为、数据、权限 | 已有组织对象。分别验证优先级档数对已有任务/创建表单的影响、语言级联及危险操作可见角色。 |
+| S01 | 组织设置中的默认语言、任务优先级档数与危险操作区 | 图 补01 · [成员][members] | 有对应 | 测试 · [Windows 表单][live-windows] · [组织与导入][org-default-tests] | 行为、数据、权限 | 新空间按组织语言初始化。四档、五档与无优先级分别存储，降低档数保留历史；导入最低级时自动升级。离开与解散校验身份、组织名和成员影响。 |
 | S02 | 组织空间目录、公开加入和退出、可选模块、个人固定、停用与恢复 | 菜单 UI33 · 图 UI21 · [空间][spaces] | 有对应 | 实机 · [Windows 空间验收][native] · [原生窗口用例][space-window] · 测试 · [成员与状态][space-lifecycle-tests] | 行为、数据、权限 | Windows 实测临时入口、固定、启用客户请求、预览未完成任务、停用后历史只读与恢复。隔离数据库覆盖公开加入、私有权限、迁移回滚、运行租约失效及个人固定跨重启。 |
 | S03 | 组织成员清单、角色、邀请、邀请链接及外部账号 | 图 UI33 · [成员][members] | 部分 | 测试 · [邀请与成员权限][invites-tests] · [HTTP 真实身份][invites-http] | 行为、数据、权限、待联调 | 管理员可按邮箱或共享链接邀人并同时选择空间。停用立即生效，重新启用后旧链接失效；地址错误或只读令牌均不能接受。真实邮件投递、外部账号合并待联调。 |
 | S04 | 空间成员与组织角色并存，访客仅能访问获邀空间 | [成员][members] · [分拣][triage] | 有对应 | 测试 · [成员与空间][workspace-tests] · [权限实现][access] | 行为、数据、权限、待联调 | 合成 Guest 获取显式成员资格前后、撤销后分别验证列表、搜索和直接读取。未加入的组织管理员可管理私有空间元数据，成员及任务仍需空间权限。 |
-| S05 | 成员 rail 区分 Agent、小队、真人、机器，检索并打开成员抽屉 | 图 UI17 · [成员改版][nov13] | 部分 | 实现 · [导航][shell] · [对象页][views] | 行为、数据、权限、待联调 | 成员与机器等页面存在。分类树、跨空间同名项、快捷新建、真人详情直达对话仍需点击。 |
+| S05 | 成员 rail 区分 Agent、小队、真人、机器，检索并打开成员抽屉 | 图 UI17 · [成员改版][nov13] | 有对应 | 测试 · [成员目录与真人对话][live-windows] · [使用说明][navigation-flow] | 行为、数据、权限 | 分类查询由服务端逐空间、逐对象鉴权。两名真人在两个空间同名时仍可按空间与 ID 区分，点击真人详情会打开选定空间的双方私聊。 |
 | S06 | 管理范围的 Agent、小队、机器与空间内的同名入口 | 图 UI06、UI11、UI13 · 菜单 UI33 | 部分 | 实现 · [目录][pages] | 行为、数据、权限 | 检查共享/私有及本人/空间过滤，管理动作对不同身份可见范围。 |
 | S07 | 全局与空间任务标签、名称筛选、分组、互斥、合并及归档 | 图 补02 · [标签][labels] | 有对应 | 测试 · [标签范围与批量事务][tag-tests] · [Windows 标签表单][tag-ui] | 行为、数据、权限 | 组织与空间标签可并用，同组后选替换先选。回归覆盖归档保留历史、合并更新任务和视图、多标签交集筛选、跨空间保留组织标签及批量失败回滚。 |
 | S08 | 组织状态库的类别、用量、顺序、默认值及多语言名 | 图 UI14 · [状态][statuses] · [11 月更新][changes] | 部分 | 测试 · [元数据][metadata] | 行为、数据、权限 | 修改名称有用例。需检查多语言回退、组织默认值与已有类型的特殊工作流。 |
@@ -92,7 +92,7 @@
 | 编号 | 入口、操作与条件 | HiFox 证据 | 对照判断 | ShipForge 可查证据 | 验收维度 | 可重复条件、待核结果或已知差异 |
 | --- | --- | --- | --- | --- | --- | --- |
 | C01 | 独立对话、个人小助手、任务内对话与真人私聊 | 图 UI16、UI32 · [对话][chat] | 部分 | 实现 · [对话表单][forms] · 测试 · [私有运行][execution] | 行为、数据、权限、待联调 | 空会话和禁用发送可见。核验真人私聊、Agent 运行、任务上下文、跨身份检索和个人小助手默认配置。 |
-| C02 | 新建 Agent/真人对话、群聊和新任务的选择器 | 菜单 UI01 · [成员与群聊][nov13] | 部分 | 实现 · [导航][shell] | 行为、数据、权限、待联调 | 已提供任务/对话对象。逐个打开对象选择、筛选同名成员，核对默认空间与群聊首次发送。 |
+| C02 | 新建 Agent/真人对话、群聊和新任务的选择器 | 菜单 UI01 · [成员与群聊][nov13] | 有对应 | 测试 · [原生创建入口][live-windows] · [群聊与私聊][nav-tests] | 行为、数据、权限 | 当前空间内选人、Agent 或小队，群组可一次加入多人和 Agent。已测首条群消息、无效成员整批回滚、真人双向重开同一私聊以及无关成员拒读。 |
 | C03 | 群聊添加/移除人或 Agent、头像名称描述、退出与群主解散 | [群聊管理][nov13] | 部分 | 测试 · [群成员与所有者][chat-tests] · 实现 · [Windows 入口][conversation-help] | 行为、数据、权限、待联调 | 合成成员验证添加、移出、私有 Agent 可见性、群主转让、退出、解散和解散后权限。自定义群头像及真实组织的表现待核。 |
 | C04 | 群聊免打扰、@所有人、@我穿透和仅清自己历史 | [群聊偏好][nov13] | 有对应 | 测试 · [三人提醒与历史][chat-tests] | 行为、数据、权限、待联调 | A 发普通消息、群体提及、单独提及 B。B 开免打扰且忽略群体提及，仅收到单独提及。B 清空后 A 和 C 历史仍可读。真实客户端系统推送另行联调。 |
 | C05 | 私有会话授权管理、邀请/撤回、任务内私有会话 | [会话授权][nov13] · [对话][chat] | 有对应 | 测试 · [两个独立登录的本地团队客户端][chat-http] · [任务权限][chat-tests] · [隐私继承][execution] | 行为、数据、权限、待联调 | 接受前、撤回后，直接读取、附件下载、搜索、事件和产物各按当前身份验证。任务可见性收紧也收回会话访问。离线不能重开此前取过的消息，参考生产租户的跨账号步骤待联调。 |
@@ -119,14 +119,14 @@
 | W01 | 安装/连接本机或远程机器，个人、空间、共享范围及心跳 | 图 UI11、UI12 · [机器][computers] | 部分 | 测试 · [真实执行端][worker-tests] | 行为、数据、权限、待联调 | 需在两台主机验证配对、所有者与共享访问、机器离线和重新绑定。 |
 | W02 | 单个 Runtime 探测、重扫、错误、安装/升级及模型登录 | 图 UI12 · 壳 · [机器][computers] · [官网][home] | 部分 | 实现 · [机器控制][native-worker] · [机器手册][worker-manual] | 行为、数据、权限、待联调 | 可探测/运行配置好的程序。逐家检验一键安装、下载失败、版本兼容和真实账号。 |
 | W03 | 选 Runtime、模型/推理深度、环境、批准模式与额外参数 | 图 UI30 · [Agent][agents] | 部分 | 测试 · [外部进程][worker-tests] | 行为、数据、权限、待联调 | 固定程序参数和环境白名单可运行。需逐种 Runtime 验证选项翻译、凭据遮蔽、失败与配置继承。 |
-| W04 | 按任务/聊天分别限并发，最大运行时长、排队超时和取消 | 图 UI30 · [运行][run-help] · [更新日志][changes] | 部分 | 测试 · [并发、取消][worker-tests] | 行为、数据、待联调 | 任务租约、机器容量可测。参考分开设置等待时间与单次运行上限，须含超时重试和排队恢复。 |
+| W04 | 按任务/聊天分别限并发，最大运行时长、排队超时和取消 | 图 UI30 · [运行][run-help] · [更新日志][changes] | 有对应 | 测试 · [独立或共用额度与双时限][runtime-tests] · [进程取消][worker-tests] | 行为、数据、权限 | 任务和对话支持单独或共用额度，机器容量仍生效。排队和执行各有计时器。重试换发租约，旧结果不能覆盖新尝试。 |
 | W05 | Agent 工作时段按星期、每日一至两段、IANA 时区 | 菜单 UI30 · [工作时间][hours] | 有对应 | 测试 · [逐日排班与夏令时][weekly] · [真实领取][execution] | 行为、数据、待联调 | 本轮按 IANA 时区与星期校验 0–2 段、上下界、两次秋季重复时刻及分身恢复继承；旧单段固定偏移兼容。参考实际运行待联调。 |
-| W06 | 空闲时段外的等待原因、立即触发、已运行任务跨下班时刻 | [工作时间][hours] | 部分 | 实现 · [调度][worker-core] | 行为、数据、待联调 | 待验证不同触发类型、手动覆盖、排队超时豁免与下一可用时间。 |
+| W06 | 空闲时段外的等待原因、立即触发、已运行任务跨下班时刻 | [工作时间][hours] | 有对应 | 实机 · [Windows 预约横幅][native] · [调度与触发][runtime-tests] · [执行队列][worker-core] | 行为、数据、权限 | 指派、评论提及、直接聊天各有开关。计划时间可推迟至下一窗口；首次开班前不消耗等待额度。手动触发保留权限和并发约束。 |
 | W07 | 独立 Git 工作树或空目录，多任务并行与清理 | 图 UI30 · [目录][directory] | 有对应 | 测试 · [两个真正工作树][worker-tests] | 行为、数据、权限、待联调 | 已验证隔离仓库。还需在桌面展示 Git 改动、review、合并/丢弃及清理状态。 |
-| W08 | 选择目标机器目录、多路径择空闲、直接目录互斥 | 图 UI30 · [目录][directory] | 部分 | 测试 · [直接目录互斥][worker-tests] | 行为、数据、权限、待联调 | 机器配置可批准单目录/profile。需两条路径、占满等待和远程机器目录选择器。 |
+| W08 | 选择目标机器目录、多路径择空闲、直接目录互斥 | 图 UI30 · [目录][directory] | 有对应 | 实机 · [Windows 目标机器目录选择器][native] · [真实进程与路径互斥][worker-tests] · [同一任务沿用原目录][runtime-tests] | 行为、数据、权限 | 本机用户授权目录后可按机器选择。直接模式按优先顺序选空闲路径，已占满的任务排队。授权仍有效时，既有任务或对话保留路径与模式。远程列表展示获准项目目录。 |
 | W09 | 组织/空间/Agent 绑定仓库、平台凭据、默认分支及 PR/MR | 图 补03 · [代码库][repos] · [官网][home] | 部分 | 实现 · [工作机][worker-manual] | 行为、数据、权限、待联调 | 本地 Git 工作树与托管平台自动拉取/推送、生成 PR、独立作者设置分别核验。 |
 | W10 | 运行状态、租约、心跳、人工回复、取消、产物和重试 | 图 UI36 · [执行][run-help] | 部分 | 测试 · [租约][execution] · [实际进程][worker-tests] | 行为、数据、权限、待联调 | 核心/进程路径已测。参考只有空历史截图；需非空、运行中、等待、失败、离线重连同场比对。 |
-| W11 | 模型错误、限流、额度、凭据失效、机器诊断和本机日志 | [执行排障][run-help] · [CLI][h-cli] | 部分 | 实现 · [机器手册][worker-manual] | 行为、数据、权限、待联调 | 外部退出状态和结果可报。需要合法故障夹具验证分类、可读诊断、后台进程明细的可见边界。 |
+| W11 | 模型错误、限流、额度、凭据失效、机器诊断和本机日志 | [执行排障][run-help] · [CLI][h-cli] | 部分 | 实机 · [原生诊断入口][native] · [运行隔离与分类][runtime-tests] · [本机进程日志][worker-tests] | 行为、数据、权限、待联调 | 结构化错误码覆盖认证、权限、账单、限流、模型、上下文和图片。真实子进程验证 429、PID 和日志脱敏。尚待使用真实供应商账户验证各适配器错误语料。 |
 | W12 | 本地存储占用、清理已结束的工作目录、迁移和升级 | [CLI][h-cli] · [变更记录][changes] | 部分 | 实现 · [Windows 指南][windows] | 行为、数据、权限、待联调 | 已验证安装覆盖与备份。需核验磁盘用量、活跃租约保护及用户确认后的清理。 |
 | W13 | 空间自动化的空态、创建、执行者及多触发器启停 | 图 UI01、UI26、UI27 · [规则][automations] | 有对应 | 实机 · [原生表单][native] · 测试 · [规则][execution] | 行为、数据 | 实际保存过一条每日规则。分别触发状态变化、评论关键词与手动执行，观察同一运行回链。 |
 | W14 | 间隔、每日/每周，IANA 时间、规则暂停后重启与补发 | 图 UI26、UI27 · [规则][automations] | 有对应 | 实机 · [保存时间][native] · 测试 · [时区计划][schedule] | 行为、数据 | 表单保存与 Worker 按时执行需分别举证；测试夏令时与持续在线的实际规则。 |
@@ -145,12 +145,12 @@
 | I06 | TAPD 项目发现、两种身份凭据、导入、限流及持续同步 | [TAPD][i-tapd] | 部分 | 测试 · [双身份、分页和增量][tapd-http] · [模式与范围][vendor-imports] | 行为、数据、权限、待联调 | 公司及个人项目、已结束项、Story/Bug 历史和增量、429 恢复及批次回滚已在本地 HTTP 验证。真实租户、持续 Webhook、定时同步与出站写入待做。 |
 | I07 | Bugly 提单 Webhook、产品范围、可选状态回写 | [Bugly][i-bugly] | 有对应 | 测试 · [提单、签名与重发][vendor-http] · [配置][vendor-imports] | 行为、数据、权限、待联调 | 产品级 URL 轮换、并发重投复用任务、权限受限的任务链接、状态队列和签名回写已在回环上游验证。真实产品的 OpenAPI 许可及送达待验。 |
 | I08 | PingCode 企业/项目的工作项发现、导入、同步、回滚 | [PingCode][i-pingcode] | 有对应 | 实机 · [Windows 确认及撤回批次][native] · [三种认证、工作项、发布和回滚][tracker-http] · [设备授权及轮询][tracker-guide] | 行为、数据、权限、待联调 | v2 真实 HTTP 夹具检验企业及项目范围、修改时间增量、保留本地编辑、工作机轮询、原生状态和评论回执。真实企业的 OAuth 授权界面与配额待联调。 |
-| I09 | Teambition 组织+项目、两层凭据、状态与删除写回 | [Teambition][i-teambition] | 缺口 | 未证 · [供应商基线][providers] | 行为、数据、权限、待联调 | 需检验只读授权与有写授权的差别，有映射/无映射状态分别执行。 |
+| I09 | Teambition 组织+项目、两层凭据、状态与删除写回 | [Teambition][i-teambition] | 部分 | 实机 · [Windows 记录][native] · [原生表单][enterprise-native] · [HTTP 与工作机][enterprise-http] | 行为、数据、权限、待联调 | 组织应用、本人项目发现、已授权项目导入及增量、成员可见性、字段和 ID 或唯一名称状态映射、精确确认远端删除已验。新建远端任务、依赖、事件订阅和生产应用仍待对齐。[操作说明][enterprise-guide] |
 | I10 | Zoho BugTracker 项目导入、再次导入、轮换凭据和批次历史 | [Zoho][i-zoho] | 有对应 | 测试 · [门户、分页、重导与按批次撤销][vendor-http] · [配置][vendor-imports] | 行为、数据、权限、待联调 | 已验证 OAuth 头、活动与归档项目、长数字 ID、同毫秒增量、本地修改保护及跨空间权限。真实门户授权和线上配额待验。 |
-| I11 | Asana 工作区绑定、项目导入/持续读入、限定字段写回 | [Asana][i-asana] | 部分 | 测试 · [Asana 事件与任务详情样例][provider-tests] | 行为、数据、权限、待联调 | 事件需中继补取完整任务。上游真实订阅、人员映射、标题描述回写与状态只入站须分别验。 |
+| I11 | Asana 工作区绑定、项目导入/持续读入、限定字段写回 | [Asana][i-asana] | 部分 | 实机 · [Windows 记录][native] · [项目 HTTP 与工作机][asana-http] · [窗口][enterprise-native] | 行为、数据、权限、待联调 | 已验多工作区令牌选择、项目归属与分页、增量、旧任务就地接管、人员和状态映射、标题描述回写、新评论中断后核对、回滚。真实租户权限和线上 webhook 订阅待联调。[操作指引][asana-guide] |
 | I12 | GitHub 组织/个人授权、Issue 拉取、显式写入、PR/Commit 和评论关联 | [GitHub][i-github] | 部分 | 测试 · [签名回调与跨仓隔离][vcs-http] · [受控任务关联][vcs-regression] | 行为、数据、权限、待联调 | 已验证稳定任务编号关联提交和 PR、重复事件只关联一次、受信作者的可选审查运行，以及合并后任务状态。真实私库授权、平台身份和远端写入待联调。 |
 | I13 | GitLab 云端/自建、个人身份、Issue、MR、Webhook 与同步 | [GitLab][i-gitlab] | 部分 | 测试 · [GitLab 投递][provider-tests] · [本机服务器与 MR 回链][vcs-http] | 行为、数据、权限、待联调 | 已验证 Issue 入站、提交和 MR 引用、撤销后拒收及重复投递。OAuth 授权、讨论回写、企业自建网络待联调。 |
-| I14 | CNB 组令牌、仓库配对与 CI 配置，提交/议题/MR 回链 | [CNB][i-cnb] | 缺口 | 未证 · [供应商基线][providers] | 行为、数据、权限、待联调 | 需要可写测试组验证回链，普通 Git checkout 无法证明 CNB 接入。 |
+| I14 | CNB 组令牌、仓库配对与 CI 配置，提交/议题/MR 回链 | [CNB][i-cnb] | 部分 | 实机 · [Windows 记录][native] · [原生表单][enterprise-native] · [签名回调及供应商 HTTP][enterprise-http] | 行为、数据、权限、待联调 | 已验子组仓库、组令牌、配对密钥轮换、CI 签名、末次提交/议题/MR 活动及回链丢响应后的去重。生产仓库的受保护密钥、真正的云构建及评论仍待联调。[配置指引][enterprise-guide] |
 | I15 | Linear 项目、工作流状态映射、增量与评论 | [Linear][i-linear] · [概念对照][mapping] | 部分 | 测试 · [GraphQL、OAuth、状态及评论核验][cloud-tracker-http] · [协议][cloud-tracker-guide] | 行为、数据、权限、待联调 | 已验证同名状态映射、关系两端归属、OAuth PKCE 与刷新、按项目唤醒、旧任务接管及按批撤回。凭据按设备与身份保存，真实组织授权与配额待联调。 |
 | I16 | Gitee、Bitbucket、Codeup 等官网列名平台 | [官网][home] · [项目产品页][p-planning] | 待核 | 未证 · [供应商基线][providers] | 行为、数据、权限、待联调 | 按具体平台和账号核验账户绑定、字段映射及 PR 工作流。 |
 | I17 | IM 浏览目录、空间任务助手与面向 Agent 的机器人两种关系 | 图 UI10 · 菜单 UI29 · [飞书][i-feishu] · [Discord][i-discord] | 部分 | 测试 · [代表性消息][provider-tests] | 行为、数据、权限、待联调 | 七种普通文字载荷可建单。官方部分平台的普通消息仅为对话，需显式建单或绑定话题；先核对触发语义。 |
@@ -158,8 +158,8 @@
 | I19 | Lark 国际云的 OAuth/机器人/任务助手和通知 | 图 补06 · [Lark 与飞书][i-feishu] | 部分 | 实现 · [供应商解析][providers] | 行为、数据、权限、待联调 | 载荷可共用，国内/国际账号及云端隔离不能由格式别名证明。需要两个租户独立绑定、撤销。 |
 | I20 | 企业微信的空间助手与 Agent 智能体、验签/解密、回复 | [企业微信][i-wecom] | 部分 | 测试 · [解密后的样例][provider-tests] | 行为、数据、权限、待联调 | 需要真实企业权限、回调认证和可见成员；普通入站建单不能证明群/单聊双向。 |
 | I21 | 钉钉机器人与任务助手、通知与链接预览、Stream 生命周期 | [钉钉][i-dingtalk] | 部分 | 测试 · [已验证的 Stream/HTTP 载荷][provider-tests] | 行为、数据、权限、待联调 | 需凭据获取、续连、不同身份消息回复、任务卡片及租户授权状态。 |
-| I22 | 个人微信扫码绑定一个 Agent、过期重新扫码 | [微信][i-wechat] | 缺口 | 未证 · [供应商基线][providers] | 行为、数据、权限、待联调 | 扫码的个人账号与企业微信是两类接入；需经授权验证扫码、会话和失效重绑。 |
-| I23 | QQ 官方机器人，单聊/群 @ 绑定 Agent | [QQ][i-qq] | 缺口 | 未证 · [供应商基线][providers] | 行为、数据、权限、待联调 | 需授权机器人、平台允许的会话、真实回复与解绑验证。 |
+| I22 | 个人微信扫码绑定一个 Agent、过期重新扫码 | [微信][i-wechat] | 部分 | 测试 · [iLink 与手机流程][personal-bots] · [三身份契约][bot-http] · [Windows 授权控件][bot-native] | 行为、数据、权限、待联调 | 本人扫码、验证码、私有对话、/new 及向原会话回传文字和加密附件。真实手机确认、账号可用性与平台风控需授权联调。 |
+| I23 | QQ 官方机器人，单聊/群 @ 绑定 Agent | [QQ][i-qq] | 部分 | 测试 · [官方授权与网关][personal-bots] · [三身份契约][bot-http] · [Windows 入口][bot-native] | 行为、数据、权限、待联调 | 官方扫码、凭据绑定、独立单聊/群 @ 开关、WebSocket 重连与原会话回复。跨绑定用户先解绑；真实 QQ 权限、事件订阅和平台回复限额待联调。 |
 | I24 | Slack 工作区安装、任务线程、个人通知、机器人及文件/表情互动 | [Slack][i-slack] | 部分 | 测试 · [签名回调与单选改派][slack-http] · [线程入库][im-regression] | 行为、数据、权限、待联调 | 隔离服务验证线程同步、工作区/频道隔离、已送达卡片单选替换多人、保留 Agent、权限撤销与重放。真实租户安装、个人通知、文件和表情仍待联调。 |
 | I25 | Discord Gateway、Agent 机器人/任务助手、私信、频道、文件和命令 | [Discord][i-discord] | 部分 | 测试 · [Discord 事件][provider-tests] | 行为、数据、权限、待联调 | 需要授权的 Gateway、中继、已加入的服务器及合适 intents。真实触发与机器人回复待验。 |
 | I26 | Telegram Bot、群或话题、私聊、附件与任务助手 | [Telegram][i-telegram] | 部分 | 测试 · [Telegram 更新][provider-tests] | 行为、数据、权限、待联调 | 需有效 Bot 和测试群，核对新话题、机器人账号抑制和真实回复。 |
@@ -177,7 +177,7 @@
 | D02 | 本机自动发现服务、托盘/守护进程、日志、配置 profile | 图 UI11、UI12 · 壳 · [CLI][h-cli] | 部分 | 测试 · [Worker 进程][worker-tests] · [Windows 指南][windows] | 行为、数据、待联调 | 工作进程可启动、停止。需核验系统开机、关闭桌面、重启机器、服务升级及日志可达范围。 |
 | D03 | 自托管后台、成员身份、服务令牌、空间权限、撤销 | [私有化][s-private] · [成员][members] | 有对应 | 测试 · [双客户端 HTTP][team] · [团队服务][server] | 行为、数据、权限、待联调 | ShipForge 的自托管服务覆盖邮箱身份与管理员签发的令牌。原版云服务内部的部署与授权实现仍待核对。 |
 | D04 | 离线读取和草稿、冲突、重连重送、撤权后访问 | [空间][spaces] · [Windows 对照][coverage] | 有对应 | 测试 · [团队客户端][team] · [本地缓存][client] | 行为、数据、权限 | 是 ShipForge 服务保障。参考同一操作的离线时限、冲突策略及撤权行为尚无配对实测。 |
-| D05 | 事件、提醒和多人实时更新，退出后从另一端恢复 | [执行][run-help] · [任务产品页][p-tasks] | 部分 | 测试 · [HTTP 与增量查询][team] | 行为、数据、权限、待联调 | 重新请求和运行上报可用。两端打开同一视图后测无手动刷新时延、断线期间丢失事件和去重。 |
+| D05 | 事件、提醒和多人实时更新，退出后从另一端恢复 | [执行][run-help] · [任务产品页][p-tasks] | 有对应 | 测试 · [两个 Windows 窗口][live-windows] · [HTTP 与增量查询][team] | 行为、数据、权限 | 两个认证窗口同时打开同一私聊。第二端自动收到消息，网络中断时隐藏会话正文，重连后自动打开原对话并补齐唯一一份离线期间的消息；撤销空间成员后自动回退。 |
 | D06 | Windows 安装、升级、数据保留、团队部署与恢复 | [CLI][h-cli] · [私有化][s-private] | 有对应 | 测试 · [安装验证][installer] · [恢复指引][windows] | 行为、数据、权限、待联调 | 可验证自有二进制/数据。参考云服务的备份、集群、计费和托管 SLA 需独立证据。 |
 | D07 | 移动端、浏览器或邮件中的提醒，点击后返回对应任务 | 图 补06 · [官网][home] | 跨端 | 未证 · [Windows 指南][windows] | 行为、数据、权限、待联调 | 必须分别提供真实移动系统、浏览器、邮箱及消息落地页；Windows 渠道设置项只能证明配置入口。 |
 | D08 | Workflow 节点画布、审批和连接编排 | [官网预告][home] | 预告 | 未证 · [规则][automation-code] | 行为、数据、权限 | 官网标为 Coming Soon。普通自动化规则是另一种已存在的功能。 |
@@ -320,6 +320,7 @@
 [native-worker]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/machine.rs
 [worker-manual]: ../crates/shipforge-worker/README.md
 [worker-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/tests/native_runtime.rs
+[runtime-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/runtime_policy.rs
 [execution]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/execution.rs
 [directory-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/agent_directory.rs
 [directory-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-agent-directory.py
@@ -336,6 +337,11 @@
 [skill-files]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-client/src/skill_files.rs
 [worker-core]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/src/worker.rs
 [providers]: ../crates/shipforge-core/PROVIDERS.md
+[enterprise-guide]: teambition-cnb.md
+[asana-guide]: asana-projects.md
+[asana-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-asana-projects.py
+[enterprise-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-teambition-cnb.py
+[enterprise-native]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/enterprise_integration_ui_test.rs
 [vendor-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-vendor-imports.py
 [tapd-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-tapd.py
 [vendor-imports]: vendor-imports.md
@@ -357,6 +363,10 @@
 [chat-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/chat.rs
 [chat-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-chat.py
 [conversation-help]: conversations.md
+[navigation-flow]: navigation.md
+[nav-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/navigation.rs
+[live-windows]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/live_navigation_test.rs
+[org-default-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/organization_settings.rs
 
 [guide-manual]: onboarding.md
 [personal-ui]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/personal.rs
@@ -382,3 +392,7 @@
 [commands-native]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/conversation_ui_test.rs
 [commands-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/conversation_tools.rs
 [commands-team]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-conversation-tools.py
+
+[personal-bots]: personal-bots.md
+[bot-http]: ../scripts/verify-personal-bots.py
+[bot-native]: ../crates/shipforge-desktop/src/personal_bots_ui_test.rs

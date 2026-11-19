@@ -9,6 +9,9 @@ use uuid::Uuid;
 #[path = "automation.rs"]
 mod automation;
 mod crew_workspace;
+mod directories;
+mod scheduling;
+pub(crate) use scheduling::maintain_queue;
 mod market;
 mod working_hours;
 
@@ -34,6 +37,10 @@ pub(crate) const OPS: &[&str] = &[
     "machine.disable",
     "machine.enable",
     "run.enqueue",
+    "run.trigger_now",
+    "run.diagnostics",
+    "machine.directories",
+    "machine.diagnostics",
     "run.claim",
     "run.heartbeat",
     "run.report",
@@ -48,6 +55,9 @@ pub(crate) const OPS: &[&str] = &[
     "connector.export",
 ];
 pub(crate) const READ_OPS: &[&str] = &[
+    "run.diagnostics",
+    "machine.directories",
+    "machine.diagnostics",
     "agent.resolve",
     "catalog.list",
     "catalog.detail",
@@ -58,6 +68,7 @@ pub(crate) const READ_OPS: &[&str] = &[
 const LEASE_MS: i64 = 120_000;
 
 pub(crate) fn extend_schema(schema: &mut Value) {
+    scheduling::schema(schema);
     market::schema(schema);
     let props = schema["properties"]
         .as_object_mut()
@@ -189,9 +200,11 @@ fn sql_init(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS sf_machine_keys(space TEXT NOT NULL,machine TEXT NOT NULL,owner TEXT NOT NULL,key_hash TEXT NOT NULL,PRIMARY KEY(space,machine));
        CREATE TABLE IF NOT EXISTS sf_run_keys(space TEXT NOT NULL,origin TEXT NOT NULL,run TEXT NOT NULL,PRIMARY KEY(space,origin));
        CREATE TABLE IF NOT EXISTS sf_run_leases(space TEXT NOT NULL,run TEXT NOT NULL,machine TEXT NOT NULL,lease_hash TEXT NOT NULL,expires INTEGER NOT NULL,response_hash TEXT,PRIMARY KEY(space,run));
-       CREATE INDEX IF NOT EXISTS sf_lease_machine ON sf_run_leases(space,machine,expires);").map_err(db_error)
+       CREATE INDEX IF NOT EXISTS sf_lease_machine ON sf_run_leases(space,machine,expires);
+       CREATE INDEX IF NOT EXISTS sf_lease_expiry ON sf_run_leases(expires,space) WHERE response_hash IS NULL;").map_err(db_error)
 }
 pub(crate) fn init(db: &Connection) -> Result<()> {
+    directories::init(db)?;
     sql_init(db)?;
     crate::agents::init(db)?;
     market::init(db)?;
@@ -208,6 +221,10 @@ pub(crate) fn dispatch(c: &Context<'_>, q: &Value) -> Option<Result<Value>> {
             c.require_edit()?;
         }
         match op {
+            "run.trigger_now" => scheduling::trigger_now(c, q),
+            "run.diagnostics" => crate::runtime_diagnostics::report(c, q),
+            "machine.diagnostics" => crate::runtime_diagnostics::machine(c, q),
+            "machine.directories" => directories::list(c, q),
             op if op.starts_with("skill.") || op.starts_with("catalog.") => {
                 market::execute(c, op, q)
             }
@@ -258,6 +275,14 @@ pub(crate) fn validate(c: &Context<'_>, before: Option<&Record>, item: &Record) 
     match item.kind.as_str() {
         "run" | "machine" => Err("managed record; use an execution or machine operation".into()),
         "agent" => {
+            scheduling::validate(fields)?;
+            if before.is_none_or(|old| {
+                ["profiles", "machine_id", "directory_mode"]
+                    .iter()
+                    .any(|key| old.fields[key] != fields[key])
+            }) {
+                directories::validate_agent(c, fields)?;
+            }
             if let Some(parent) = fields["parent_id"].as_str()
                 && fields["parent_space"].is_null()
             {
@@ -470,6 +495,7 @@ pub(crate) fn enqueue(
     fields["runtime"] = config["runtime"].clone();
     fields["config"] = config;
     fields["crew_workspace"] = crew_workspace::snapshot(c, &handler_record, &fields)?;
+    scheduling::initialize(&mut fields, now())?;
     fields["status"] = json!("queued");
     fields["requested_by"] = json!(c.actor);
     fields["attempt"] = json!(0);
@@ -485,8 +511,8 @@ pub(crate) fn enqueue(
         })
         .collect::<Vec<_>>();
     let at = now();
-    fields["waiting_reason"] = json!(if !within_hours(&fields["config"], at) {
-        "outside_working_hours"
+    fields["waiting_reason"] = json!(if let Some(reason) = scheduling::time_reason(&fields, at) {
+        reason
     } else if local.is_empty() {
         "no_machine"
     } else if !local.iter().any(|m| machine_is_online_at(&m.fields, at)) {
@@ -537,6 +563,7 @@ fn manual_enqueue(c: &Context<'_>, q: &Value) -> Result<Value> {
     let kind = q["handler_kind"].as_str().unwrap_or("agent");
     let mut fields =
         json!({"instruction":q["instruction"],"task_id":q["task_id"],"chat_id":q["chat_id"]});
+    fields["scheduled_at"] = scheduling::parse_date(&q["scheduled_at"])?;
     let chat = q["chat_id"]
         .as_str()
         .map(|id| read(c, "chat", id))
@@ -605,7 +632,7 @@ pub(crate) fn changed(c: &Context<'_>, before: Option<&Record>, item: &Record) -
                 handler,
                 kind,
                 &item.title,
-                json!({"task_id":item.id,"task":task_context(c,item)?,"origin_kind":"assignment"}),
+                json!({"task_id":item.id,"task":task_context(c,item)?,"origin_kind":"assignment","scheduled_at":scheduling::parse_date(&item.fields["scheduled_at"])?}),
             )?;
         }
     }
@@ -685,7 +712,9 @@ fn retry(c: &Context<'_>, q: &Value) -> Result<Value> {
     f["status"] = json!("queued");
     f["previous_result"] = f["result"].take();
     f["previous_artifacts"] = f["artifacts"].take();
-    for key in ["finished_at", "machine_id", "waiting_reason"] {
+    f["previous_failure"] = f["failure"].take();
+    scheduling::reset(&mut f, now())?;
+    for key in ["finished_at", "machine_id"] {
         f.as_object_mut().unwrap().remove(key);
     }
     c.db.execute(
@@ -703,6 +732,7 @@ fn reply(c: &Context<'_>, q: &Value) -> Result<Value> {
     let mut f = r.fields.clone();
     f["status"] = json!("queued");
     f["reply"] = json!({"actor":c.actor,"text":req(q,"text")?,"at":now()});
+    scheduling::reset(&mut f, now())?;
     encoded(c.update(&r, &r.title, f)?)
 }
 
@@ -749,7 +779,8 @@ fn register(c: &Context<'_>, q: &Value) -> Result<Value> {
         c.require_admin()?;
     }
     let commands = crate::conversation_tools::advertised_commands(&q["slash_commands"], &runtimes)?;
-    let f = json!({"owner":c.actor,"shared":shared,"visibility":if shared{"space"}else{"private"},"runtimes":runtimes,"slash_commands":commands,"capacity":capacity,"last_seen":now(),"disabled":false});
+    let dirs = directories::advertised(&q["directories"])?;
+    let f = json!({"owner":c.actor,"shared":shared,"visibility":if shared{"space"}else{"private"},"runtimes":runtimes,"slash_commands":commands,"directories":dirs,"capacity":capacity,"last_seen":now(),"disabled":false});
     let r = if c.find("machine", id)?.is_some() {
         let prior = authenticate(c, q)?;
         c.update(&prior, title, f)?
@@ -789,10 +820,6 @@ fn disable(c: &Context<'_>, q: &Value) -> Result<Value> {
     .map_err(db_error)?;
     encoded(c.update(&r, &r.title, f)?)
 }
-fn within_hours(config: &Value, at: i64) -> bool {
-    working_hours::WorkingHours::parse(&config["working_hours"]).is_ok_and(|h| h.allows(at))
-}
-
 fn expire(c: &Context<'_>, runs: &[Record], at: i64) -> Result<()> {
     for r in runs
         .iter()
@@ -814,6 +841,13 @@ fn expire(c: &Context<'_>, runs: &[Record], at: i64) -> Result<()> {
                 "interrupted"
             });
             f["result"] = json!("机器租约已过期，请核对产物后重试。");
+            f["failure"] = crate::runtime_diagnostics::classify(&json!({"code":"lease_lost"}), "");
+            if scheduling::has_timed_out(&r.fields, at) {
+                f["status"] = json!("failed");
+                f["failure"] =
+                    crate::runtime_diagnostics::classify(&json!({"code":"run_timeout"}), "");
+                f["result"] = f["failure"]["message"].clone();
+            }
             f["finished_at"] = json!(at);
             let done = c.update(r, &r.title, f)?;
             on_terminal(c, &done)?;
@@ -856,29 +890,7 @@ fn current_reason(
     {
         return Some("runtime_unavailable");
     }
-    if !within_hours(cfg, at) {
-        return Some("outside_working_hours");
-    }
-    let chat = run.fields["chat_id"].is_string();
-    let max = cfg[if chat {
-        "chat_parallel"
-    } else {
-        "max_parallel"
-    }]
-    .as_u64()
-    .unwrap_or(1);
-    let in_flight = runs
-        .iter()
-        .filter(|r| {
-            r.fields["handler_id"] == run.fields["handler_id"]
-                && r.fields["chat_id"].is_string() == chat
-                && matches!(r.fields["status"].as_str(), Some("running" | "cancelling"))
-        })
-        .count() as u64;
-    if in_flight >= max {
-        return Some("agent_capacity");
-    }
-    None
+    scheduling::time_reason(&run.fields, at).or_else(|| scheduling::capacity(run, machine, runs))
 }
 fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
     let machine = authenticate(c, q)?;
@@ -894,17 +906,15 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
         )
     });
     let capacity = machine.fields["capacity"].as_u64().unwrap_or(1);
-    if runs
+    let busy = array_ids(&q["busy_directories"])?;
+    let machine_full = runs
         .iter()
         .filter(|r| {
             r.fields["machine_id"] == machine.id
                 && matches!(r.fields["status"].as_str(), Some("running" | "cancelling"))
         })
         .count() as u64
-        >= capacity
-    {
-        return Ok(Value::Null);
-    }
+        >= capacity;
     for run in runs.iter().filter(|r| r.fields["status"] == "queued") {
         if !crate::agents::requester_can_continue(c, run)? {
             cancel(c, run)?;
@@ -917,14 +927,45 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
             continue;
         }
         let mut f = run.fields.clone();
-        if let Some(reason) = current_reason(run, &machine, &runs, at) {
+        let directory = directories::select(c, run, &machine, &runs, &busy)?;
+        if let Some(reason) = current_reason(run, &machine, &runs, at)
+            .or_else(|| directory.reason())
+            .or(machine_full.then_some("machine_capacity"))
+        {
+            if reason == "bound_directory_missing" {
+                f["status"] = json!("failed");
+                f["waiting_reason"] = Value::Null;
+                f["finished_at"] = json!(at);
+                f["failure"] = crate::runtime_diagnostics::classify(
+                    &json!({"code":"bound_directory_missing"}),
+                    "",
+                );
+                f["result"] = f["failure"]["message"].clone();
+                let failed = c.update(run, &run.title, f)?;
+                on_terminal(c, &failed)?;
+                continue;
+            }
             if (reason == "outside_working_hours"
                 || reason == "conversation_busy"
-                || reason == "agent_capacity"
+                || matches!(
+                    reason,
+                    "agent_capacity"
+                        | "task_busy"
+                        | "crew_workspace_busy"
+                        | "directory_busy"
+                        | "directory_unavailable"
+                        | "machine_capacity"
+                        | "scheduled_start"
+                )
                 || f["config"]["machine_id"] == machine.id)
-                && f["waiting_reason"] != reason
+                && (f["waiting_reason"] != reason
+                    || (reason == "outside_working_hours"
+                        && f["next_start_at"].as_i64().is_some_and(|t| t <= at)))
             {
                 f["waiting_reason"] = json!(reason);
+                if matches!(reason, "outside_working_hours" | "scheduled_start") {
+                    f["next_start_at"] = json!(scheduling::next_start(&f, at));
+                }
                 c.update(run, &run.title, f)?;
             }
             continue;
@@ -957,10 +998,12 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
             f["owner"] = f["requested_by"].clone();
         }
         let lease = token();
+        directories::bind(c, run, &machine, &directory, &mut f)?;
         f["status"] = json!("running");
         f["attempt"] = json!(f["attempt"].as_u64().unwrap_or(0) + 1);
         f["machine_id"] = json!(machine.id);
         f["started_at"] = json!(at);
+        f["run_deadline"] = json!(at + (scheduling::run_limit(&f) as i64) * 1000);
         f["waiting_reason"] = Value::Null;
         let mut current = c.update(run, &run.title, f)?;
         if !context.is_null() {
@@ -994,18 +1037,25 @@ fn heartbeat(c: &Context<'_>, q: &Value) -> Result<Value> {
     {
         return Err("stale lease".into());
     }
+    let timed_out = scheduling::has_timed_out(&run.fields, at);
+    let mut fields = run.fields.clone();
+    if timed_out {
+        fields["status"] = json!("cancelling");
+        fields["stop_reason"] = json!("run_timeout");
+    }
     if let Some(value) = q.get("progress").filter(|v| !v.is_null()) {
-        let mut fields = run.fields.clone();
-        if apply_progress(&mut fields, value, at)? {
-            c.update(&run, &run.title, fields)?;
-        }
+        apply_progress(&mut fields, value, at)?;
+    }
+    let cancel = fields["status"] == "cancelling";
+    if fields != run.fields {
+        c.update(&run, &run.title, fields)?;
     }
     c.db.execute(
         "UPDATE sf_run_leases SET expires=? WHERE space=? AND run=?",
         params![at + LEASE_MS, c.space, run.id],
     )
     .map_err(db_error)?;
-    Ok(json!({"cancel":run.fields["status"]=="cancelling","expires_at":at+LEASE_MS}))
+    Ok(json!({"cancel":cancel,"expires_at":at+LEASE_MS}))
 }
 fn apply_progress(fields: &mut Value, progress: &Value, at: i64) -> Result<bool> {
     let message = progress["message"]
@@ -1063,6 +1113,9 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
     let (run, expires, last) = lease_row(c, q)?;
     let at = now();
     let mut fingerprint = vec![&q["status"], &q["result"], &q["artifacts"], &q["delegates"]];
+    if let Some(error) = q.get("error").filter(|v| !v.is_null()) {
+        fingerprint.push(error);
+    }
     if let Some(usage) = q.get("usage").filter(|v| !v.is_null()) {
         fingerprint.push(usage);
     }
@@ -1094,9 +1147,12 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
         return Err("stale lease".into());
     }
     let private_result;
-    let q = if crate::chat::claim_still_visible(c, &run)?
-        && crate::agents::requester_can_continue(c, &run)?
-    {
+    let authorized = crate::chat::claim_still_visible(c, &run)?
+        && crate::agents::requester_can_continue(c, &run)?;
+    let q = if authorized && scheduling::has_timed_out(&run.fields, at) {
+        private_result = json!({"status":"failed","result":"运行已超时","error":{"code":"run_timeout"},"artifacts":[]});
+        &private_result
+    } else if authorized {
         q
     } else {
         private_result =
@@ -1115,7 +1171,9 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
         return Err("invalid artifact list".into());
     }
     let mut f = run.fields.clone();
-    f["status"] = json!(if f["status"] == "cancelling" {
+    f["status"] = json!(if f["status"] == "cancelling"
+        && !(authorized && scheduling::has_timed_out(&f, at))
+    {
         "cancelled"
     } else {
         outcome
@@ -1124,6 +1182,9 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
         f["usage"] = usage;
     }
     f["result"] = json!(text);
+    if f["status"] == "failed" {
+        f["failure"] = crate::runtime_diagnostics::classify(&q["error"], text);
+    }
     if let Some(progress) = q.get("progress").filter(|v| !v.is_null()) {
         apply_progress(&mut f, progress, at)?;
     }
@@ -1233,6 +1294,7 @@ fn on_terminal(c: &Context<'_>, r: &Record) -> Result<()> {
             f["child_results"] = json!(results);
             f["phase"] = json!("summary");
             f["status"] = json!("queued");
+            scheduling::reset(&mut f, now())?;
             c.update(&parent, &parent.title, f)?;
         }
     }

@@ -224,11 +224,10 @@ elif r["handler_kind"]=="crew":
 else:
     assert source.read_text()==task
     member=r["handler_id"]
-    Path(member).write_text(str(os.getpid()))
-    other=Path("a" if member=="b" else "b")
-    until=time.monotonic()+8
-    while not other.exists() and time.monotonic()<until: time.sleep(0.05)
-    assert other.exists() and other.read_text()!=str(os.getpid())
+    with Path("active").open("x") as guard:
+        Path(member).write_text(str(os.getpid()))
+        time.sleep(0.2)
+    Path("active").unlink()
     result={"result":member}
 print(json.dumps(result))
 "#,
@@ -273,16 +272,11 @@ print(json.dumps(result))
             starting["fields"]["status"], "waiting_children",
             "{starting}"
         );
-        let members = worker(&data, &["run", "--config", cfg, "--once"]);
-        assert_eq!(members["runs"].as_array().unwrap().len(), 2, "{members}");
-        assert!(
-            members["runs"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .all(|x| x["status"] == "done"),
-            "{members}"
-        );
+        for _ in 0..2 {
+            let member = worker(&data, &["run", "--config", cfg, "--once"]);
+            assert_eq!(member["runs"].as_array().unwrap().len(), 1, "{member}");
+            assert_eq!(member["runs"][0]["status"], "done", "{member}");
+        }
         worker(&data, &["run", "--config", cfg, "--once"]);
         let finished = cli
             .execute(json!({"op":"get","kind":"run","id":run_id}))
@@ -430,15 +424,128 @@ print(json.dumps({"status":"done","result":"completed"}))
     for id in ["first", "second"] {
         cli.execute(json!({"op":"create","kind":"task","id":id,"title":id,"fields":{"status":"todo","assignee":"a","assignee_kind":"agent"}})).unwrap();
     }
-    let jobs = worker(&data, &["run", "--config", cfg, "--once"])["runs"]
-        .as_array()
-        .unwrap()
-        .clone();
-    assert_eq!(jobs.len(), 2);
-    assert!(jobs.iter().all(|r| r["status"] == "done"), "{jobs:?}");
+    for _ in 0..2 {
+        let batch = worker(&data, &["run", "--config", cfg, "--once"]);
+        assert_eq!(batch["runs"].as_array().unwrap().len(), 1, "{batch}");
+        assert_eq!(batch["runs"][0]["status"], "done", "{batch}");
+    }
     let lines = std::fs::read_to_string(repo.join("finished.txt")).unwrap();
     assert_eq!(lines.lines().count(), 2);
     assert!(!repo.join("in-use.txt").exists());
+}
+
+#[test]
+fn two_approved_profiles_dispatch_real_processes_and_diagnostics_drop_provider_secrets() {
+    let temp = tempfile::tempdir().unwrap();
+    let data = temp.path().join("data");
+    let cfg = temp.path().join("machine.json");
+    let file = cfg.to_str().unwrap();
+    let script = temp.path().join("runtime.py");
+    std::fs::write(&script,r#"import sys, json, os, time
+from pathlib import Path
+r=json.load(sys.stdin)["fields"]
+if r["instruction"]=="diagnostic fixture":
+    print(json.dumps({"error":{"code":"insufficient_quota","http_status":429,"message":"LOCAL_FIXTURE_PRIVATE_TEXT"}}))
+    sys.exit(1)
+with Path("busy").open("x") as guard:
+    guard.write(str(os.getpid()))
+    time.sleep(0.3)
+Path("busy").unlink()
+with Path("pids").open("a") as log: log.write(str(os.getpid())+"\n")
+print(json.dumps({"result":Path.cwd().name}))
+"#).unwrap();
+    let python = if cfg!(windows) { "python" } else { "python3" };
+    worker(
+        &data,
+        &[
+            "init",
+            "--config",
+            file,
+            "--runtime",
+            "fixture",
+            "--program",
+            python,
+            "--arg",
+            script.to_str().unwrap(),
+        ],
+    );
+    let mut settings: Value = serde_json::from_slice(&std::fs::read(&cfg).unwrap()).unwrap();
+    let machine = settings["machine_id"].clone();
+    settings["capacity"] = json!(4);
+    std::fs::write(&cfg, settings.to_string()).unwrap();
+    for name in ["first", "second"] {
+        let dir = temp.path().join(name);
+        std::fs::create_dir(&dir).unwrap();
+        let result = worker(
+            &data,
+            &[
+                "approve-directory",
+                "--config",
+                file,
+                "--name",
+                name,
+                "--directory",
+                dir.to_str().unwrap(),
+                "--direct",
+            ],
+        );
+        assert_eq!(result["direct"], true);
+    }
+    worker(&data, &["run", "--config", file, "--once"]);
+    let mut c = Client::local(&data).unwrap();
+    let choices = c
+        .execute(json!({"op":"machine.directories","id":machine}))
+        .unwrap();
+    assert_eq!(choices["directories"].as_array().unwrap().len(), 2);
+    assert!(
+        !choices
+            .to_string()
+            .contains(&*temp.path().to_string_lossy())
+    );
+    c.execute(json!({"op":"create","kind":"agent","id":"a","title":"fixture","fields":{"runtime":"fixture","machine_id":machine,"directory_mode":"direct","max_parallel":4,"profiles":["first","second"]}})).unwrap();
+    for n in 0..3 {
+        c.execute(
+            json!({"op":"run.enqueue","handler_id":"a","instruction":format!("fixture {n}")}),
+        )
+        .unwrap();
+    }
+    let batch = worker(&data, &["run", "--config", file, "--once"]);
+    assert_eq!(batch["runs"].as_array().unwrap().len(), 2, "{batch}");
+    for name in ["first", "second"] {
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join(name).join("pids"))
+                .unwrap()
+                .lines()
+                .count(),
+            1
+        );
+    }
+    let next = worker(&data, &["run", "--config", file, "--once"]);
+    assert_eq!(next["runs"].as_array().unwrap().len(), 1);
+    let q = c
+        .execute(json!({"op":"run.enqueue","handler_id":"a","instruction":"diagnostic fixture"}))
+        .unwrap();
+    let last = worker(&data, &["run", "--config", file, "--once"]);
+    assert_eq!(last["runs"][0]["status"], "failed");
+    let report = c
+        .execute(json!({"op":"get","kind":"run","id":q["id"]}))
+        .unwrap();
+    assert_eq!(report["fields"]["failure"]["category"], "billing_quota");
+    assert_eq!(report["fields"]["failure"]["http_status"], 429);
+    assert!(!report.to_string().contains("LOCAL_FIXTURE_PRIVATE_TEXT"));
+    let diag = worker(&data, &["diagnose", "--config", file]);
+    assert_eq!(diag["supervisor_running"], false);
+    assert_eq!(diag["processes"], json!({}));
+    let events = diag["events"].as_array().unwrap();
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| e["pid"].as_u64().is_some())
+            .count(),
+        4
+    );
+    assert!(events.iter().any(|e| e["category"] == "billing_quota"));
+    assert!(!diag.to_string().contains("LOCAL_FIXTURE_PRIVATE_TEXT"));
 }
 
 #[test]

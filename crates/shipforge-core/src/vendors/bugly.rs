@@ -170,6 +170,7 @@ impl Store {
             let priority =
                 mapped(&r, &defaults, "priority", raw_priority).unwrap_or(match raw_priority {
                     "urgent" | "high" | "medium" | "low" => raw_priority,
+                    "lowest" | "Lowest" | "最低" => "lowest",
                     _ => "none",
                 });
             let mut fields = json!({"source":"integration","connector":id,"external_id":issue,"external_provider":"bugly","description":description,"priority":priority,

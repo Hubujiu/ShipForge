@@ -50,7 +50,7 @@ fn prepare(c: &Context<'_>, r: &Record, q: &Value) -> Result<Value> {
         .map_err(storage)?;
     plan["generation"] = json!(generation);
     let request_key = match mode {
-        "status" => {
+        "status" if provider != "asana" => {
             let prior:Option<String>=c.db.query_row("SELECT plan FROM sf_vendor_push WHERE space=? AND connector=? AND task=? AND state='sent' AND request_key LIKE 'status:%' ORDER BY rowid DESC LIMIT 1",params![c.space,r.id,task],|v|v.get(0)).optional().map_err(storage)?;
             if let Some(prior) = prior {
                 let prior: Value = serde_json::from_str(&prior).map_err(storage)?;
@@ -66,7 +66,7 @@ fn prepare(c: &Context<'_>, r: &Record, q: &Value) -> Result<Value> {
             let target = r.fields["mapping"]["write_status"][required(&row.fields, "status")?]
                 .as_str()
                 .filter(|s| {
-                    if provider == "clickup" {
+                    if matches!(provider, "clickup" | "teambition") {
                         !s.trim().is_empty()
                             && s.chars().count() <= 160
                             && !s.chars().any(char::is_control)
@@ -97,7 +97,38 @@ fn prepare(c: &Context<'_>, r: &Record, q: &Value) -> Result<Value> {
             }
             format!("status:{}:{target}", row.rev)
         }
-        "comment" if provider == "pingcode" || cloud::supported(&r.fields) => {
+        "fields" if matches!(provider, "teambition" | "asana") => {
+            plan["title"] = json!(row.title);
+            plan["description"] = json!(row.fields["description"].as_str().unwrap_or_default());
+            plan["source_title"] = base["title"].clone();
+            plan["source_description"] = base["description"].clone();
+            let previous:Option<String>=c.db.query_row("SELECT plan FROM sf_vendor_push WHERE space=? AND connector=? AND task=? AND state='sent' AND request_key LIKE 'fields:%' ORDER BY rowid DESC LIMIT 1",params![c.space,r.id,task],|v|v.get(0)).optional().map_err(storage)?;
+            if let Some(previous) = previous {
+                let previous: Value = serde_json::from_str(&previous).map_err(storage)?;
+                if previous["generation"] == generation {
+                    plan["source_title"] = previous["title"].clone();
+                    plan["source_description"] = previous["description"].clone();
+                }
+            }
+            format!("fields:{}", row.rev)
+        }
+        "delete" if provider == "teambition" => {
+            if r.fields["vendor_delete"] != true
+                || q["confirm_external"] != key
+                || q["confirm_rev"].as_i64() != Some(row.rev)
+            {
+                return Err(forbidden(
+                    "confirm the exact remote task ID and local revision on a deletion-enabled link",
+                ));
+            }
+            plan["source_title"] = base["title"].clone();
+            plan["source_description"] = base["description"].clone();
+            format!("delete:{birth}:{key}")
+        }
+        "comment"
+            if provider == "pingcode"
+                || (provider != "teambition" && cloud::supported(&r.fields)) =>
+        {
             let comment = c.readable("comment", required(q, "comment_id")?)?;
             if comment.fields["task"] != task
                 || comment.fields["visibility"] == "private"
@@ -112,6 +143,7 @@ fn prepare(c: &Context<'_>, r: &Record, q: &Value) -> Result<Value> {
     };
     let previous:Option<Previous>=c.db.query_row("SELECT id,state,expires,remote,plan FROM sf_vendor_push WHERE space=? AND connector=? AND task=? AND request_key=?",params![c.space,r.id,task,request_key],|v|Ok(Previous{id:v.get(0)?,state:v.get(1)?,expires:v.get(2)?,remote:v.get(3)?,plan:v.get(4)?})).optional().map_err(storage)?;
     let delivery = if let Some(previous) = previous {
+        plan["previous_attempt"] = json!(true);
         if previous.state == "sent" {
             return Ok(
                 json!({"delivery":previous.id,"state":previous.state,"remote_id":previous.remote}),

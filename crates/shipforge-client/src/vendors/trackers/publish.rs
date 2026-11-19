@@ -155,7 +155,14 @@ pub(super) fn with_lease(
     send: impl FnOnce(&Value) -> std::result::Result<String, PublicationError>,
 ) -> Result<Value> {
     let mut claim = scoped(q, "imports.prepare_push");
-    for key in ["task_id", "intent", "comment_id", "confirm_comment"] {
+    for key in [
+        "task_id",
+        "intent",
+        "comment_id",
+        "confirm_comment",
+        "confirm_external",
+        "confirm_rev",
+    ] {
         if let Some(v) = q.get(key) {
             claim[key] = v.clone();
         }

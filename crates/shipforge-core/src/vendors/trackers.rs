@@ -255,9 +255,13 @@ pub(super) fn normalize(c: &Context<'_>, r: &Record, q: &Value) -> Result<Vec<Va
                 "2" | "高" | "High" => "high",
                 "3" | "中" | "普通" | "Medium" => "medium",
                 "4" | "低" | "Low" => "low",
+                "最低" | "Lowest" => "lowest",
                 _ => "none",
             });
-        if !matches!(priority, "none" | "low" | "medium" | "high" | "urgent") {
+        if !matches!(
+            priority,
+            "none" | "lowest" | "low" | "medium" | "high" | "urgent"
+        ) {
             return Err(invalid("invalid mapped priority"));
         }
         let source_type = if zen {

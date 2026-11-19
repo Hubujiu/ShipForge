@@ -41,7 +41,16 @@ fn directory(
     timeout: Duration,
 ) -> Result<WorkingDir> {
     let settings = &run["fields"]["config"];
-    let source = if let Some(profile) = settings["profile"].as_str().filter(|n| !n.is_empty()) {
+    let assigned = &run["fields"]["assigned_directory"];
+    let chosen = assigned["profile"]
+        .as_str()
+        .or_else(|| settings["profile"].as_str())
+        .filter(|s| !s.is_empty() && *s != "@workspace");
+    let mode = assigned["mode"]
+        .as_str()
+        .or(settings["directory_mode"].as_str())
+        .unwrap_or("isolated");
+    let source = if let Some(profile) = chosen {
         Some(
             cfg.profiles
                 .get(profile)
@@ -56,30 +65,26 @@ fn directory(
                 .map_err(|e| format!("approved directory {}: {e}", p.display()))
         })
         .transpose()?;
-    if !run["fields"]["crew_workspace"].is_null() {
+    if let Some(identity) = assigned.get("identity").and_then(Value::as_str)
+        && source
+            .as_deref()
+            .is_none_or(|path| crate::config::directory_identity(path) != identity)
+    {
+        return Err("approved directory changed after the claim".into());
+    }
+    if !run["fields"]["crew_workspace"].is_null() || run["fields"]["isolated_workspace"].is_object()
+    {
         return crew_workspace::open(cfg, run, state, source.as_deref(), pulse, timeout);
     }
-    if settings["directory_mode"] == "direct" {
-        if !cfg.allow_direct {
+    if mode == "direct" {
+        if !cfg.permits_direct(chosen.unwrap_or("@workspace")) {
             return Err("direct directory execution is disabled by machine configuration".into());
         }
         let path = source.ok_or("direct execution needs an approved local workspace")?;
         if !path.is_dir() {
             return Err("approved source is not a directory".into());
         }
-        let locks = std::env::temp_dir().join("shipforge-directory-locks");
-        fs::create_dir_all(&locks).map_err(|e| e.to_string())?;
-        let name = path.to_string_lossy();
-        #[cfg(windows)]
-        let name = name.to_lowercase();
-        let name = format!("{}.lock", crate::config::hex_digest(name.as_bytes()));
-        let lock = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(locks.join(name))
-            .map_err(|e| e.to_string())?;
+        let lock = directory_lock(&crate::config::directory_identity(&path))?;
         let until = Instant::now() + timeout;
         loop {
             match lock.try_lock() {
@@ -120,6 +125,112 @@ fn directory(
     })
 }
 const CAPTURE_BYTES: usize = 96 * 1024;
+fn directory_lock(identity: &str) -> Result<File> {
+    let locks = std::env::temp_dir().join("shipforge-directory-locks");
+    fs::create_dir_all(&locks).map_err(|e| e.to_string())?;
+    OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(locks.join(format!("{identity}.lock")))
+        .map_err(|e| e.to_string())
+}
+pub(crate) fn busy_directories(cfg: &Config) -> Vec<String> {
+    cfg.profile_paths()
+        .filter(|(id, _)| cfg.permits_direct(id))
+        .filter_map(|(_, p)| p.canonicalize().ok())
+        .map(|p| crate::config::directory_identity(&p))
+        .filter(|id| {
+            directory_lock(id)
+                .is_ok_and(|file| matches!(file.try_lock(), Err(std::fs::TryLockError::WouldBlock)))
+        })
+        .collect()
+}
+pub(crate) fn approve_directory(
+    file: &Path,
+    name: &str,
+    path: &Path,
+    direct: bool,
+) -> Result<Value> {
+    if !path.is_absolute()
+        || !path.is_dir()
+        || name == "@workspace"
+        || name.trim().is_empty()
+        || name.len() > 160
+        || name.contains(['/', '\\'])
+        || name.chars().any(char::is_control)
+    {
+        return Err("choose an existing absolute directory and a unique logical name".into());
+    }
+    let canonical = path.canonicalize().map_err(|e| e.to_string())?;
+    #[cfg(windows)]
+    {
+        use std::path::Prefix;
+        if !matches!(path.components().next(),Some(Component::Prefix(p)) if matches!(p.kind(),Prefix::Disk(_)))
+            || !matches!(canonical.components().next(),Some(Component::Prefix(p)) if matches!(p.kind(),Prefix::Disk(_)|Prefix::VerbatimDisk(_)))
+        {
+            return Err("choose a local Windows volume".into());
+        }
+    }
+    for key in [
+        "USERPROFILE",
+        "HOME",
+        "SystemRoot",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+    ] {
+        if let Some(folder) =
+            std::env::var_os(key).and_then(|p| PathBuf::from(p).canonicalize().ok())
+            && (canonical == folder
+                || !matches!(key, "USERPROFILE" | "HOME") && canonical.starts_with(folder))
+        {
+            return Err(
+                "choose a project directory outside system folders and the home root".into(),
+            );
+        }
+    }
+    let state = crate::config::state_dir(file)?;
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(state.join("settings.lock"))
+        .map_err(|e| e.to_string())?;
+    lock.lock().map_err(|e| e.to_string())?;
+    let cfg = Config::load(file)?;
+    if cfg
+        .profiles
+        .get(name)
+        .is_some_and(|p| p.canonicalize().ok().as_ref() != Some(&canonical))
+    {
+        return Err("this profile name already points to a different directory".into());
+    }
+    if !direct && !canonical.join(".git").exists() {
+        return Err("a non-Git workspace requires explicit direct execution permission".into());
+    }
+    let mut value: Value = serde_json::from_slice(&fs::read(file).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    value["profiles"][name] = json!(path);
+    let mut direct_profiles = cfg.direct_profiles;
+    if direct {
+        direct_profiles.insert(name.to_owned());
+    } else {
+        direct_profiles.remove(name);
+    }
+    value["direct_profiles"] = json!(direct_profiles);
+    let mut temporary =
+        tempfile::NamedTempFile::new_in(file.parent().ok_or("invalid configuration path")?)
+            .map_err(|e| e.to_string())?;
+    temporary
+        .write_all(&serde_json::to_vec_pretty(&value).map_err(|e| e.to_string())?)
+        .map_err(|e| e.to_string())?;
+    temporary.as_file().sync_all().map_err(|e| e.to_string())?;
+    Config::load(temporary.path())?;
+    temporary.persist(file).map_err(|e| e.to_string())?;
+    Ok(json!({"machine":cfg.machine_id,"profile":name,"direct":cfg.allow_direct||direct}))
+}
 fn read_output(stream: impl Read) -> String {
     let mut reader = std::io::BufReader::new(stream);
     let mut bytes = Vec::new();
@@ -279,9 +390,11 @@ pub fn execute(
     let timeout = Duration::from_secs(
         spec.timeout_seconds
             .min(
-                run["fields"]["config"]["timeout_seconds"]
+                run["fields"]["config"]["run_timeout_minutes"]
                     .as_u64()
-                    .unwrap_or(spec.timeout_seconds),
+                    .map(|m| m.clamp(15, 43_200) * 60)
+                    .or_else(|| run["fields"]["config"]["timeout_seconds"].as_u64())
+                    .unwrap_or(180 * 60),
             )
             .max(1),
     );
@@ -295,7 +408,7 @@ pub fn execute(
         if pulse()? {
             return Err("cancelled".into());
         }
-        let mut result = execute_round(spec, &canonical, &context, &mut pulse, until)?;
+        let mut result = execute_round(spec, &canonical, &context, &mut pulse, until, state)?;
         let calls = result.as_object_mut().and_then(|r| r.remove("tool_calls"));
         let calls = calls.as_ref().and_then(Value::as_array);
         if result["status"] != "done" || calls.is_none_or(Vec::is_empty) {
@@ -331,6 +444,7 @@ fn execute_round(
     run: &Value,
     mut pulse: impl FnMut() -> Result<bool>,
     until: Instant,
+    state: &Path,
 ) -> Result<Value> {
     if pulse()? {
         return Err("cancelled".into());
@@ -339,6 +453,7 @@ fn execute_round(
         return Err("runtime timeout".into());
     }
     let mut child = spawn_command(spec, canonical)?;
+    crate::diagnostics::record(state, run, "started", Some(child.id()), None);
     let mut input = child.stdin.take().expect("piped stdin");
     let mut context = serde_json::to_vec(run).map_err(|e| e.to_string())?;
     context.push(b'\n');
@@ -376,6 +491,7 @@ fn execute_round(
         }
         thread::sleep(Duration::from_millis(150));
     };
+    crate::diagnostics::record(state, run, "process_exited", None, None);
     // Detached output producers must not indefinitely pin the supervisor's completion.
     let drain_until = Instant::now() + Duration::from_secs(2);
     while !(writer.is_finished() && output.is_finished() && errors.is_finished())
@@ -397,7 +513,11 @@ fn execute_round(
         .ok()
         .filter(Value::is_object)
         .unwrap_or(Value::Null);
-    let default = if succeeded { "done" } else { "failed" };
+    let default = if succeeded && parsed["error"].is_null() {
+        "done"
+    } else {
+        "failed"
+    };
     let status = if end_reason.as_deref() == Some("cancelled") {
         "cancelled"
     } else if succeeded {
@@ -419,7 +539,23 @@ fn execute_round(
         result.push_str(err.trim());
     }
     let artifacts = bounded_artifacts(&parsed["artifacts"], canonical)?;
+    let failure = if status == "failed" {
+        let stderr_error = serde_json::from_str::<Value>(err.trim()).ok();
+        let provider = parsed
+            .get("error")
+            .or_else(|| {
+                stderr_error
+                    .as_ref()
+                    .and_then(|v| v.get("error").or(Some(v)))
+            })
+            .unwrap_or(&Value::Null);
+        let failure = shipforge_client::runtime_diagnostics::classify(provider, &result);
+        result = failure["message"].as_str().unwrap_or_default().to_owned();
+        failure
+    } else {
+        Value::Null
+    };
     Ok(
-        json!({"status":status,"result":result,"artifacts":artifacts,"delegates":parsed["delegates"],"tool_calls":parsed["tool_calls"],"task_draft":parsed["task_draft"],"usage":parsed["usage"]}),
+        json!({"status":status,"result":result,"error":failure,"artifacts":artifacts,"delegates":parsed["delegates"],"tool_calls":parsed["tool_calls"],"task_draft":parsed["task_draft"],"usage":parsed["usage"]}),
     )
 }

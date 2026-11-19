@@ -419,10 +419,26 @@ pub const PRIORITIES: &[(&str, &str)] = &[
     ("high", "高"),
     ("medium", "中"),
     ("low", "低"),
+    ("lowest", "最低"),
 ];
 pub const TYPES: &[(&str, &str)] = &[("task", "任务"), ("requirement", "需求"), ("bug", "缺陷")];
 pub fn label_value(key: &str, v: &str) -> String {
     let choices: &[(&str, &str)] = match key {
+        "waiting_reason" => &[
+            ("outside_working_hours", "等待工作时段"),
+            ("scheduled_start", "等待预约时间"),
+            ("agent_capacity", "Agent 并发已满"),
+            ("machine_capacity", "机器并发已满"),
+            ("conversation_busy", "对话中还有运行"),
+            ("task_busy", "此任务有活动运行"),
+            ("crew_workspace_busy", "小队成员正在使用任务目录"),
+            ("directory_busy", "获准目录均在使用"),
+            ("directory_unavailable", "工作目录不可用"),
+            ("no_machine", "没有可用的机器"),
+            ("machine_offline", "工作机离线"),
+            ("runtime_unavailable", "运行时不可用"),
+            ("queued", "排队中"),
+        ],
         "type" => TYPES,
         "priority" => PRIORITIES,
         "visibility" => &[("space", "空间共享"), ("private", "仅自己")],

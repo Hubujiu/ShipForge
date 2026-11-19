@@ -87,12 +87,14 @@ pub(super) fn issue(
                 request["fields"]["type"] = json!(fields::resolve(&c, "task_type", value)?)
             }
             "duedate" => request["fields"]["due_date"] = value.clone(),
+            "priority" if value.is_null() => request["fields"]["priority"] = json!("none"),
             "priority" => {
                 let p = fields::reference(value, &["id", "name"])?;
                 let (_, _, level) = fields::PRIORITIES
                     .iter()
                     .find(|(id, name, _)| p == *id || p.eq_ignore_ascii_case(name))
                     .ok_or_else(|| invalid("unknown priority"))?;
+                crate::organization::imported_priority(&c, level)?;
                 request["fields"]["priority"] = json!(level);
             }
             "assignee" => {

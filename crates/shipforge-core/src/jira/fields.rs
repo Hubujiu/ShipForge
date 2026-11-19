@@ -8,7 +8,7 @@ pub(super) const PRIORITIES: [(&str, &str, &str); 5] = [
     ("2", "High", "high"),
     ("3", "Medium", "medium"),
     ("4", "Low", "low"),
-    ("5", "Lowest", "none"),
+    ("5", "Lowest", "lowest"),
 ];
 pub(super) fn priorities() -> Vec<Value> {
     PRIORITIES
@@ -145,7 +145,7 @@ impl Site<'_, '_> {
         let priority = PRIORITIES
             .iter()
             .find(|(_, _, p)| f["priority"] == *p)
-            .unwrap_or(&PRIORITIES[4]);
+            .map(|(id, name, _)| json!({"id":id,"name":name}));
         let people = crate::task_commands::assignees::people(f)
             .map(|id| user(&c, id))
             .collect::<Result<Vec<_>>>()?;
@@ -165,7 +165,7 @@ impl Site<'_, '_> {
         }
         let mut issue = self.identity(t);
         issue["fields"] = json!({"summary":t.title,"description":content(t,"description",self.version),"issuetype":ty,"project":project(space),
-        "priority":{"id":priority.0,"name":priority.1},"resolution":if state["statusCategory"]["key"]=="done"{json!({"id":"1","name":"Done"})}else{Value::Null},
+        "priority":priority,"resolution":if state["statusCategory"]["key"]=="done"{json!({"id":"1","name":"Done"})}else{Value::Null},
         "status":state,"assignee":people.first(),"reporter":reporter,"creator":reporter,"labels":labels,"created":timestamp(t.created_at),"updated":timestamp(t.updated_at),"duedate":f["due_date"]});
         if let Some(id) = f["parent"].as_str()
             && let Some(parent) = c.find("task", id)?

@@ -54,4 +54,4 @@ URL 示例中的组织、仓库与文件路径需替换为公开文件的实际�
 {"op":"update","kind":"crew","id":"delivery-team","fields":{"share_task_directory":true}}
 ```
 
-源仓库已绑定时，工作机首次执行会创建独立 Git worktree，后续成员能读到队长及其他成员的本地修改。成员可并行运行；需要顺序改同一文件时由队长安排委派。执行完成后，可通过「运行历史」的工作目录产物找到保留的修改。 [HiFox 技能规则](https://help.hifox.com/docs/agent-and-computer/skills) · [HiFox 小队目录规则](https://help.hifox.com/docs/agent-and-computer/crews)
+源仓库已绑定时，工作机首次执行会创建独立 Git worktree，后续成员能读到队长及其他成员的本地修改。同机处理同一共享目录任务的成员依次运行。独立任务仍可按容量并行。执行完成后，可通过「运行历史」的工作目录产物找到保留的修改。 [HiFox 技能规则](https://help.hifox.com/docs/agent-and-computer/skills) · [HiFox 执行与排队](https://help.hifox.com/docs/agent-and-computer/agent-task-execution)

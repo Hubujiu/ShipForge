@@ -1,5 +1,11 @@
 # Windows 原生界面验收
 
+## 两个成员窗口与组织默认设置
+
+两个隐藏的 Windows 原生窗口使用独立身份连接同一团队服务。两名成员通过目录和搜索打开同一私聊，一端发出的消息自动出现在另一端。切断其中一端的连接后，该端清空会话正文；在另一端发送一条新消息，恢复连接后原窗口补齐消息且只出现一次。撤销成员的空间权限后，其旧窗口自动退出该空间，后退和搜索也无法重新打开这段对话。[双窗口验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/live_navigation_test.rs)
+
+另一个 Windows 用例通过组织表单保存默认语言和优先级档数，在新建任务的选择器分别读取最低与无优先级。核心和 Jira HTTP 验收还验证了导入预览可回滚、已用的最低优先级在降为四档后保留、Jira 清除优先级可往返。[组织设置](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/organization_settings.rs) · [Jira API](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-jira.py)
+
 ## 技能市场和同机任务目录
 
 隐藏的 Windows GPUI 窗口在临时工作区中打开市场，检查真实 UI Automation 节点，并走桌面动作入口打开条目详情、安装技能、选择要绑定的 Agent。切换到没有条目的分类后，原有详情按钮消失。空间技能页能打开目录和机器导入，实际提交文件后从第二个客户端读取到了新技能。小队详情中开启共享后，按钮变为「关闭同机共享任务目录」。[原生验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/market_ui_test.rs)
@@ -66,6 +72,12 @@ final result: passed
 | 查看停用预览，不选处理方式提交，再选择取消未完成任务 | 预览为一项。空选项保留弹窗并显示错误，确认取消后转到「已停用」目录。 |
 | 查看历史并恢复 | 历史任务仍能打开，侧栏快捷创建按钮消失。确认恢复后空间可写，原任务保持已取消。 |
 
+## Teambition 和 CNB 的 Windows 连接器
+
+隐藏 D3D 窗口打开两个连接器，用原生辅助功能树检查组织应用、个人授权、项目发现、回写、仓库配对和投递记录入口。测试读取密码字段的遮罩类型、逐项检查删除确认字段，在窗口提交暂停同步并查询 CNB 活动。与团队及供应商交互的结果由独立 HTTP 用例核对。[Windows 窗口用例](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/enterprise_integration_ui_test.rs) · [CLI 与工作机验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-teambition-cnb.py)
+
+Asana 同一窗口验证工作区发现、遮蔽的 PAT、项目预览、立即同步和字段或评论写回表单。同时在 CLI 和工作机回归核对真实服务返回的 Asana 处理人、状态、受限字段写入和评论回执。[Windows 窗口](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/enterprise_integration_ui_test.rs) · [Asana 隔离服务](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-asana-projects.py)
+
 ## Windows 对话列表、分叉和任务关联
 
 在隐藏的 Windows x64 GPUI 窗口打开独立 SQLite 工作区。窗口使用真实桌面控件、后台命令和搜索输入框，测试从 UI Automation 树读取按钮标签。对话、Agent、任务和两条消息均为合成数据。 [原生窗口用例](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/chat_ui_test.rs)
@@ -104,3 +116,7 @@ Windows 隐藏 D3D 窗口使用独立临时资料，打开分拣模块与待分�
 ## Windows 对话指令和文档引用
 
 独立本机测试工作区打开隐藏的原生 D3D 窗口，经 Windows 辅助功能树定位任务指令、管理、文档引用和 PNG 保存入口。测试向编辑器派发 Tab 后确认仅插入命令，派发 Esc 后确认输入框仍在，再发送并核对后端消息。工作机报告结果后，从详情发送审阅确认，任务保持原状态。PNG 在测试目录写出并核对文件签名。测试未接外部商业 Runtime。[原生测试](https://github.com/Hubujiu/ShipForge/blob/v0.11.0/crates/shipforge-desktop/src/conversation_ui_test.rs)
+
+## Windows 运行调度、目录与诊断
+
+独立测试工作区在隐藏的原生 D3D 窗口打开「机器」，通过 Windows 辅助功能树识别授权目录和本机诊断入口。测试从 Agent 编辑器选择同一机器上的两个目录、切换到共用任务额度，提交后重读数据库验证保存。随后打开已预约任务，在详情触发提前排队，确认横幅消失，再从运行记录读取该次诊断。独立工作机验收用两个实际目录各启动 Python 进程，第三个任务等待目录释放，合成服务返回 429 后得到额度错误和本机 PID 日志。[原生窗口测试](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/runtime_ui_test.rs) · [工作机进程测试](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/tests/native_runtime.rs) · [用户指南](runtime-scheduling.md)

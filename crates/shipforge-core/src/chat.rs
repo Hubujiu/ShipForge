@@ -10,6 +10,7 @@ pub(crate) fn share_image(c: &Context<'_>, q: &Value) -> Result<Value> {
     )
 }
 mod sidebar;
+mod start;
 mod workflows;
 use crate::{Context, Record, Result, conflict, forbidden, invalid, required, storage};
 use rusqlite::{Connection, OptionalExtension, params};
@@ -36,6 +37,7 @@ pub(crate) fn init(db: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS chat_user_settings(space TEXT,chat TEXT,actor TEXT,muted INTEGER NOT NULL DEFAULT 0,ignore_all INTEGER NOT NULL DEFAULT 0,clear_seq INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(space,chat,actor));
     ").map_err(storage)?;
     sidebar::init(db)?;
+    start::init(db)?;
     workflows::init(db)?;
     shares::init(db)
 }
@@ -112,7 +114,45 @@ pub(crate) fn require_owner(c: &Context<'_>, room: &Record) -> Result<()> {
     c.require_edit()
 }
 
-pub(crate) fn validate(old: Option<&Record>, room: &mut Record) -> Result<()> {
+pub(crate) fn validate(c: &Context<'_>, old: Option<&Record>, room: &mut Record) -> Result<()> {
+    if let Some(old) = old
+        && crate::bots::external_room(c, &old.id)?
+        && (room.fields["visibility"] != "private"
+            || [
+                "agent",
+                "handler_kind",
+                "handler_id",
+                "creator",
+                "owner",
+                "task",
+                "task_id",
+            ]
+            .iter()
+            .any(|key| room.fields[*key] != old.fields[*key]))
+    {
+        return Err(invalid(
+            "external Agent rooms retain their private scope and bound handler",
+        ));
+    }
+    if let Some(old) = old
+        && start::direct(c, old)?
+        && (room.fields["visibility"] != "private"
+            || [
+                "handler_kind",
+                "handler_id",
+                "agent",
+                "owner",
+                "creator",
+                "task",
+                "task_id",
+            ]
+            .iter()
+            .any(|k| room.fields[*k] != old.fields[*k]))
+    {
+        return Err(invalid(
+            "direct conversation participants and visibility are fixed",
+        ));
+    }
     if let Some(kind) = room.fields.get("chat_type")
         && !matches!(kind.as_str(), Some("group" | "conversation"))
     {
@@ -138,6 +178,7 @@ pub(crate) fn validate(old: Option<&Record>, room: &mut Record) -> Result<()> {
 pub(crate) fn before_delete(c: &Context<'_>, room: &Record) -> Result<()> {
     can_edit(c, room)?;
     for table in [
+        "direct_chats",
         "chat_shares",
         "chat_people",
         "chat_agents",
@@ -155,6 +196,7 @@ pub(crate) fn before_delete(c: &Context<'_>, room: &Record) -> Result<()> {
 }
 
 pub(crate) fn forget_grants(c: &Context<'_>, actor: &str) -> Result<()> {
+    c.db.execute("DELETE FROM direct_chats WHERE (first_actor=?1 OR second_actor=?1) AND (space=?2 OR space IN (SELECT space FROM records WHERE kind='space' AND id=space AND json_extract(fields,'$.organization')=?2))",params![actor,c.space]).map_err(storage)?;
     for table in ["chat_people", "chat_user_settings", "chat_sidebar"] {
         c.db.execute(&format!("DELETE FROM {table} WHERE actor=?1 AND (space=?2 OR space IN (SELECT space FROM records WHERE kind='space' AND id=space AND json_extract(fields,'$.organization')=?2))"),params![actor,c.space]).map_err(storage)?;
     }
@@ -264,6 +306,15 @@ fn task_visible(c: &Context<'_>, room: &Record) -> bool {
 }
 
 pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
+    execute_origin(c, q, op, "chat")
+}
+pub(crate) fn mention(c: &Context<'_>, q: &Value) -> Result<Value> {
+    execute_origin(c, q, "chat.send", "comment")
+}
+fn execute_origin(c: &Context<'_>, q: &Value, op: &str, origin: &str) -> Result<Value> {
+    if op == "chat.start" {
+        return start::open(c, q);
+    }
     if op == "chat.sidebar" {
         return sidebar::list(c);
     }
@@ -306,7 +357,7 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
         "chat.fork" => workflows::fork(c, &room, q),
         "chat.bind_task" => workflows::bind(c, &room, q),
         "chat.convert" => workflows::convert(c, &room, q),
-        "chat.send" => workflows::send(c, &room, q),
+        "chat.send" => workflows::send(c, &room, q, origin),
         "chat.info" => info(c, &room),
         "chat.history" => Ok(json!(workflows::ordered(c, &room)?)),
         "chat.share.create" => shares::create(c, &room, q),
@@ -358,6 +409,9 @@ fn manage(c: &Context<'_>, q: &Value, room: &Record) -> Result<Value> {
     let action = required(q, "action")?;
     let (leader, _) = owner(c, room)?;
     let is_owner = leader == c.actor;
+    if action != "clear" && start::direct(c, room)? {
+        return Err(invalid("a direct conversation is between its two members"));
+    }
     if action == "clear" {
         c.db.execute("INSERT INTO chat_user_settings(space,chat,actor,clear_seq) VALUES(?1,?2,?3,(SELECT coalesce(max(seq),0) FROM event_log))
             ON CONFLICT(space,chat,actor) DO UPDATE SET clear_seq=excluded.clear_seq",params![c.space,id,c.actor]).map_err(storage)?;
@@ -544,6 +598,7 @@ pub(crate) fn notify(c: &Context<'_>, message: &Record) -> Result<()> {
 }
 
 pub(crate) fn extend_schema(schema: &mut Value) {
+    schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"chat.start"}}},"then":{"required":["mode"],"properties":{"mode":{"enum":["member","agent","crew","group"]},"members":{"type":"array","items":{"type":"string"}},"agents":{"type":"array","items":{"type":"string"}}},"if":{"properties":{"mode":{"const":"group"}}},"then":{"required":["title"]},"else":{"required":["target"]}}}));
     workflows::schema(schema);
     let rules = schema["allOf"].as_array_mut().expect("schema rules");
     rules.push(json!({"if":{"properties":{"op":{"enum":["chat.info","chat.manage","chat.preferences"]}}},"then":{"required":["id"]}}));

@@ -4,9 +4,11 @@ use shipforge_core::zentao_installation as site;
 use std::collections::BTreeMap;
 use url::Url;
 
+pub(super) mod asana;
 mod cloud;
 mod pingcode;
 mod publish;
+pub(super) mod teambition;
 mod zentao;
 
 struct Api {
@@ -260,6 +262,20 @@ pub(super) fn execute(client: &mut Client, q: &Value) -> Result<Value> {
     let provider = binding["provider"]
         .as_str()
         .ok_or("invalid: select a supported tracker")?;
+    if matches!(provider, "teambition" | "asana")
+        && matches!(op, "imports.push" | "imports.synchronize")
+    {
+        let mut native = q.clone();
+        native["op"] = json!(format!(
+            "{provider}.{}",
+            if op == "imports.push" {
+                "push"
+            } else {
+                "synchronize"
+            }
+        ));
+        return client.execute(native);
+    }
     if matches!(provider, "linear" | "clickup" | "ones") {
         return cloud::execute(client, q, &binding);
     }

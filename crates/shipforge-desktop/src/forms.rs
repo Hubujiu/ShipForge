@@ -68,7 +68,13 @@ const TRIGGERS: &[(&str, &str)] = &[
 ];
 #[derive(Clone)]
 pub enum Mode {
+    QuickCreate,
+    PeopleFilter,
+    OrgDefaults(Record),
+    OrgDepart(Record, &'static str),
+    StartChat(&'static str),
     Library(crate::app::market_ui::LibraryForm),
+    Bot(crate::app::personal_bots_ui::BotForm),
     Identity(crate::app::identity_ui::IdentityForm),
     Inbox(crate::app::inbox_ui::InboxForm),
     Directory(crate::app::agent_directory::DirectoryForm),
@@ -123,6 +129,9 @@ pub enum Mode {
     Machine {
         stop: bool,
     },
+    LocalDirectory {
+        diagnose: bool,
+    },
     Workflow {
         op: &'static str,
         record: Record,
@@ -154,7 +163,22 @@ impl Mode {
     pub fn heading(&self) -> String {
         use Mode::*;
         match self {
+            Bot(f) => f.title().into(),
             Identity(f) => f.title().into(),
+            QuickCreate => "快捷新建".into(),
+            PeopleFilter => "查找成员与机器".into(),
+            OrgDefaults(_) => "组织默认设置".into(),
+            OrgDepart(r, action) => format!(
+                "{} · {}（{}）",
+                crate::locale::label(if *action == "leave" {
+                    "离开组织"
+                } else {
+                    "删除组织"
+                }),
+                r.title,
+                r.fields["members"]
+            ),
+            StartChat(kind) => crate::app::navigation::chat_label(kind).into(),
             Directory(f) => f.title().into(),
             Library(f) => f.title().into(),
             Work(f) => f.title(),
@@ -177,6 +201,12 @@ impl Mode {
             JoinInvite => "接受组织邀请".into(),
             SetupSpace { .. } => "初始化默认空间".into(),
             MissingMachine => "没有可用的机器".into(),
+            LocalDirectory { diagnose } => if *diagnose {
+                "本机进程与日志"
+            } else {
+                "授权本机工作目录"
+            }
+            .into(),
             GuideTarget { kind, .. } => crate::locale::select_title(noun(kind)),
             MoveTask => "将任务移动到空间".into(),
             FindInView => "在当前视图查找".into(),
@@ -218,7 +248,13 @@ impl Mode {
     }
     pub fn submit_label(&self) -> &'static str {
         match self {
+            Self::Bot(f) => f.submit(),
             Self::Identity(f) => f.submit(),
+            Self::QuickCreate => "关闭",
+            Self::PeopleFilter => "查找",
+            Self::OrgDefaults(_) => "保存",
+            Self::OrgDepart(_, _) => "确认",
+            Self::StartChat(_) => "打开对话",
             Self::Directory(_) => "确认",
             Self::Library(f) => f.submit_label(),
             Self::Work(f) => f.submit_label(),
@@ -234,6 +270,13 @@ impl Mode {
             Self::JoinInvite => "接受邀请",
             Self::SetupSpace { .. } => "进入工作区",
             Self::MissingMachine => "连接机器",
+            Self::LocalDirectory { diagnose } => {
+                if *diagnose {
+                    "读取本机诊断"
+                } else {
+                    "批准目录"
+                }
+            }
             Self::GuideTarget { .. } => "继续",
             Self::MoveTask => "移动",
             Self::FindInView => "查找",
@@ -302,14 +345,10 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             body,
             item("type", "类型", Ref("$types"), "task"),
             item("status", "状态", Ref("$statuses"), "todo"),
-            item(
-                "priority",
-                "优先级",
-                Choice(crate::catalog::PRIORITIES),
-                "none",
-            ),
+            item("priority", "优先级", Ref("$priorities"), "none"),
             item("assignees", "人员处理人", Many("member"), ""),
             item("executor", "执行者（Agent 或小队）", Ref("$executors"), ""),
+            item("scheduled_at", "预约执行（含时区的日期时间）", Text, ""),
             item("owner", "负责人", Ref("member"), ""),
             item("iteration", "迭代", Ref("iteration"), ""),
             item("project", "专项", Ref("project"), ""),
@@ -347,12 +386,7 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 ]),
                 "draft",
             ),
-            item(
-                "priority",
-                "优先级",
-                Choice(crate::catalog::PRIORITIES),
-                "none",
-            ),
+            item("priority", "优先级", Ref("$priorities"), "none"),
             item("spaces", "关联空间", Many("space"), ""),
             item("primary_space", "主空间", Ref("space"), ""),
             item("start_date", "开始日期（YYYY-MM-DD）", Text, ""),
@@ -502,11 +536,39 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 "isolated",
             ),
             item("skills", "技能", Many("skill"), ""),
+            item(
+                "profiles",
+                "获准工作目录（依次择空闲）",
+                Many("$approved_directories"),
+                "",
+            ),
             item("tools", "授权工具", Many("tool"), ""),
             item("max_parallel", "任务并发数", Number, ""),
             item("chat_parallel", "对话并发数", Number, ""),
+            item(
+                "chat_capacity_mode",
+                "对话并发策略",
+                Choice(&[("independent", "独立对话额度"), ("shared", "共用任务额度")]),
+                "independent",
+            ),
+            item("run_timeout_minutes", "最大运行时长（分钟）", Number, ""),
+            item("queue_timeout_hours", "排队超时（小时）", Number, ""),
             item("timeout_seconds", "超时秒数", Number, ""),
             item("working_hours", "工作时段（JSON）", Json, ""),
+            item(
+                "hours_mode",
+                "排班方案",
+                Choice(&[
+                    ("always", "全天接单"),
+                    ("off_peak", "工作日夜间及周末"),
+                    ("custom", "自定义工作时段"),
+                ]),
+                "always",
+            ),
+            item("hours_zone", "排班时区", Text, "Asia/Shanghai"),
+            item("hours_assignment", "指派任务遵守排班", Bool, "true"),
+            item("hours_comment", "评论提及遵守排班", Bool, "true"),
+            item("hours_chat", "对话消息遵守排班", Bool, "false"),
             visibility,
         ],
         "crew" => vec![
@@ -565,6 +627,8 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                     ("zoho", "Zoho BugTracker"),
                     ("zentao", "禅道"),
                     ("pingcode", "PingCode"),
+                    ("teambition", "Teambition"),
+                    ("cnb", "CNB"),
                     ("gitlab", "GitLab"),
                     ("linear", "Linear"),
                     ("clickup", "ClickUp"),
@@ -581,12 +645,7 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 ]),
                 "github",
             ),
-            item(
-                "repository",
-                "GitHub 或 GitLab 仓库（owner/repository）",
-                Text,
-                "",
-            ),
+            item("repository", "代码托管仓库路径", Text, ""),
             item("project_id", "GitLab 项目 ID", Text, ""),
             item(
                 "repository_host",
@@ -622,6 +681,14 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             ),
             item("zentao_version", "禅道版本号（可选）", Text, ""),
             item("enterprise_id", "供应商企业、团队或工作区 ID", Text, ""),
+            item("cnb_group", "CNB 组路径", Text, ""),
+            item(
+                "cnb_backlinks",
+                "向 CNB 议题和合并请求发送任务回链",
+                Bool,
+                "false",
+            ),
+            item("vendor_delete", "允许本人确认后删除远端任务", Bool, "false"),
             item("ones_url", "ONES 租户地址", Text, ""),
             item(
                 "cloud_auth",
@@ -741,6 +808,25 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
 }
 pub fn workflow_name(op: &str) -> &'static str {
     match op {
+        "asana.accounts" => "发现 Asana 工作区",
+        "asana.credential" => "绑定 Asana 工作区令牌",
+        "asana.projects" => "发现 Asana 项目",
+        "asana.preview" => "预览 Asana 项目任务",
+        "asana.synchronize" => "读取 Asana 项目变更",
+        "asana.push" => "回写 Asana 字段或新评论",
+        "teambition.application" => "配置 Teambition 组织应用",
+        "teambition.authorize" => "生成 Teambition 个人授权地址",
+        "teambition.personal" => "绑定我的 Teambition 身份",
+        "teambition.projects" => "发现我加入的 Teambition 项目",
+        "teambition.preview" => "预览 Teambition 项目任务",
+        "teambition.synchronize" => "读取 Teambition 项目变更",
+        "teambition.push" => "以我的身份回写 Teambition",
+        "cnb.credential" => "配置或校验 CNB 组令牌",
+        "cnb.repositories" => "发现 CNB 组内仓库",
+        "cnb.pair" => "配对 CNB 仓库或轮换签名密钥",
+        "cnb.ci" => "查看 CNB 流水线片段",
+        "cnb.activity" => "查看 CNB 事件与回链记录",
+        "cnb.deliver" => "发送或核对 CNB 回链",
         "iteration.configure" => "空间迭代设置",
         "chat.share.create" => "分享已选消息",
         "chat.manage" => "管理对话成员",
@@ -789,7 +875,40 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
     use Format::*;
     use Mode::*;
     match mode {
+        Bot(f) => f.specs(),
         Identity(f) => f.specs(),
+        QuickCreate => vec![],
+        PeopleFilter => vec![item("query", "名称或标识", Text, "")],
+        OrgDefaults(_) => vec![
+            item(
+                "default_language",
+                "组织默认语言",
+                Choice(&[("zh-CN", "简体中文"), ("en", "English")]),
+                "zh-CN",
+            ),
+            item(
+                "priority_levels",
+                "任务优先级档数",
+                Choice(&[("4", "4 级"), ("5", "5 级")]),
+                "4",
+            ),
+        ],
+        OrgDepart(_, _) => vec![item("confirmation", "输入组织名称确认", Text, "")],
+        StartChat("group") => vec![
+            item("title", "群聊名称", Text, ""),
+            item("members", "真人成员", Many("$other_people"), ""),
+            item("agents", "参与 Agent", Many("agent"), ""),
+        ],
+        StartChat(kind) => vec![item(
+            "target",
+            "选择对象",
+            Ref(if *kind == "member" {
+                "$other_people"
+            } else {
+                kind
+            }),
+            "",
+        )],
         Directory(f) => f.specs(),
         Library(f) => f.specs(),
         Work(f) => f.specs(),
@@ -874,6 +993,17 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             ),
         ],
         MissingMachine => vec![],
+        LocalDirectory { diagnose } => {
+            let mut s = vec![item("config", "工作机配置文件（完整路径）", Text, "")];
+            if !diagnose {
+                s.extend([
+                    item("profile", "目录显示名称", Text, ""),
+                    item("workspace", "本机工作目录", Text, ""),
+                    item("direct", "允许直接写入此目录", Bool, "false"),
+                ]);
+            }
+            s
+        }
         GuideTarget { kind, .. } => vec![item("target", "选择对象", Ref(kind), "")],
         MoveTask => vec![
             item("task", "任务", Ref("task"), ""),
@@ -1027,7 +1157,7 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             ],
             "zoho.preview" => vec![item("full", "重新检查全部缺陷", Bool, "false")],
             "zentao.preview" | "pingcode.preview" | "linear.preview" | "clickup.preview"
-            | "ones.preview" => vec![item(
+            | "ones.preview" | "teambition.preview" | "asana.preview" => vec![item(
                 "import_mode",
                 "导入方式",
                 Choice(&[
@@ -1061,6 +1191,61 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             "pingcode.credential" => vec![
                 item("access_token", "PingCode 访问令牌", Secret, ""),
                 item("clear", "移除本机凭据", Bool, "false"),
+            ],
+            "asana.accounts" => vec![item("access_token", "Asana 个人访问令牌", Secret, "")],
+            "asana.credential" => vec![
+                item("access_token", "Asana 个人访问令牌", Secret, ""),
+                item("workspace_id", "Asana 工作区 GID", Text, ""),
+                item("clear", "清除组织的 Asana 令牌", Bool, "false"),
+            ],
+            "asana.push" => vec![
+                item("task_id", "已关联的任务", Ref("task"), ""),
+                item(
+                    "intent",
+                    "回写内容",
+                    Choice(&[("fields", "标题与描述"), ("comment", "新评论")]),
+                    "fields",
+                ),
+                item("comment_id", "本地评论 ID", Text, ""),
+                item("confirm_comment", "核对已发布的远端评论 ID", Text, ""),
+            ],
+            "teambition.application" => vec![
+                item("app_id", "Teambition 应用 ID", Text, ""),
+                item("app_secret", "Teambition 应用密钥", Secret, ""),
+                item("clear", "清除组织的应用凭据", Bool, "false"),
+            ],
+            "teambition.authorize" => {
+                vec![item("redirect_uri", "已注册的 OAuth 回调地址", Text, "")]
+            }
+            "teambition.personal" => vec![
+                item("access_token", "Teambition 个人访问令牌", Secret, ""),
+                item("code", "供应商 OAuth 授权码", Secret, ""),
+                item("state", "OAuth 回调 state", Secret, ""),
+                item("clear", "解除我的 Teambition 授权", Bool, "false"),
+            ],
+            "teambition.push" => vec![
+                item("task_id", "已关联的任务", Ref("task"), ""),
+                item(
+                    "intent",
+                    "回写内容",
+                    Choice(&[
+                        ("fields", "标题与描述"),
+                        ("status", "任务状态"),
+                        ("delete", "删除远端任务"),
+                    ]),
+                    "fields",
+                ),
+                item("confirm_external", "删除时确认的远端任务 ID", Text, ""),
+                item("confirm_rev", "删除时确认的本地任务修订号", Number, ""),
+            ],
+            "cnb.credential" => vec![
+                item("access_token", "CNB 个人访问令牌", Secret, ""),
+                item("clear", "清除组织的组令牌", Bool, "false"),
+            ],
+            "cnb.pair" => vec![
+                item("repository", "CNB 完整仓库路径", Text, ""),
+                item("server_url", "ShipForge 团队服务地址", Text, ""),
+                item("rotate", "轮换此仓库的流水线密钥", Bool, "false"),
             ],
             "linear.authorize" | "clickup.authorize" => vec![
                 item("client_id", "OAuth Client ID", Text, ""),
@@ -1170,6 +1355,15 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             item("filter_priority", "优先级", Ref("$priorities"), ""),
             item("filter_assignee", "处理人", Ref("$handlers"), ""),
         ],
+        Comment(task)
+            if task.field("external_provider") == "asana"
+                && task.field("visibility") != "private" =>
+        {
+            vec![
+                item("body", "内容", Body, ""),
+                item("publish_asana", "同时发到 Asana", Bool, "false"),
+            ]
+        }
         Comment(_) | ThreadReply { .. } => vec![item("body", "内容", Body, "")],
         Message(room) => {
             let mut fields = vec![
@@ -1399,6 +1593,7 @@ pub struct TriggerDraft {
     original: Map<String, Value>,
 }
 pub struct Form {
+    pub request_id: uuid::Uuid,
     pub task_draft: Map<String, Value>,
     pub bound_task: bool,
     pub triggers: Vec<TriggerDraft>,
@@ -1427,6 +1622,7 @@ impl Form {
             .collect();
         let automation = mode.automation();
         let mut this = Self {
+            request_id: uuid::Uuid::new_v4(),
             task_draft: initial
                 .get("custom")
                 .and_then(Value::as_object)
@@ -1597,18 +1793,24 @@ impl Form {
 }
 pub fn connector_field_visible(key: &str, provider: &str) -> bool {
     match key {
-        "link_tasks" | "repository" | "review_rule_id" => matches!(provider, "github" | "gitlab"),
+        "link_tasks" | "repository" => matches!(provider, "github" | "gitlab" | "cnb"),
+        "review_rule_id" => matches!(provider, "github" | "gitlab"),
+        "cnb_group" | "cnb_backlinks" => provider == "cnb",
+        "vendor_delete" => provider == "teambition",
         "repository_host" | "project_id" => provider == "gitlab",
         "project_key" => provider == "jira",
         "portal_id" | "zoho_project" => provider == "zoho",
         "instance_url" | "scope_kind" | "zentao_edition" | "zentao_version" => provider == "zentao",
-        "enterprise_id" => matches!(provider, "pingcode" | "linear" | "clickup" | "ones"),
+        "enterprise_id" => matches!(
+            provider,
+            "pingcode" | "linear" | "clickup" | "ones" | "teambition" | "asana"
+        ),
         "pingcode_auth" => provider == "pingcode",
         "ones_url" => provider == "ones",
         "cloud_auth" => matches!(provider, "linear" | "clickup"),
         "remote_scope" | "vendor_write" => matches!(
             provider,
-            "zentao" | "pingcode" | "linear" | "clickup" | "ones"
+            "zentao" | "pingcode" | "linear" | "clickup" | "ones" | "teambition" | "asana"
         ),
         "company_id" | "tapd_auth" | "tapd_workspace" => provider == "tapd",
         "product_id" | "default_task_type" | "bugly_outbound" => provider == "bugly",
@@ -1636,6 +1838,9 @@ pub fn trigger_field_visible(key: &str, kind: &str, frequency: &str) -> bool {
 }
 pub fn initial_record(r: &Record) -> Map<String, Value> {
     let mut f = r.fields.clone();
+    if r.kind == "agent" {
+        crate::app::runtime_ui::initial(&mut f);
+    }
     if r.kind == "project" && !r.field("owner").is_empty() {
         f.insert(
             "project_owner".into(),
@@ -1715,6 +1920,9 @@ pub fn compile_record(
             }
             fields.insert("field_bindings".into(),json!(bound.iter().map(|id|json!({"field":id,"enabled":!hidden.contains(id),"required":required.contains(id)})).collect::<Vec<_>>()));
         }
+    }
+    if kind == "agent" {
+        crate::app::runtime_ui::compile(&mut fields)?;
     }
     if kind == "connector" {
         let provider = fields

@@ -1,4 +1,5 @@
 mod accounts;
+mod bots;
 mod credentials;
 mod files;
 mod identity;
@@ -6,9 +7,12 @@ mod remote;
 pub mod skill_files;
 mod vendors;
 
+pub use bots::qr_png;
 pub use files::{save_attachment, upload_file};
 pub use identity::link_id as identity_link_id;
+pub use shipforge_core::runtime_diagnostics;
 pub use shipforge_core::skill_package;
+pub use vendors::receive_cnb;
 
 use directories::ProjectDirs;
 use serde_json::{Value, json};
@@ -23,6 +27,18 @@ enum Backend {
 pub struct Client {
     backend: Backend,
     directory: Option<PathBuf>,
+    service_actor: Option<String>,
+}
+/// The team service authenticates the caller before delegating one integration operation.
+pub fn hosted_integration(op: &str) -> bool {
+    vendors::HOSTED.contains(&op)
+}
+
+pub fn execute_integration(directory: &Path, actor: &str, request: Value) -> Result<Value, String> {
+    if !request["op"].as_str().is_some_and(hosted_integration) {
+        return Err("invalid: unsupported hosted integration".into());
+    }
+    Client::integration_actor(directory, actor)?.execute(request)
 }
 
 /// Complete request schema at the desktop / CLI boundary, including transport commands.
@@ -66,6 +82,8 @@ pub fn schema() -> Value {
             operations.push(json!(name));
         }
         operations.extend(vendors::CLOUD_OPERATIONS.iter().map(|op| json!(op)));
+        operations.extend(bots::LOCAL.iter().map(|op| json!(op)));
+        operations.extend(vendors::HOSTED.iter().map(|op| json!(op)));
     }
     let props = schema["properties"]
         .as_object_mut()
@@ -78,6 +96,9 @@ pub fn schema() -> Value {
     props.insert("allow_cached".into(), json!({"type":"boolean"}));
     props.insert("queue_if_offline".into(), json!({"type":"boolean"}));
     let rules = schema["allOf"].as_array_mut().expect("core schema rules");
+    rules.push(
+        json!({"if":{"properties":{"op":{"enum":vendors::HOSTED}}},"then":{"required":["id"]}}),
+    );
     rules.push(json!({"if":{"properties":{"op":{"enum":vendors::CLOUD_OPERATIONS}}},"then":{"required":["id"],"properties":{"page_size":{"type":"integer","minimum":1,"maximum":100},"import_mode":{"enum":["history","changes","refresh"]}}}}));
     for (op, required) in [
         ("access.issue", vec!["actor", "scope"]),
@@ -111,6 +132,7 @@ pub fn schema() -> Value {
     rules.push(json!({"if":{"properties":{"op":{"const":"access.personal.issue"}}},
         "then":{"properties":{"lifetime":{"enum":["30d","90d","1y","never"]},"source":{"enum":["personal","machine_setup"]},
         "label":{"type":"string","minLength":1,"maxLength":100}},"not":{"anyOf":[{"required":["actor"]},{"required":["scope"]}]}}}));
+    bots::schema(&mut schema);
     identity::schema(&mut schema);
     schema
 }
@@ -172,6 +194,11 @@ fn installed_data_dir(program_dir: &Path) -> Result<Option<PathBuf>, String> {
 }
 
 impl Client {
+    fn integration_actor(directory: &Path, actor: &str) -> Result<Self, String> {
+        let mut client = Self::local(directory)?;
+        client.service_actor = Some(actor.to_owned());
+        Ok(client)
+    }
     pub fn from_env() -> Result<Self, String> {
         Self::from_dir(None)
     }
@@ -198,12 +225,14 @@ impl Client {
         Ok(Self {
             backend: Backend::Local(Store::open(&directory.join("workspace.sqlite3"))?),
             directory: Some(directory.to_path_buf()),
+            service_actor: None,
         })
     }
     pub fn memory() -> Result<Self, String> {
         Ok(Self {
             backend: Backend::Local(Store::memory()?),
             directory: None,
+            service_actor: None,
         })
     }
     pub fn remote(url: &str, token: &str) -> Result<Self, String> {
@@ -213,6 +242,7 @@ impl Client {
         Ok(Self {
             backend: Backend::Remote(Box::new(remote::Remote::new(directory, url, token)?)),
             directory: Some(directory.to_path_buf()),
+            service_actor: None,
         })
     }
     pub fn save_connection(directory: Option<&Path>, url: &str, token: &str) -> Result<(), String> {
@@ -256,6 +286,18 @@ impl Client {
         }
     }
     pub fn execute(&mut self, request: Value) -> Result<Value, String> {
+        if request["op"]
+            .as_str()
+            .is_some_and(|op| bots::LOCAL.contains(&op))
+        {
+            return bots::execute(self, &request);
+        }
+        if let Some(op) = request["op"].as_str().filter(|op| hosted_integration(op)) {
+            if let Backend::Remote(remote) = &mut self.backend {
+                return remote.send(&request);
+            }
+            return vendors::hosted(self, op, &request);
+        }
         let request = skill_files::prepare(request)?;
         if request["op"]
             .as_str()
@@ -326,16 +368,16 @@ impl Client {
         }
         match &mut self.backend {
             Backend::Local(store) => match request["op"].as_str() {
-                Some("access.whoami") => {
-                    Ok(json!({"actor":"owner","scope":"write","mode":"local"}))
-                }
+                Some("access.whoami") => Ok(
+                    json!({"actor":self.service_actor.as_deref().unwrap_or("owner"),"scope":"write","mode":"local"}),
+                ),
                 Some("sync.status") | Some("sync.flush") => {
                     Ok(json!({"mode":"local","pending":0,"changes":[]}))
                 }
                 Some(op) if op.starts_with("access.") || op.starts_with("sync.") => {
                     Err("invalid: this operation needs a team connection".into())
                 }
-                _ => store.execute("owner", request),
+                _ => store.execute(self.service_actor.as_deref().unwrap_or("owner"), request),
             },
             Backend::Remote(remote) => remote.execute(request),
         }

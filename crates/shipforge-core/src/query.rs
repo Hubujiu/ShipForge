@@ -85,58 +85,7 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
             }
             Ok(json!(records))
         }
-        "search" => {
-            let text = required(q, "query")?.trim().to_lowercase();
-            let tags = matching_tags(c, &text)?;
-            let kinds = if let Some(k) = q["kind"].as_str() {
-                check_kind(k)?;
-                vec![k]
-            } else {
-                let space = c.get("space", c.space)?;
-                let mut searchable = vec![
-                    "task",
-                    "view",
-                    "project",
-                    "document",
-                    "note",
-                    "chat",
-                    "message",
-                    "comment",
-                    "member",
-                    "agent",
-                    "crew",
-                    "skill",
-                    "automation",
-                    "machine",
-                    "artifact",
-                ];
-                if crate::spaces::enabled(&space, "iterations") {
-                    searchable.push("iteration");
-                }
-                if crate::spaces::enabled(&space, "customer_requests") {
-                    searchable.push("customer_request");
-                }
-                searchable
-            };
-            let mut matches = Vec::new();
-            for kind in kinds {
-                for r in visible_records(c, kind)? {
-                    if matches!(kind, "agent" | "crew") && !crate::agents::discoverable(&r) {
-                        continue;
-                    }
-                    if search_matches(&r, &text, &tags) {
-                        matches.push(r);
-                    }
-                }
-            }
-            matches.sort_by(|a, b| {
-                b.updated_at
-                    .cmp(&a.updated_at)
-                    .then_with(|| a.kind.cmp(&b.kind))
-                    .then_with(|| a.id.cmp(&b.id))
-            });
-            Ok(json!(paginate(matches, q)?))
-        }
+        "search" | "directory.people" => search(c, q),
         "events" => events(c, q),
         "view.run" => {
             let view = c.readable("view", required(q, "id")?)?;
@@ -182,6 +131,101 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
         "import.preview" => crate::transfer::import(c, q, true),
         _ => Err(invalid("unknown query")),
     }
+}
+fn search(c: &Context<'_>, q: &Value) -> Result<Value> {
+    let directory = q["op"] == "directory.people";
+    let text = if directory {
+        q["query"].as_str().unwrap_or("")
+    } else {
+        required(q, "query")?
+    }
+    .trim()
+    .to_lowercase();
+    let kind = q["kind"].as_str();
+    if let Some(kind) = kind {
+        check_kind(kind)?;
+        if directory && !matches!(kind, "agent" | "crew" | "member" | "machine") {
+            return Err(invalid("choose a directory category"));
+        }
+    }
+    let filter = if directory {
+        Some(Some("organization"))
+    } else {
+        q.get("search_scope").map(Value::as_str)
+    };
+    let areas = match filter {
+        None | Some(Some("space")) => vec![c.get("space", c.space)?],
+        Some(Some("organization")) => {
+            let org = c.org_id()?;
+            c.all_spaces()?
+                .into_iter()
+                .filter(|s| s.fields["organization"].as_str().unwrap_or("default") == org)
+                .collect()
+        }
+        _ => return Err(invalid("search_scope must be space or organization")),
+    };
+    let mut found = BTreeMap::new();
+    for area in areas {
+        let scope = Context {
+            space: &area.id,
+            ..*c
+        };
+        if scope.role().is_err() {
+            continue;
+        }
+        let tags = matching_tags(&scope, &text)?;
+        let default_kinds = [
+            "task",
+            "view",
+            "project",
+            "document",
+            "note",
+            "chat",
+            "message",
+            "comment",
+            "member",
+            "agent",
+            "crew",
+            "skill",
+            "automation",
+            "machine",
+            "artifact",
+            "iteration",
+            "customer_request",
+        ];
+        let fallback: &[&str] = if directory {
+            &["agent", "crew", "member", "machine"]
+        } else {
+            &default_kinds
+        };
+        let kinds = kind.as_ref().map(std::slice::from_ref).unwrap_or(fallback);
+        for &k in kinds {
+            if (k == "iteration" && !crate::spaces::enabled(&area, "iterations"))
+                || (k == "customer_request" && !crate::spaces::enabled(&area, "customer_requests"))
+            {
+                continue;
+            }
+            for r in visible_records(&scope, k)? {
+                if matches!(k, "agent" | "crew") && !crate::agents::discoverable(&r) {
+                    continue;
+                }
+                if search_matches(&r, &text, &tags) {
+                    found
+                        .entry((r.space.clone(), r.kind.clone(), r.id.clone()))
+                        .or_insert(r);
+                }
+            }
+        }
+    }
+    let mut matches: Vec<_> = found.into_values().collect();
+    matches.sort_by(|a, b| {
+        b.updated_at
+            .cmp(&a.updated_at)
+            .then_with(|| a.kind.cmp(&b.kind))
+            .then_with(|| a.space.cmp(&b.space))
+            .then_with(|| a.id.cmp(&b.id))
+    });
+    Ok(json!(paginate(matches, q)?))
 }
 pub(crate) fn visible_records(c: &Context<'_>, kind: &str) -> Result<Vec<Record>> {
     if matches!(kind, "tag" | "tag_group") {
@@ -413,7 +457,8 @@ fn priority(v: &Value) -> u8 {
         Some("high") => 1,
         Some("medium") => 2,
         Some("low") => 3,
-        _ => 4,
+        Some("lowest") => 4,
+        _ => 5,
     }
 }
 fn count(q: &Value, key: &str, default: usize) -> Result<usize> {

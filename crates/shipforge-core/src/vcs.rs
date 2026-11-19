@@ -4,8 +4,11 @@ use rusqlite::{Connection, OptionalExtension, params};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
+mod cnb;
+pub(crate) use cnb::command as cnb_command;
 
 pub(crate) fn init(db: &Connection) -> Result<()> {
+    cnb::init(db)?;
     db.execute_batch("CREATE TABLE IF NOT EXISTS sf_vcs_events (
         space TEXT NOT NULL,connector TEXT NOT NULL,event TEXT NOT NULL,hash TEXT NOT NULL,response TEXT NOT NULL,
         PRIMARY KEY(space,connector,event));
@@ -30,8 +33,10 @@ pub(crate) fn validate(fields: &Value) -> Result<()> {
     }
     let repo = required(fields, "repository")?;
     let components: Vec<_> = repo.split('/').collect();
-    if !matches!(fields["provider"].as_str(), Some("github" | "gitlab"))
-        || components.len() < 2
+    if !matches!(
+        fields["provider"].as_str(),
+        Some("github" | "gitlab" | "cnb")
+    ) || components.len() < 2
         || (fields["provider"] == "github" && components.len() != 2)
         || repo.len() > 400
         || components.iter().any(|s| {
@@ -43,7 +48,7 @@ pub(crate) fn validate(fields: &Value) -> Result<()> {
         })
     {
         return Err(invalid(
-            "link_tasks requires a GitHub or GitLab repository path",
+            "link_tasks requires a valid repository path for the selected provider",
         ));
     }
     if let Some(host) = fields
@@ -152,6 +157,9 @@ fn parse(connector: &Record, p: &Value) -> Result<Vec<Activity>> {
         ));
     }
     validate(f)?;
+    if f["provider"] == "cnb" {
+        return cnb::activities(connector, p);
+    }
     let github = f["provider"] == "github";
     let repo = required(f, "repository")?;
     let (source, web) = if github {
@@ -344,7 +352,11 @@ pub(crate) fn ingest(
     }
     let payload = &q["payload"];
     let items = parse(connector, payload)?;
-    let fingerprint = crate::worker::digest(&payload.to_string());
+    let fingerprint = if connector.fields["provider"] == "cnb" {
+        required(q, "signed_digest")?.to_owned()
+    } else {
+        crate::worker::digest(&payload.to_string())
+    };
     let prior: Option<(String, String)> =
         c.db.query_row(
             "SELECT hash,response FROM sf_vcs_events WHERE space=? AND connector=? AND event=?",
@@ -461,6 +473,9 @@ pub(crate) fn ingest(
     }
     let result = json!({"action":if preview{"preview"}else{"linked"},"event_id":event,"links":links,"review_runs":review_runs});
     if !preview {
+        if connector.fields["provider"] == "cnb" {
+            cnb::queue(c, connector, payload, &result)?;
+        }
         c.db.execute(
             "INSERT INTO sf_vcs_events(space,connector,event,hash,response) VALUES(?,?,?,?,?)",
             params![

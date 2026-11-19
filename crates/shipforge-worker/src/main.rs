@@ -1,7 +1,9 @@
 mod config;
+mod diagnostics;
 mod github;
 mod host;
 mod mcp;
+mod personal_bots;
 mod process;
 mod slack;
 use clap::{Parser, Subcommand};
@@ -65,6 +67,33 @@ enum Action {
     },
     /// Report the locations of common installed runtime executables.
     Probe,
+    /// Show this supervisor's process IDs and bounded local execution history.
+    Diagnose {
+        #[arg(long)]
+        config: PathBuf,
+    },
+    /// Approve a local project folder under a named profile. Direct writes are opt-in.
+    ApproveDirectory {
+        #[arg(long)]
+        config: PathBuf,
+        #[arg(long)]
+        name: String,
+        #[arg(long)]
+        directory: PathBuf,
+        #[arg(long)]
+        direct: bool,
+    },
+    /// Receive official WeChat or QQ events and return Agent results on this device.
+    BotSync {
+        #[arg(long)]
+        binding: String,
+        #[arg(long, default_value = "default")]
+        space: String,
+        #[arg(long)]
+        directory: Option<PathBuf>,
+        #[arg(long)]
+        watch: bool,
+    },
     /// Deliver queued public task updates to their Slack threads, once or continuously.
     SlackDeliver {
         #[arg(long, default_value = "default")]
@@ -134,6 +163,13 @@ fn execute() -> Result<serde_json::Value> {
         }
         Action::Run { config, once } => host::run(&config, once),
         Action::Stop { config } => host::request_stop(&config),
+        Action::Diagnose { config } => diagnostics::list(&config),
+        Action::ApproveDirectory {
+            config,
+            name,
+            directory,
+            direct,
+        } => process::approve_directory(&config, &name, &directory, direct),
         Action::ToolCall {
             config,
             agent,
@@ -164,6 +200,12 @@ fn execute() -> Result<serde_json::Value> {
             &token_env,
             watch,
         ),
+        Action::BotSync {
+            binding,
+            space,
+            directory,
+            watch,
+        } => personal_bots::run(directory.as_deref(), &space, &binding, watch),
         Action::Probe => Ok(json!(
             ["git", "codex", "claude", "gemini", "node", "python"]
                 .iter()
