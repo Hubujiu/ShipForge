@@ -1,0 +1,30 @@
+services:
+  database:
+    image: pgvector/pgvector:pg17
+    environment:
+      POSTGRES_USER: shipforge
+      POSTGRES_DB: shipforge
+      POSTGRES_PASSWORD: ${SHIPFORGE_POSTGRES_PASSWORD:?Set SHIPFORGE_POSTGRES_PASSWORD}
+    volumes:
+      - shipforge_database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, pg_isready -U shipforge -d shipforge]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  service:
+    build: .
+    environment:
+      PGHOST: database
+      PGUSER: shipforge
+      PGDATABASE: shipforge
+      PGPASSWORD: ${SHIPFORGE_POSTGRES_PASSWORD:?Set SHIPFORGE_POSTGRES_PASSWORD}
+      SHIPFORGE_HOST: 0.0.0.0
+      SHIPFORGE_BOOTSTRAP_KEY: ${SHIPFORGE_BOOTSTRAP_KEY:?Set SHIPFORGE_BOOTSTRAP_KEY}
+    ports:
+      - "127.0.0.1:${SHIPFORGE_PORT:-4790}:4790"
+    depends_on:
+      database:
+        condition: service_healthy
+volumes:
+  shipforge_database:
