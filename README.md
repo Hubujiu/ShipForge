@@ -1,15 +1,16 @@
 # ShipForge
 
-ShipForge 是用 Rust 和 GPUI 编写的开源协作工作台。你可以在 Windows 本机管理任务、看板、迭代、专项、讨论与文档，也可以连接自托管服务，让团队成员和执行机器在同一空间工作。机器调用你配置的外部工具，将进度、回复和产物关联到任务。
+ShipForge 是面向团队和 Agent 的开源协作工作台。新版 Windows 工作区采用 Electron、React、Webpack 和 PostgreSQL 协作服务，由独立的 Rust 工作机执行本机 Runtime。可以在同一空间组织任务、讨论、迭代与文档，并查看 Agent 的运行和回复。[新版安装与使用说明](docs/electron-core.md)
 
-**[下载 Windows x64 安装程序](https://github.com/Hubujiu/ShipForge/releases/latest) · [Windows 使用指南](docs/windows.md) · [CLI 手册](docs/cli.md)**
+**[下载已发布的 Windows x64 版本](https://github.com/Hubujiu/ShipForge/releases/latest) · [旧版 Windows 使用指南](docs/windows.md) · [CLI 手册](docs/cli.md)**
 
-首次打开 ShipForge 会引导你设置组织和默认空间。侧栏的四个步骤可以带你连接机器、创建 Agent、建任务并指派。想先看看有数据的看板，可在程序目录运行 `shipforge-desktop.exe --demo`。团队协作、外部工具和第三方同步按需配置。[新手指引](docs/onboarding.md)
+首次打开新版客户端时连接团队服务，创建组织与首个空间，或使用团队邀请码加入。新手指引会检查任务、工作机、Agent 和首次执行。0.16.0 版的本地演示通过 `shipforge-desktop.exe --demo` 打开。[旧版新手指引](docs/onboarding.md)
 
 ![Windows 上的 ShipForge 任务看板](docs/images/windows-board.jpg)
 
 | 文档 | 内容 |
 | --- | --- |
+| [Electron 工作区与 PostgreSQL 服务](docs/electron-core.md) | 技术栈证据、初次运行、部署、CLI 和当前验收范围。 |
 | [Windows 功能对照](docs/windows-coverage.md) | 从参考能力定位到 Windows 实际入口，列明本机、团队及第三方接入范围。 |
 | [Windows 实机截图与验收](docs/design-qa.md) | 查看原生看板、任务详情和定时规则编辑器，以及附件、重开和文档版本的测试结果。 |
 | [功能清单与验收条件](docs/features.md) | 对照 HiFox 官网、帮助中心和 Windows 实机梳理的产品能力，涵盖首次进入与新手指引。 |
@@ -19,7 +20,18 @@ ShipForge 是用 Rust 和 GPUI 编写的开源协作工作台。你可以在 Win
 | [Rust 与 GPUI 架构](docs/architecture.md) | 单机、团队服务、CLI 和执行机器的职责，以及设计目标与当前实现的区别。 |
 | [命令协议](docs/protocol.schema.json) | 桌面、服务、CLI 共享的操作名称和 JSON 请求结构。 |
 
-## 从源码运行
+## 从源码运行新版
+
+在 `platform` 安装锁定依赖并构建。启动 PostgreSQL 17 协作服务后，从同一目录运行桌面应用。
+
+```powershell
+Set-Location platform
+npm ci
+npm run build
+npm start
+```
+
+## 构建已发布的 GPUI 版
 
 ```powershell
 cargo build --release --workspace --locked

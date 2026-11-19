@@ -1,0 +1,95 @@
+name: Electron workspace
+
+on:
+  pull_request:
+    paths: ['platform/**', 'docs/electron-*', '.github/workflows/electron-core.yml', 'crates/shipforge-worker/**', 'Cargo.lock']
+  push:
+    branches: [main]
+    paths: ['platform/**', 'docs/electron-*', '.github/workflows/electron-core.yml', 'crates/shipforge-worker/**', 'Cargo.lock']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: electron-workspace-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  postgres:
+    name: Electron PostgreSQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_DB: postgres
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 127.0.0.1:55483:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 15
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_INCREMENTAL: "0"
+      DATABASE_URL: postgresql://postgres@127.0.0.1:55483/postgres
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+      SHIPFORGE_WORKER_EXE: ${{ github.workspace }}/target/debug/shipforge-worker
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: platform/package-lock.json
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
+        with:
+          toolchain: stable
+      - run: cargo build --locked -p shipforge-worker
+      - run: npm ci
+        working-directory: platform
+      - run: npm run build
+        working-directory: platform
+      - run: npm run schema -- --check
+        working-directory: platform
+      - run: npm test
+        working-directory: platform
+
+  windows:
+    name: Electron Windows
+    runs-on: windows-latest
+    env:
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: platform/package-lock.json
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
+        with:
+          toolchain: stable
+      - run: cargo build --release --locked -p shipforge-worker
+      - run: npm ci
+        working-directory: platform
+      - run: npm run build
+        working-directory: platform
+      - run: ./scripts/stage-worker.ps1
+        working-directory: platform
+      - run: npm run package:windows
+        working-directory: platform
+      - name: Verify Windows files
+        working-directory: platform
+        run: ./scripts/verify-windows.ps1
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: electron-windows
+          if-no-files-found: error
+          path: |
+            platform/dist/ShipForge-*-windows-x64.zip
+            platform/dist/ShipForge-*-windows-x64-setup.exe
+            platform/dist/*.sha256
