@@ -223,6 +223,7 @@ impl Store {
             "inbox_settings",
             "delivery_mail",
             "inbox_signals",
+            "desktop_notifications",
             "comment_reactions",
             "guide_display",
             "guide_credits",

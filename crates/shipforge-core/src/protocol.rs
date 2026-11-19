@@ -74,6 +74,9 @@ const WRITES: &[&str] = &[
     "invitation.revoke",
     "invitation.accept",
     "chat.manage",
+    "chat.avatar.set",
+    "assistant.open",
+    "assistant.send",
     "chat.start",
     "organization.configure",
     "organization.depart",
@@ -145,6 +148,8 @@ const READS: &[&str] = &[
     "jira.read",
     "invitation.list",
     "chat.info",
+    "chat.avatar",
+    "assistant.history",
     "chat.sidebar",
     "chat.history",
     "chat.invitations",
@@ -201,6 +206,8 @@ pub(crate) fn operation_names() -> Vec<&'static str> {
         .chain(crate::statuses::WRITES)
         .chain(worker::OPS)
         .chain(crate::bots::READS)
+        .chain(crate::vcs::forge::READS)
+        .chain(crate::vcs::forge::WRITES)
         .chain(crate::bots::WRITES)
         .chain(crate::conversation_tools::READS)
         .chain(crate::conversation_tools::WRITES)
@@ -212,6 +219,7 @@ pub fn is_read_only(op: &str) -> bool {
         || crate::statuses::READS.contains(&op)
         || worker::READ_OPS.contains(&op)
         || crate::bots::READS.contains(&op)
+        || crate::vcs::forge::READS.contains(&op)
         || crate::conversation_tools::READS.contains(&op)
 }
 
@@ -279,6 +287,7 @@ pub fn schema() -> Value {
     crate::statuses::schema(&mut schema);
     crate::inbox::schema(&mut schema);
     crate::bots::schema(&mut schema);
+    crate::vcs::forge::schema(&mut schema);
     crate::conversation_tools::schema(&mut schema);
     crate::triage::schema(&mut schema);
     schema["allOf"].as_array_mut().unwrap().extend([json!({"if":{"properties":{"op":{"const":"task.move"}}},"then":{"required":["id","target"],"properties":{"target":{"type":"string","minLength":1}}}}),json!({"if":{"properties":{"op":{"enum":["task.conversation","task.command"]}}},"then":{"required":["id"]}})]);

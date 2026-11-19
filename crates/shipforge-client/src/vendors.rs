@@ -24,6 +24,7 @@ pub(crate) const CLOUD_OPERATIONS: &[&str] = &[
 
 type Result<T> = std::result::Result<T, String>;
 mod cnb;
+pub(crate) mod forge;
 pub use cnb::receive_cnb;
 pub(crate) const HOSTED: &[&str] = &[
     "asana.accounts",
@@ -39,6 +40,15 @@ pub(crate) const HOSTED: &[&str] = &[
     "teambition.preview",
     "teambition.synchronize",
     "teambition.push",
+    "forge.authorize",
+    "forge.credential",
+    "forge.repositories",
+    "forge.pair",
+    "forge.disconnect",
+    "forge.reply",
+    "forge.deliver",
+    "forge.push",
+    "forge.refresh",
     "cnb.credential",
     "cnb.repositories",
     "cnb.pair",
@@ -47,7 +57,9 @@ pub(crate) const HOSTED: &[&str] = &[
     "cnb.deliver",
 ];
 pub(super) fn hosted(client: &mut Client, op: &str, q: &Value) -> Result<Value> {
-    if op.starts_with("cnb.") {
+    if op.starts_with("forge.") {
+        forge::execute(client, op, q)
+    } else if op.starts_with("cnb.") {
         cnb::execute(client, op, q)
     } else if op.starts_with("asana.") {
         trackers::asana::execute(client, op, q)
@@ -140,12 +152,7 @@ fn scoped(q: &Value, op: &str) -> Value {
 }
 
 fn http() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .max_redirects(0)
-        .http_status_as_error(false)
-        .timeout_global(Some(Duration::from_secs(15)))
-        .build()
-        .new_agent()
+    crate::network::provider(15)
 }
 
 fn response(mut res: ureq::http::Response<ureq::Body>) -> Result<Value> {

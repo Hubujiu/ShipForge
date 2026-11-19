@@ -428,6 +428,7 @@ pub fn receive_cnb(
     raw: &[u8],
 ) -> Result<Value> {
     let q = json!({"id":connector,"space":space});
+    let _profile = crate::network::ProfileScope::enter(Some(dir));
     let mut lookup = Client::integration_actor(dir, "owner")?;
     let (row, b, group) = context(&mut lookup, &q)?;
     let r = &row["fields"];

@@ -48,17 +48,12 @@ fn required<'a>(q: &'a Value, key: &str) -> Result<&'a str, String> {
         .filter(|s| !s.is_empty())
         .ok_or_else(|| format!("invalid: missing {key}"))
 }
-fn post(address: &str, suffix: &str, q: &Value) -> Result<Value, String> {
-    let agent = ureq::Agent::config_builder()
-        .max_redirects(0)
-        .http_status_as_error(false)
-        .timeout_global(Some(Duration::from_secs(20)))
-        .build()
-        .new_agent();
+fn post(dir: &Path, address: &str, suffix: &str, q: &Value) -> Result<Value, String> {
+    let agent = crate::network::http(Some(dir), address, 20)?;
     let mut response = agent
         .post(format!("{address}/v1/identity/{suffix}"))
         .send_json(q)
-        .map_err(|e| format!("offline: {e}"))?;
+        .map_err(crate::network::failure)?;
     let reply: Value = response
         .body_mut()
         .with_config()
@@ -155,6 +150,7 @@ pub(super) fn execute(client: &mut Client, q: &Value) -> Result<Value, String> {
             None
         };
         let result = post(
+            &dir,
             &address,
             "start",
             &json!({"email":required(q,"email")?,"account":actor}),
@@ -229,7 +225,12 @@ pub(super) fn execute(client: &mut Client, q: &Value) -> Result<Value, String> {
         response
     } else {
         let address = &pending.credential.url;
-        let reply = post(address, "finish", &json!({"id":id,"device":credential}))?;
+        let reply = post(
+            &dir,
+            address,
+            "finish",
+            &json!({"id":id,"device":credential}),
+        )?;
         let token = required(&reply, "token")?;
         if let Err(error) = Client::sign_in(Some(&dir), address, token, expected) {
             if let Ok(mut rejected) = Client::remote_in(&dir, address, token) {

@@ -4,6 +4,7 @@ use std::collections::HashSet;
 pub(crate) const FIELDS: &[&str] = &[
     "runtime",
     "model",
+    "reasoning_effort",
     "environment",
     "arguments",
     "timeout_seconds",
@@ -62,6 +63,7 @@ pub(super) fn validate(c: &Context<'_>, old: Option<&Record>, row: &Record) -> R
     for field in [
         "runtime",
         "model",
+        "reasoning_effort",
         "instructions",
         "description",
         "avatar",

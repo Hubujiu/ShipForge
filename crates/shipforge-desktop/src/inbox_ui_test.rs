@@ -87,6 +87,18 @@ fn hidden_inbox_and_routing_window() {
                             .unwrap()["overrides"]["desktop"]
                             .is_null()
                     );
+                    act(UiAction::Inbox(Action::Settings(Some("inbox".into()))),w,cx);
+                    act(UiAction::Inbox(Action::Toggle{channel:"inbox".into(),key:"all".into(),enabled:false}),w,cx);
+                    let cursor=store.execute("owner",json!({"op":"inbox.feed"})).unwrap()["cursor"].clone();
+                    let unread=store.execute("owner",json!({"op":"inbox.query","section":"all"})).unwrap()["unread"].clone();
+                    store.execute("alice",json!({"op":"create","kind":"task","id":"banner-only","title":"Desktop delivery","fields":{"assignee":"owner"}})).unwrap();
+                    let feed=store.execute("owner",json!({"op":"inbox.feed","after":cursor})).unwrap();
+                    let link=feed["items"][0]["link"].as_str().unwrap();
+                    view.update(cx,|v,_|v.inbox_link(link));
+                    settle(&view,w,cx);
+                    assert_eq!(view.read(cx).loc.selected.as_ref().unwrap().id,"banner-only");
+                    assert_eq!(store.execute("owner",json!({"op":"inbox.query","section":"all"})).unwrap()["unread"],unread);
+                    assert_eq!(store.execute("owner",json!({"op":"inbox.feed","after":cursor})).unwrap()["items"],json!([]));
                 })
                 .unwrap();
             cx.quit();

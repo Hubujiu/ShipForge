@@ -153,6 +153,7 @@ pub(crate) fn approve_directory(
     path: &Path,
     direct: bool,
 ) -> Result<Value> {
+    let _bindings = crate::service::bindings_guard(&shipforge_client::data_dir()?)?;
     if !path.is_absolute()
         || !path.is_dir()
         || name == "@workspace"
@@ -331,6 +332,13 @@ fn bounded_artifacts(list: &Value, workspace: &Path) -> Result<Vec<Value>> {
     Ok(items)
 }
 pub(crate) fn spawn_command(spec: &Runtime, dir: &Path) -> Result<Child> {
+    spawn_with_options(spec, dir, &std::collections::BTreeMap::new())
+}
+fn spawn_with_options(
+    spec: &Runtime,
+    dir: &Path,
+    environment: &std::collections::BTreeMap<String, String>,
+) -> Result<Child> {
     let program = program_path(&spec.program)?;
     #[cfg(windows)]
     if program
@@ -369,6 +377,7 @@ pub(crate) fn spawn_command(spec: &Runtime, dir: &Path) -> Result<Child> {
         use std::os::unix::process::CommandExt;
         cmd.process_group(0);
     }
+    cmd.envs(environment);
     cmd.stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -387,6 +396,7 @@ pub fn execute(
         .runtimes
         .get(runtime)
         .ok_or("runtime is not enabled in this machine configuration")?;
+    let (spec, environment) = crate::launch_options::effective(config, runtime, run, spec)?;
     let timeout = Duration::from_secs(
         spec.timeout_seconds
             .min(
@@ -401,6 +411,15 @@ pub fn execute(
     let began = Instant::now();
     let workspace = directory(config, run, state, &mut pulse, timeout)?;
     let canonical = workspace.path.canonicalize().map_err(|e| e.to_string())?;
+    let _storage_guard = if workspace.isolated {
+        Some(crate::host::protect_run(
+            state,
+            &canonical,
+            run["id"].as_str().ok_or("missing run ID")?,
+        )?)
+    } else {
+        None
+    };
     let until = began + timeout;
     let mut context = run.clone();
     let _inputs = crate::personal_bots::stage_inputs(state, &mut context)?;
@@ -409,7 +428,15 @@ pub fn execute(
         if pulse()? {
             return Err("cancelled".into());
         }
-        let mut result = execute_round(spec, &canonical, &context, &mut pulse, until, state)?;
+        let mut result = execute_round(
+            &spec,
+            &environment,
+            &canonical,
+            &context,
+            &mut pulse,
+            until,
+            state,
+        )?;
         let calls = result.as_object_mut().and_then(|r| r.remove("tool_calls"));
         let calls = calls.as_ref().and_then(Value::as_array);
         if result["status"] != "done" || calls.is_none_or(Vec::is_empty) {
@@ -441,6 +468,7 @@ pub fn execute(
 }
 fn execute_round(
     spec: &Runtime,
+    environment: &std::collections::BTreeMap<String, String>,
     canonical: &Path,
     run: &Value,
     mut pulse: impl FnMut() -> Result<bool>,
@@ -453,7 +481,14 @@ fn execute_round(
     if Instant::now() >= until {
         return Err("runtime timeout".into());
     }
-    let mut child = spawn_command(spec, canonical)?;
+    let mut child = spawn_with_options(spec, canonical, environment)?;
+    let marker = match crate::host::mark_process(state, canonical, child.id()) {
+        Ok(marker) => marker,
+        Err(error) => {
+            stop(&mut child);
+            return Err(error);
+        }
+    };
     crate::diagnostics::record(state, run, "started", Some(child.id()), None);
     let mut input = child.stdin.take().expect("piped stdin");
     let mut context = serde_json::to_vec(run).map_err(|e| e.to_string())?;
@@ -492,6 +527,9 @@ fn execute_round(
         }
         thread::sleep(Duration::from_millis(150));
     };
+    if let Some(marker) = marker {
+        fs::remove_file(marker).map_err(|e| e.to_string())?;
+    }
     crate::diagnostics::record(state, run, "process_exited", None, None);
     // Detached output producers must not indefinitely pin the supervisor's completion.
     let drain_until = Instant::now() + Duration::from_secs(2);

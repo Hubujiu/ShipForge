@@ -1,5 +1,7 @@
 # ShipForge 机器执行器
 
+工作机可执行所有者确认的目录清理，保留活动租约和待恢复副本。机器配置的 `runtime_launch` 为外部程序声明可选模型、思考深度、参数和环境作用域。[机器存储与模型说明](../../docs/storage-and-models.md)
+
 使用 `service status|configure|start|stop|restart` 管理本机监督进程，使用桌面的「运行时能力」检查已安装工具、请求受支持的安装与更新或发送模型连接测试。[命令、配置与工作机权限](../../docs/machine-management.md)
 
 使用 `approve-directory` 批准本机项目目录，`diagnose` 查看此监督进程管理的活动 PID 和最近事件。任务与对话可采用独立额度，运行设置支持错峰排班和多目录择空闲。[Windows 与 CLI 操作](../../docs/runtime-scheduling.md)

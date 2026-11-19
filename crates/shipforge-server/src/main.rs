@@ -1,6 +1,7 @@
 mod auth;
 mod bugly;
 mod conversation_http;
+mod forge;
 mod github;
 mod jira;
 mod mail;
@@ -177,6 +178,9 @@ fn serve(
             let bugly_origin = &bugly_origin;
             scope.spawn(move||{
                 for mut request in server.incoming_requests() {
+                    if request.method()==&Method::Get && request.url().split('?').next()==Some("/v1/forge/oauth/callback"){
+                        forge::oauth_landing(request);continue;
+                    }
                     if request.url().starts_with("/open/") {
                         mail::landing(request);
                         continue;
@@ -260,6 +264,9 @@ fn handle(
         return Err("method: use POST".into());
     }
     let path = request.url().to_owned();
+    if let Some(route) = path.strip_prefix("/v1/forge/") {
+        return forge::handle(route, request, auth, store);
+    }
     if let Some(route) = path.strip_prefix("/v1/cnb/") {
         let (space, id) = split_target(route)?;
         let header = |name: &'static str| {
@@ -388,8 +395,8 @@ fn dispatch(
         return auth::execute(auth, p, store, &body);
     }
     auth::authorize(p, &body)?;
-    if op.starts_with("cnb.internal.") {
-        return Err("forbidden: use the authenticated CNB integration".into());
+    if op.starts_with("cnb.internal.") || op == "forge.internal" {
+        return Err("forbidden: use the authenticated integration endpoint".into());
     }
     if shipforge_client::hosted_integration(op) {
         return shipforge_client::execute_integration(auth.data_directory()?, &p.actor, body);

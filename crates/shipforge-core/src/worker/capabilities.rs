@@ -23,7 +23,7 @@ fn summary(input: &Value) -> Result<Value> {
             && parts.all(|p| !p.is_empty() && p.len() <= 8 && p.bytes().all(|b| b.is_ascii_digit()))
     });
     Ok(
-        json!({"name":name,"status":input["status"],"version":version,"configured":input["configured"]==true,"installable":input["installable"]==true,"upgradable":input["upgradable"]==true,"testable":input["testable"]==true,"kind":if input["kind"]=="environment"{"environment"}else{"runtime"},"checked_at":now()}),
+        json!({"launch":launch_summary(&input["launch"])?,"name":name,"status":input["status"],"version":version,"configured":input["configured"]==true,"installable":input["installable"]==true,"upgradable":input["upgradable"]==true,"testable":input["testable"]==true,"kind":if input["kind"]=="environment"{"environment"}else{"runtime"},"checked_at":now()}),
     )
 }
 fn capabilities(c: &Context<'_>, machine: &str) -> Result<Vec<Value>> {
@@ -35,6 +35,66 @@ fn capabilities(c: &Context<'_>, machine: &str) -> Result<Vec<Value>> {
         .map_err(storage)?;
     rows.map(|r| serde_json::from_str(&r.map_err(storage)?).map_err(storage))
         .collect()
+}
+fn launch_summary(v: &Value) -> Result<Value> {
+    if v.is_null() {
+        return Ok(Value::Null);
+    }
+    let strings = |list: &Value| -> Result<Vec<String>> {
+        array_ids(list)?
+            .into_iter()
+            .map(|s| {
+                crate::identifier(s)?;
+                Ok(s.to_owned())
+            })
+            .collect()
+    };
+    let mut result = json!({});
+    for key in ["models", "argument_choices"] {
+        let mut choices = serde_json::Map::new();
+        if let Some(values) = v[key].as_object() {
+            if values.len() > 128 {
+                return Err(invalid("too many launch choices"));
+            }
+            for (k, items) in values {
+                crate::identifier(k)?;
+                choices.insert(k.clone(), json!(strings(items)?));
+            }
+        }
+        result[key] = Value::Object(choices);
+    }
+    for key in ["default_model", "fixed_model"] {
+        if let Some(name) = v[key].as_str() {
+            crate::identifier(name)?;
+            result[key] = json!(name);
+        }
+    }
+    result["environment_names"] = json!(strings(&v["environment_names"])?);
+    Ok(result)
+}
+pub(super) fn agent_options(c: &Context<'_>, q: &Value) -> Result<Value> {
+    let a = c.readable("agent", req(q, "id")?)?;
+    let config = crate::agents::effective(c, &a.id)?;
+    let runtime = config["runtime"].as_str().unwrap_or("local-tool");
+    let mut machines = Vec::new();
+    for m in c.records("machine")? {
+        if !c.visible(&m)?
+            || config["machine_id"]
+                .as_str()
+                .is_some_and(|id| !id.is_empty() && id != m.id)
+        {
+            continue;
+        }
+        if let Some(item) = capabilities(c, &m.id)?
+            .into_iter()
+            .find(|v| v["name"] == runtime && v["launch"].is_object())
+        {
+            machines.push(json!({"id":m.id,"title":m.title,"launch":item["launch"]}));
+        }
+    }
+    Ok(
+        json!({"id":a.id,"rev":a.rev,"runtime":runtime,"model":config["model"],"reasoning_effort":config["reasoning_effort"],"machines":machines,"can_manage":crate::agents::require_manage(c,&a).is_ok()}),
+    )
 }
 fn jobs(c: &Context<'_>, machine: &str) -> Result<Vec<Value>> {
     let mut stmt=c.db.prepare("SELECT id,name,action,state,result,created FROM sf_runtime_jobs WHERE space=? AND machine=? ORDER BY created DESC,id DESC LIMIT 100").map_err(storage)?;

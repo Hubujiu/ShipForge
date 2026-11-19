@@ -2,6 +2,7 @@ mod config;
 mod diagnostics;
 mod github;
 mod host;
+mod launch_options;
 mod mcp;
 mod personal_bots;
 mod process;

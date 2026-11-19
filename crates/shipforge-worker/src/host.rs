@@ -16,6 +16,8 @@ struct Host {
     key: String,
 }
 mod runtime;
+mod storage;
+pub(crate) use storage::{mark_process, protect_run};
 mod skills;
 struct ProgressFile(PathBuf);
 impl ProgressFile {
@@ -244,6 +246,10 @@ pub fn run(file: &Path, once: bool) -> Result<Value> {
     crate::diagnostics::record(&host.dir, &Value::Null, "supervisor_started", None, None);
     let mut client = Client::from_env()?;
     host.register(&mut client)?;
+    crate::service::track(
+        &shipforge_client::data_dir()?,
+        &file.canonicalize().map_err(|e| e.to_string())?,
+    )?;
     runtime::publish(&host, &mut client)?;
     crate::service::live(&host.dir, &host.cfg.machine_id, "online", began)?;
     let mut advertised = host.cfg.approved_directories();
@@ -333,13 +339,23 @@ pub fn run(file: &Path, once: bool) -> Result<Value> {
                 .is_none_or(|last: Instant| last.elapsed() >= Duration::from_secs(3))
         {
             last_capabilities = Some(Instant::now());
-            match host.call(&mut client, json!({"op":"machine.runtime.jobs"})) {
-                Ok(job) if !job.is_null() => {
-                    let runner = host.clone();
-                    capability_job = Some(thread::spawn(move || runtime::poll(runner, job)));
+            let storage = host.call(&mut client, json!({"op":"machine.storage.take"}));
+            if let Ok(job) = &storage
+                && job.is_object()
+            {
+                let runner = host.clone();
+                let job = job.clone();
+                capability_job = Some(thread::spawn(move || storage::perform(runner, job)));
+            }
+            if capability_job.is_none() {
+                match host.call(&mut client, json!({"op":"machine.runtime.jobs"})) {
+                    Ok(job) if !job.is_null() => {
+                        let runner = host.clone();
+                        capability_job = Some(thread::spawn(move || runtime::poll(runner, job)));
+                    }
+                    Err(e) if once => return Err(e),
+                    _ => {}
                 }
-                Err(e) if once => return Err(e),
-                _ => {}
             }
         }
         while jobs.len() < host.cfg.capacity as usize {

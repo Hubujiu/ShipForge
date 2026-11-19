@@ -89,6 +89,18 @@ Enter 换行	Enter inserts a new line
 收件箱	Inbox
 我的任务	My tasks
 小助手	Assistant
+给小助手发消息	Message your assistant
+连接自己的工作机后即可发送消息。	Connect your machine to send a message.
+选择 Runtime 和模型	Choose a runtime and model
+模型（可选）	Model (optional)
+更换群头像	Change group avatar
+移除群头像	Remove group avatar
+群头像	Group avatar
+已更新群头像	Group avatar updated
+请选择头像文件	Choose an avatar image
+请选择在线 Runtime	Select an online runtime
+请输入消息	Enter a message
+头像文件（PNG、JPEG、GIF 或 WebP，最大 2 MiB）	Avatar image (PNG, JPEG, GIF or WebP, up to 2 MiB)
 市场	Marketplace
 任务	Tasks
 任务标签	Task labels
@@ -347,6 +359,28 @@ Enter 换行	Enter inserts a new line
 已计划	Planned
 已结束	Finished
 检查更新	Check for updates
+网络代理	Network proxy
+关于 ShipForge	About ShipForge
+连接方式	Connection mode
+使用系统代理	Use system proxy
+直接连接	Connect directly
+手动配置代理	Configure a proxy manually
+代理服务器地址	Proxy server address
+代理用户名	Proxy username
+代理密码	Proxy password
+移除已保存的代理密码	Remove saved proxy password
+测试地址	Test address
+保存并应用	Save and apply
+网络设置已应用	Network settings applied
+本机回环服务始终直接连接。	Loopback services always connect directly.
+已保存代理密码。	A proxy password is saved.
+已连接	Connected
+使用手册	User guide
+有新版本可下载	A new version is available
+发布文件正在准备	Release files are being prepared
+当前已是最新版本	You are up to date
+查看发布说明	View release notes
+测试连接	Test connection
 上次同步	Last sync
 布局	Layout
 分组	Group
@@ -1424,3 +1458,27 @@ Agent 并发已满	Agent at capacity
 新建空间状态	New space status
 显示顺序	Display order
 显示名称	Display name
+管理存储空间	Manage storage
+确认清理工作目录	Confirm workspace cleanup
+清理工作目录	Clean workspace
+重新统计	Measure usage
+本机服务占用	Local service storage
+待释放空间	Pending reclamation
+尚未统计，请连接工作机并重新统计。	Connect the worker and measure its storage usage.
+暂无已登记的工作目录。	No registered working directories.
+可清理	Eligible for cleanup
+等待恢复	Awaiting recovery
+任务尚未结束	Task still open
+对话可继续	Conversation can resume
+绑定目录	Bound directory
+目录受保护	Protected directory
+归属未确认	Ownership unverified
+确认后删除这份工作副本及其中的本地更改。	Confirming deletes this working copy and its local changes.
+目录状态已变化，请重新统计	Directory state changed. Measure usage again.
+已加入工作机队列	Queued on the worker
+模型与运行参数	Model and launch options
+模型思考深度	Model reasoning effort
+机器固定模型	Machine-locked model
+跟随运行时默认模型	Use runtime default model
+该运行时尚未公布模型与参数。	This runtime has not advertised its model and launch options.
+已保存模型设置	Model settings saved

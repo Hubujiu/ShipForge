@@ -68,6 +68,92 @@ fn act(view: &Entity<Workbench>, action: UiAction, w: &mut Window, cx: &mut App)
     view.update(cx, |v, cx| v.act(action, w, cx));
     settle(view, w, cx);
 }
+#[::core::prelude::v1::test]
+#[ignore = "Exercises Windows proxy drafts, saving a device policy and opening the getting-started guide from About"]
+fn hidden_device_network_and_about() {
+    use super::device_ui::Action;
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path().to_owned();
+    let mut client = Client::local(&dir).unwrap();
+    client.execute(json!({"op":"onboarding.setup","organization_name":"Network","organization_slug":"device-test","work_type":"software","task_types":["task"]})).unwrap();
+    let server = Server::http("127.0.0.1:0").unwrap();
+    let target = format!("http://{}/local", server.server_addr());
+    let handler = std::thread::spawn(move || {
+        let req = server
+            .recv_timeout(Duration::from_secs(20))
+            .unwrap()
+            .unwrap();
+        assert_eq!(req.method(), &tiny_http::Method::Head);
+        assert_eq!(req.url(), "/local");
+        req.respond(Response::from_string("").with_status_code(204))
+            .unwrap();
+    });
+    gpui_kit::application()
+        .with_assets(crate::assets::Assets)
+        .run(move |cx| {
+            gpui_kit::init(cx);
+            let (window, view) = gpui_kit::open_window(
+                WindowOptions {
+                    focus: false,
+                    show: false,
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                        None,
+                        size(px(1420.), px(1080.)),
+                        cx,
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |w, cx| cx.new(|cx| Workbench::new(Some(dir.clone()), false, false, w, cx)),
+            )
+            .unwrap();
+            window
+                .update(cx, |_, w, cx| {
+                    activate_accessibility(w);
+                    settle(&view, w, cx);
+                    act(&view, UiAction::Go(Page::Settings), w, cx);
+                    assert!(buttons(w).iter().any(|s| s == "网络代理"));
+                    assert!(buttons(w).iter().any(|s| s == "关于 ShipForge"));
+                    act(&view, UiAction::Device(Action::Settings), w, cx);
+                    assert!(buttons(w).iter().any(|s| s == "测试连接"));
+                    act(&view, UiAction::Choose(0, "manual".into()), w, cx);
+                    fill(&view, "endpoint", "http://127.0.0.1:9", w, cx);
+                    fill(&view, "test_url", &target, w, cx);
+                    act(&view, UiAction::Device(Action::Test), w, cx);
+                    wait_for(&view, w, cx, "loopback probe", |v| {
+                        v.form
+                            .as_ref()
+                            .and_then(|f| f.preview.as_ref())
+                            .is_some_and(|p| p["status"] == 204)
+                    });
+                    assert_eq!(
+                        client.execute(json!({"op":"network.settings"})).unwrap()["rev"],
+                        0
+                    );
+                    act(&view, UiAction::Submit, w, cx);
+                    assert_eq!(
+                        client.execute(json!({"op":"network.settings"})).unwrap()["mode"],
+                        "manual"
+                    );
+                    act(&view, UiAction::Device(Action::Settings), w, cx);
+                    assert_eq!(
+                        view.read(cx).form.as_ref().unwrap().entries[0].raw(cx),
+                        "manual"
+                    );
+                    act(&view, UiAction::Choose(0, "direct".into()), w, cx);
+                    act(&view, UiAction::Submit, w, cx);
+                    act(&view, UiAction::Device(Action::About), w, cx);
+                    assert!(buttons(w).iter().any(|s| s == "检查更新"));
+                    assert!(buttons(w).iter().any(|s| s == "使用手册"));
+                    act(&view, UiAction::Device(Action::GettingStarted), w, cx);
+                    assert!(view.read(cx).form.is_none());
+                    assert_eq!(view.read(cx).loc.page, Page::GettingStarted);
+                })
+                .unwrap();
+            cx.quit();
+        });
+    handler.join().unwrap();
+}
 fn fill(view: &Entity<Workbench>, key: &str, value: &str, w: &mut Window, cx: &mut App) {
     let entry = view
         .read(cx)

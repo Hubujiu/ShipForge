@@ -283,7 +283,7 @@ impl Workbench {
                 );
         }
         if p.creatable()
-            && p != Page::Statuses
+            && !matches!(p, Page::Statuses | Page::Assistant)
             && if p == Page::Spaces {
                 self.can_create_space()
             } else {
@@ -318,7 +318,9 @@ impl Workbench {
             );
         }
         if let Some(error) = self.error.as_ref().or_else(|| {
-            self.errors.get(if p == Page::Statuses {
+            self.errors.get(if p == Page::Assistant {
+                "assistant_home"
+            } else if p == Page::Statuses {
                 "status_library"
             } else {
                 info.kind
@@ -340,6 +342,7 @@ impl Workbench {
             );
         }
         match p {
+            Page::Assistant => root.child(self.assistant_page(w, cx)).into_any_element(),
             Page::Statuses => root.child(self.status_library_panel(cx)).into_any_element(),
             Page::Spaces => root.child(self.space_directory(cx)).into_any_element(),
             Page::SpaceModules => root.child(self.space_module_page(cx)).into_any_element(),
@@ -362,6 +365,7 @@ impl Workbench {
                 .child(self.record_page(cx))
                 .into_any_element(),
             Page::Connectors => root
+                .child(self.repository_toolbar(None, cx))
                 .child(self.bot_toolbar(None, cx))
                 .child(
                     row().px(px(14.)).py(px(8.)).child(
@@ -1549,6 +1553,25 @@ impl Workbench {
             .child(crate::locale::label("通知设置")),
         );
         if self.mode != "demo" {
+            let mut device = row().gap(px(8.));
+            for (id, label, action) in [
+                (
+                    "settings-network",
+                    "网络代理",
+                    crate::app::device_ui::Action::Settings,
+                ),
+                (
+                    "settings-about",
+                    "关于 ShipForge",
+                    crate::app::device_ui::Action::About,
+                ),
+            ] {
+                device = device.child(
+                    outlined(self.button(id, label, UiAction::Device(action), cx))
+                        .child(crate::locale::label(label)),
+                );
+            }
+            page = page.child(device);
             page = page.child(
                 row()
                     .gap(px(8.))
@@ -1880,6 +1903,7 @@ impl Workbench {
         match r.kind.as_str() {
             "task" => {
                 actions = actions
+                    .child(self.repository_toolbar(Some(&r.id), cx))
                     .child(
                         outlined(self.button(
                             "share-task-link",
@@ -2083,7 +2107,14 @@ impl Workbench {
                         primary(self.button(
                             "send-message",
                             "发送消息",
-                            UiAction::Form(Mode::Message(r.clone())),
+                            UiAction::Form(if r.field("handler_kind") == "assistant" {
+                                Mode::Workflow {
+                                    op: "assistant.send",
+                                    record: r.clone(),
+                                }
+                            } else {
+                                Mode::Message(r.clone())
+                            }),
                             cx,
                         ))
                         .child(icon("send", 14.))
@@ -2206,6 +2237,19 @@ impl Workbench {
                 }
             }
             "agent" | "crew" => {
+                if r.kind == "agent" {
+                    actions = actions.child(
+                        outlined(self.button(
+                            "agent-runtime-launch",
+                            "模型与运行参数",
+                            UiAction::MachineManagement(
+                                crate::app::machine_management::Action::AgentLaunch(r.id.clone()),
+                            ),
+                            cx,
+                        ))
+                        .child(crate::locale::label("模型与运行参数")),
+                    );
+                }
                 actions = actions.child(
                     outlined(self.button(
                         "agent-runs",
@@ -2236,6 +2280,19 @@ impl Workbench {
                 body = self.related_runs(body, r, cx);
             }
             "machine" => {
+                if r.fields["owner"] == self.actor {
+                    actions = actions.child(
+                        outlined(self.button(
+                            "manage-machine-storage",
+                            "管理存储空间",
+                            UiAction::MachineManagement(
+                                crate::app::machine_management::Action::Storage(r.id.clone()),
+                            ),
+                            cx,
+                        ))
+                        .child(crate::locale::label("管理存储空间")),
+                    );
+                }
                 actions = actions.child(
                     outlined(self.button(
                         "machine-runtime-management",

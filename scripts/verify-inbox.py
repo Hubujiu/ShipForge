@@ -56,6 +56,16 @@ def verify(bin_dir):
             assert call("reader","inbox.query",section="important")["total"] == 0
             assert call("reader","inbox.feed",after=cursor)["items"] == []
             assert call("reader","inbox.open",False,space="labs",id=notice["id"])["code"] == "forbidden"
+            call("reader","inbox.configure",channel="inbox",key="all",enabled=False)
+            call("reader","inbox.configure",channel="desktop",reset=True)
+            after = call("reader","inbox.feed")["cursor"]
+            call("author","create",kind="task",id="desktop-only",title="Desktop only",fields={"assignee":"reader"})
+            native = call("reader","inbox.feed",after=after)["items"]
+            assert len(native) == 1 and native[0]["title"] == "Desktop only"
+            assert call("reader","inbox.query",section="all",query="Desktop only")["total"] == 0
+            assert call("author","inbox.locate",False,id=native[0]["id"])["code"] in ("forbidden","not_found")
+            assert call("reader","inbox.open",id=native[0]["id"])["target"]["id"] == "desktop-only"
+            assert call("reader","inbox.feed",after=after)["items"] == []
         finally:
             team.stop(process)
     print("Verified actor-specific channels, multi-space inbox filters, timed reminders, notification links and revocation.")

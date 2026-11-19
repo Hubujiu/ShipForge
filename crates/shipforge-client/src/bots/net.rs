@@ -1,5 +1,4 @@
 use super::*;
-use std::time::Duration;
 use url::{Host, Url};
 
 pub(super) fn fixture() -> R<Option<Url>> {
@@ -61,12 +60,7 @@ pub(super) fn trusted_with(
     Ok(u)
 }
 pub(super) fn http() -> ureq::Agent {
-    ureq::Agent::config_builder()
-        .max_redirects(0)
-        .http_status_as_error(false)
-        .timeout_global(Some(Duration::from_secs(39)))
-        .build()
-        .new_agent()
+    crate::network::provider(39)
 }
 pub(super) fn request(url: &str, body: Option<Value>, headers: &[(&str, String)]) -> R<Value> {
     let mut res = if let Some(body) = body {

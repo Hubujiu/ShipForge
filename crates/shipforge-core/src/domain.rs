@@ -104,6 +104,11 @@ fn write_inner(
     if !(submission && kind == "task" && op == "create" && crate::triage::intake::outside(c)?) {
         c.authorize_write(kind, old.as_ref())?;
     }
+    if kind == "connector"
+        && let Some(row) = old.as_ref()
+    {
+        crate::vcs::forge::require_legacy(c, &row.id)?;
+    }
     if op == "delete" {
         let r = old.as_ref().ok_or_else(|| invalid("missing record"))?;
         if kind == "status" {
@@ -211,7 +216,11 @@ fn write_inner(
     if kind == "task" {
         crate::task_commands::assignees::prepare(c, old.as_ref(), &mut patch, from_source)?;
     }
-    if kind == "chat" && patch.contains_key("conversation") {
+    if kind == "chat"
+        && ["conversation", "group_avatar"]
+            .iter()
+            .any(|key| patch.contains_key(*key))
+    {
         return Err(invalid(
             "conversation controls are managed by chat operations",
         ));

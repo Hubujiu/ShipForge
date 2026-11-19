@@ -139,6 +139,10 @@ impl Backend {
                                     let mut q=json!({"op":"directory.people","space":space,"query":people.1,"limit":5000});
                                     if !people.0.is_empty(){q["kind"]=json!(people.0);}
                                     q
+                                } else if kind=="assistant_home" {
+                                    let mut q=json!({"op":"assistant.history","space":space});
+                                    if chat.is_some(){q["room_scope"]=json!(space);}
+                                    q
                                 } else if kind=="status_library" {
                                     json!({"op":"status.library","space":space})
                                 } else if kind=="organization_settings" {
@@ -177,6 +181,8 @@ impl Backend {
                                             fields["can_manage"]=value["can_manage"].clone();
                                             json!({"kind":kind,"id":row["id"],"title":row["title"],"space":space,"rev":row["rev"],"fields":fields})
                                         }).collect::<Vec<_>>())
+                                    } else if kind=="assistant_home" {
+                                        json!([{"kind":kind,"id":"personal","space":space,"title":value["title"],"fields":value}])
                                     } else if kind=="organization_settings" {
                                         json!([{"kind":kind,"id":value["id"],"space":space,"title":value["name"],"rev":value["rev"],"fields":value}])
                                     }else if kind=="agent_settings" && let Some((_,id))=&handler{
@@ -236,6 +242,11 @@ impl Backend {
                             {
                                 break;
                             }
+                        }
+                        Request::Call {ticket, command} if !demo && client.is_err() && command["op"].as_str().is_some_and(|op|shipforge_client::DEVICE_OPS.contains(&op))=>{
+                            let result=dir.clone().map(Ok).unwrap_or_else(shipforge_client::data_dir)
+                                .and_then(|p|shipforge_client::device_command(&p,&command));
+                            let _=events.send(Event::Reply{ticket,result});
                         }
                         Request::Call {ticket, command} if !demo && matches!(command["op"].as_str(),Some("bot.qr.check"|"bot.sync"))=>{
                             let directory=dir.clone();let results=events.clone();

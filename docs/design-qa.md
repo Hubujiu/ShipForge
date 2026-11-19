@@ -1,5 +1,21 @@
 # Windows 原生界面验收
 
+## 个人小助手和群头像
+
+Windows x64 隐藏 GPUI 窗口使用独立数据库。首次进入「小助手」后，输入区为空，数据库中的会话数为零。原生文本框发送第一条消息后打开刚创建的会话，再次进入时得到空白编辑器。点击「最近对话」重新打开原会话。群详情的文件选择入口读取合成 PNG，群主窗口显示可访问性角色为 Image 的头像，移除后 CLI 返回空图片。这个用例运行真实窗口、后台命令和文件读取。[Windows 窗口用例](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/assistant_ui_test.rs)
+
+本地 HTTP 服务另以五个独立 CLI 配置验证读写令牌、同组织跨空间助手、他人不可访问会话和运行、群主转让、移出及解散。工作机启动合成外部进程，第二轮收到首轮用户问题和机器回答。[团队服务和工作机验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-assistant-groups.py)
+
+## 网络代理、关于与独立桌面通知
+
+Windows GPUI 窗口通过辅助功能树打开代理设置，切换模式并检测回环 HTTP 服务，保存后再读设置，最后从「关于」返回新手指引。CLI 在故意损坏的项目库旁验证 HTTP CONNECT、HTTPS 握手、SOCKS5 域名代理解析、密码作用域、修订冲突和回环直连。[原生窗口](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/live_navigation_test.rs) · [网络验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-device-network.py)
+
+原生收件箱用例通过渠道设置关闭收件箱，从一次真实任务指派生成桌面链接，打开对应任务并检查未读数。多身份测试覆盖他人链接和撤销评论访问后的状态。[原生收件箱](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/inbox_ui_test.rs) · [团队服务](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-inbox.py)
+
+## 机器存储与模型配置
+
+隐藏的原生 Windows D3D 窗口从机器详情进入存储面板。取消清理后保留原有操作历史，选择确认后独立客户端读到绑定同一指纹的清理请求。随后在 Agent 详情读取机器提供的模型和思考深度，配置后通过独立客户端读回。工作机进程在临时 Git 仓库中验证内容改变后的冲突、绑定和恢复保护、只删除选中 worktree，以及子进程运行期间继续统计并拒绝清理。第二组运行用 Python 读取实际 argv 与环境，验证单次覆盖和整段含空格参数。[原生窗口验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/storage_ui_test.rs) · [工作机验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/tests/storage_and_launch.rs)
+
 ## 工作机服务、托盘与运行时能力
 
 隔离的 Windows D3D 窗口通过辅助功能树找到「本机服务设置」。读取临时配置后，切换为打开桌面时启动、关闭收起到托盘，再次读取验证设置已保存。关窗会打开退出确认。在同一个隐藏窗口中，Windows 通知区域接受了真实图标，验收检查隐藏状态并移除了该图标。随后从机器详情打开「运行时能力」，验证重扫、升级和模型测试按钮，确认模型测试后从独立客户端读回已排队的请求。[Windows 原生验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/machine_management_ui_test.rs)
@@ -134,3 +150,8 @@ Windows 原生窗口用已验证的临时成员登录，在其独立团队服务
 ## Windows 运行调度、目录与诊断
 
 独立测试工作区在隐藏的原生 D3D 窗口打开「机器」，通过 Windows 辅助功能树识别授权目录和本机诊断入口。测试从 Agent 编辑器选择同一机器上的两个目录、切换到共用任务额度，提交后重读数据库验证保存。随后打开已预约任务，在详情触发提前排队，确认横幅消失，再从运行记录读取该次诊断。独立工作机验收用两个实际目录各启动 Python 进程，第三个任务等待目录释放，合成服务返回 429 后得到额度错误和本机 PID 日志。[原生窗口测试](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/runtime_ui_test.rs) · [工作机进程测试](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/tests/native_runtime.rs) · [用户指南](runtime-scheduling.md)
+
+
+## 仓库授权与配对
+
+在隔离 Windows 隐藏 D3D 窗口打开「集成」，辅助功能树中出现 GitHub、GitLab.com 和自建 GitLab。选择自建 GitLab，在真实文本控件输入模拟 HTTPS 实例和 PAT，提交后从项目列表选择测试仓库。将方向改为双向，提交后出现复制项目 Webhook 密钥的按钮。独立客户端读回双向配对。打开合成来源任务后，从任务详情的自建 GitLab 来源进入专用回复框，在原生多行文本控件输入正文并提交，回环项目服务收到发往该 Issue 的 HTTP POST。窗口提示已使用组织身份发送，测试从回执读回同一来源评论 ID。解除组织授权后，仓库列表为空。GitHub 与 GitLab.com 的 OAuth、浏览器回调及三身份收发通过独立 HTTP 夹具验证。真实租户仍待联调。[Windows 仓库控件](../crates/shipforge-desktop/src/repository_ui_test.rs) · [来源协议回归](../scripts/verify-forge.py)

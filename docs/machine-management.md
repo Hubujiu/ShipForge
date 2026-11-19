@@ -1,5 +1,7 @@
 # Windows 本机服务与运行时
 
+机器详情的「管理存储空间」可统计和清理已完成的工作副本。Agent 详情可选择机器公布的模型、思考深度和运行参数。[存储及运行参数](storage-and-models.md)
+
 在「机器」启动一次工作机，记下所用配置文件。打开「本机服务设置」，选择该文件并读取配置。服务状态显示机器名称、启动方式、后台运行和托盘设置。设置只影响登录的 Windows 用户和选中的 ShipForge 数据目录。[HiFox 机器帮助](https://help.hifox.com/docs/agent-and-computer/computers) · [HiFox CLI 帮助](https://help.hifox.com/docs/cli/cli)
 
 | 启动方式 | 生效时机 |

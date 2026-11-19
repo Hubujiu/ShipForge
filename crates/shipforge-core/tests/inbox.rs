@@ -151,9 +151,71 @@ fn muting_one_field_preserves_other_events_in_the_same_task_update() {
         "b",
         json!({"op":"inbox.feed","after":initial["cursor"]}),
     );
-    assert_eq!(delivered["items"].as_array().unwrap().len(), 1);
-    assert_eq!(delivered["items"][0]["event"], "task_updated");
+    let events = delivered["items"].as_array().unwrap();
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0]["event"], "assigned_priority");
+    assert!(events[0]["id"].as_str().unwrap().starts_with("desktop-"));
+    assert_eq!(events[1]["event"], "task_updated");
+    let inbox = call(&mut db, "b", json!({"op":"inbox.query","section":"all"}));
+    assert_eq!(inbox["rows"][0]["fields"]["count"], 2);
+    assert_eq!(inbox["rows"][0]["fields"]["event"], "task_updated");
 }
+#[test]
+fn standalone_desktop_link_respects_recipient_and_current_comment_access() {
+    let mut db = workspace();
+    call(
+        &mut db,
+        "b",
+        json!({"op":"inbox.configure","channel":"inbox","key":"all","enabled":false}),
+    );
+    call(
+        &mut db,
+        "a",
+        json!({"op":"create","kind":"task","id":"phone","title":"Desktop only","fields":{"assignee":"b"}}),
+    );
+    let first = call(&mut db, "b", json!({"op":"inbox.feed","after":0}));
+    let first_id = &first["items"][0]["id"];
+    assert!(first_id.as_str().unwrap().starts_with("desktop-"));
+    assert_eq!(
+        call(&mut db, "b", json!({"op":"inbox.query","section":"all"}))["total"],
+        0
+    );
+    assert!(
+        db.execute("w", json!({"op":"inbox.locate","id":first_id}))
+            .is_err()
+    );
+    assert_eq!(
+        call(&mut db, "b", json!({"op":"inbox.open","id":first_id}))["target"]["id"],
+        "phone"
+    );
+    assert_eq!(
+        call(&mut db, "b", json!({"op":"inbox.feed","after":0}))["items"],
+        json!([])
+    );
+    comment(&mut db, "desktop-note", "phone", json!({"mentions":["b"]}));
+    let next = call(
+        &mut db,
+        "b",
+        json!({"op":"inbox.feed","after":first["cursor"]}),
+    );
+    let open = json!({"op":"inbox.locate","id":next["items"][0]["id"]});
+    assert_eq!(call(&mut db, "b", open.clone())["comment"], "desktop-note");
+    call(
+        &mut db,
+        "a",
+        json!({"op":"update","kind":"comment","id":"desktop-note","fields":{"visibility":"private"}}),
+    );
+    assert!(db.execute("b", open).is_err());
+    assert_eq!(
+        call(&mut db, "b", json!({"op":"inbox.feed","after":0}))["items"],
+        json!([])
+    );
+    assert_eq!(
+        call(&mut db, "b", json!({"op":"inbox.query","section":"all"}))["unread"]["all"],
+        0
+    );
+}
+
 #[test]
 fn notification_routes_honor_per_person_overrides_and_recheck_source_permissions() {
     let mut db = workspace();
@@ -220,14 +282,21 @@ fn notification_routes_honor_per_person_overrides_and_recheck_source_permissions
         json!({"op":"inbox.configure","channel":"inbox","key":"mentions","enabled":false}),
     );
     comment(&mut db, "mute", "t", json!({"mentions":["b","w"]}));
-    assert_eq!(
-        call(
-            &mut db,
-            "b",
-            json!({"op":"inbox.feed","after":delivered["cursor"]})
-        )["items"],
-        json!([])
+    let notices = call(
+        &mut db,
+        "b",
+        json!({"op":"inbox.feed","after":delivered["cursor"]}),
     );
+    assert_eq!(notices["items"].as_array().unwrap().len(), 1);
+    assert_eq!(notices["items"][0]["event"], "mention");
+    assert!(
+        notices["items"][0]["id"]
+            .as_str()
+            .unwrap()
+            .starts_with("desktop-")
+    );
+    let muted = call(&mut db, "b", json!({"op":"inbox.query","section":"all"}));
+    assert_eq!(muted["unread"]["all"], 0);
     assert_eq!(
         call(
             &mut db,

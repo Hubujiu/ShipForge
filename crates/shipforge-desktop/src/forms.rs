@@ -12,6 +12,7 @@ pub enum Format {
     Text,
     Body,
     Secret,
+    SecretJson,
     Number,
     Decimal,
     Bool,
@@ -69,6 +70,7 @@ const TRIGGERS: &[(&str, &str)] = &[
 #[derive(Clone)]
 pub enum Mode {
     MachineManagement(crate::app::machine_management::Dialog),
+    Device(crate::app::device_ui::Dialog),
     QuickCreate,
     PeopleFilter,
     OrgDefaults(Record),
@@ -77,6 +79,7 @@ pub enum Mode {
     OrgDepart(Record, &'static str),
     StartChat(&'static str),
     Library(crate::app::market_ui::LibraryForm),
+    Forge(crate::app::repository_ui::Form),
     Bot(crate::app::personal_bots_ui::BotForm),
     Identity(crate::app::identity_ui::IdentityForm),
     Inbox(crate::app::inbox_ui::InboxForm),
@@ -167,6 +170,8 @@ impl Mode {
         use Mode::*;
         match self {
             MachineManagement(f) => f.title().into(),
+            Device(f) => f.title().into(),
+            Forge(f) => f.title().into(),
             Bot(f) => f.title().into(),
             Identity(f) => f.title().into(),
             QuickCreate => "快捷新建".into(),
@@ -260,6 +265,8 @@ impl Mode {
     pub fn submit_label(&self) -> &'static str {
         match self {
             Self::MachineManagement(f) => f.submit(),
+            Self::Device(f) => f.submit(),
+            Self::Forge(f) => f.submit(),
             Self::Bot(f) => f.submit(),
             Self::Identity(f) => f.submit(),
             Self::QuickCreate => "关闭",
@@ -527,7 +534,8 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             ),
             item("instructions", "职责与指令", Body, ""),
             item("model", "默认模型", Text, ""),
-            item("environment", "环境变量（JSON）", Json, ""),
+            item("reasoning_effort", "模型思考深度", Text, ""),
+            item("environment", "环境变量（JSON）", SecretJson, ""),
             item("arguments", "自定义参数（JSON）", Json, ""),
             item(
                 "variant_permission",
@@ -847,6 +855,8 @@ pub fn workflow_name(op: &str) -> &'static str {
         "iteration.configure" => "空间迭代设置",
         "chat.share.create" => "分享已选消息",
         "chat.manage" => "管理对话成员",
+        "assistant.send" => "给小助手发消息",
+        "chat.avatar.set" => "更换群头像",
         "chat.agents" => "管理群内 Agent",
         "provider.preview" => "预览平台事件",
         "zoho.projects" => "发现 Zoho 项目",
@@ -893,6 +903,8 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
     use Mode::*;
     match mode {
         MachineManagement(f) => f.specs(),
+        Device(f) => f.specs(),
+        Forge(f) => f.specs(),
         Bot(f) => f.specs(),
         Identity(f) => f.specs(),
         QuickCreate => vec![],
@@ -1096,6 +1108,17 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
         }
         Download(..) => vec![item("path", "保存到新文件", Text, "")],
         Workflow { op, record } => match *op {
+            "assistant.send" => vec![
+                item("body", "消息", Body, ""),
+                item("runtime", "Runtime", Ref("$assistant_runtimes"), ""),
+                item("model", "模型（可选）", Text, ""),
+            ],
+            "chat.avatar.set" => vec![item(
+                "path",
+                "头像文件（PNG、JPEG、GIF 或 WebP，最大 2 MiB）",
+                Text,
+                "",
+            )],
             "status.library.save" => vec![
                 item("title", "显示名称", Text, ""),
                 item("category", "状态类别", Choice(STATUS), "todo"),
@@ -1521,7 +1544,9 @@ impl Editor {
         let value = initial
             .get(spec.key)
             .map(|v| {
-                if spec.format == Format::Json && !v.is_null() {
+                if spec.format == Format::SecretJson && !v.is_null() {
+                    serde_json::to_string(v).unwrap_or_default()
+                } else if spec.format == Format::Json && !v.is_null() {
                     serde_json::to_string_pretty(v).unwrap_or_default()
                 } else {
                     value_text(v)
@@ -1556,7 +1581,7 @@ impl Editor {
                 &value,
                 crate::locale::label(spec.label),
                 matches!(spec.format, Format::Body | Format::Json),
-                spec.format == Format::Secret,
+                matches!(spec.format, Format::Secret | Format::SecretJson),
                 window,
                 cx,
             )),
@@ -1602,7 +1627,7 @@ impl Editor {
             return Ok(Value::Null);
         }
         Ok(match self.spec.format {
-            Json => {
+            Json | SecretJson => {
                 if t.is_empty() {
                     Value::Null
                 } else {

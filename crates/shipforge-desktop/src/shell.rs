@@ -686,11 +686,17 @@ impl Workbench {
         {
             body = body.child(text(instructions, 14., INK));
         }
+        if let Mode::Forge(f) = &mode {
+            body = body.child(self.repository_content(f, cx));
+        }
         if let Mode::Bot(f) = &mode {
             body = body.child(self.bot_content(f, cx));
         }
         if let Mode::MachineManagement(f) = &mode {
             body = body.child(self.machine_management_content(f, cx));
+        }
+        if let Mode::Device(dialog) = &mode {
+            body = body.child(self.device_content(dialog, cx));
         }
         if let Mode::Output { content, .. } = &mode {
             body = body.child(text(content.clone(), 13., INK)).child(
@@ -874,7 +880,17 @@ impl Workbench {
                 .iter()
                 .find(|e| e.spec.key == "unfinished")
                 .is_some_and(|e| e.raw(cx) == "move");
+            let proxy_mode = entries
+                .iter()
+                .find(|e| e.spec.key == "mode")
+                .map(|e| e.raw(cx))
+                .unwrap_or_default();
             for (i, e) in entries.into_iter().enumerate().filter(|(_, e)| {
+                if let Mode::Device(dialog) = &mode
+                    && !dialog.field_visible(e.spec.key, &proxy_mode)
+                {
+                    return false;
+                }
                 if matches!(mode, Mode::DeactivateSpace { .. })
                     && e.spec.key == "target"
                     && !move_tasks

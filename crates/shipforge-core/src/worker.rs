@@ -8,16 +8,19 @@ use uuid::Uuid;
 
 #[path = "automation.rs"]
 mod automation;
+pub(crate) use automation::ingest_verified as forge_ingest;
 mod capabilities;
 mod crew_workspace;
 mod directories;
 mod scheduling;
+mod storage_management;
 pub(crate) use scheduling::maintain_queue;
 mod market;
 mod working_hours;
 
 pub(crate) const OPS: &[&str] = &[
     "agent.resolve",
+    "agent.runtime.options",
     "catalog.list",
     "catalog.install",
     "catalog.detail",
@@ -37,6 +40,11 @@ pub(crate) const OPS: &[&str] = &[
     "machine.heartbeat",
     "machine.stopped",
     "machine.runtimes",
+    "machine.storage.preview",
+    "machine.storage.request",
+    "machine.storage.take",
+    "machine.storage.reserve",
+    "machine.storage.finish",
     "machine.runtime.request",
     "machine.runtime.jobs",
     "machine.runtime.finish",
@@ -62,6 +70,8 @@ pub(crate) const OPS: &[&str] = &[
     "connector.export",
 ];
 pub(crate) const READ_OPS: &[&str] = &[
+    "agent.runtime.options",
+    "machine.storage.preview",
     "machine.runtimes",
     "run.diagnostics",
     "machine.directories",
@@ -77,6 +87,9 @@ const LEASE_MS: i64 = 120_000;
 
 pub(crate) fn extend_schema(schema: &mut Value) {
     capabilities::schema(schema);
+    schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"agent.runtime.options"}}},"then":{"required":["id"]}}));
+    schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"run.enqueue"}}},"then":{"properties":{"model":{"type":"string","minLength":1,"maxLength":160},"reasoning_effort":{"type":"string","minLength":1,"maxLength":160}}}}));
+    storage_management::schema(schema);
     scheduling::schema(schema);
     market::schema(schema);
     let props = schema["properties"]
@@ -214,6 +227,7 @@ fn sql_init(db: &Connection) -> Result<()> {
 }
 pub(crate) fn init(db: &Connection) -> Result<()> {
     capabilities::init(db)?;
+    storage_management::init(db)?;
     directories::init(db)?;
     sql_init(db)?;
     crate::agents::init(db)?;
@@ -239,7 +253,9 @@ pub(crate) fn dispatch(c: &Context<'_>, q: &Value) -> Option<Result<Value>> {
                 market::execute(c, op, q)
             }
             "agent.resolve" => resolved(c, req(q, "id")?),
+            "agent.runtime.options" => capabilities::agent_options(c, q),
             "machine.register" => register(c, q),
+            op if op.starts_with("machine.storage.") => storage_management::dispatch(c, op, q),
             "machine.runtimes"
             | "machine.runtime.request"
             | "machine.runtime.jobs"
@@ -496,7 +512,11 @@ pub(crate) fn enqueue(
         return read(c, "run", &id);
     }
     crate::agents::usable(c, kind, handler, fields["parent_id"].as_str())?;
-    let config = snapshot(c, handler, kind)?;
+    let config = if kind == "assistant" {
+        crate::chat::assistant::configuration(c, handler, &fields)?
+    } else {
+        snapshot(c, handler, kind)?
+    };
     let handler_record = read(c, kind, handler)?;
     if handler_record.fields["visibility"] == "private"
         || config["private_source"] == true
@@ -582,9 +602,24 @@ pub(crate) fn task_context(c: &Context<'_>, task: &Record) -> Result<Value> {
 fn manual_enqueue(c: &Context<'_>, q: &Value) -> Result<Value> {
     let handler = req(q, "handler_id")?;
     let kind = q["handler_kind"].as_str().unwrap_or("agent");
+    if kind == "assistant" {
+        return Err("use assistant.send for your personal assistant".into());
+    }
     let mut fields =
         json!({"instruction":q["instruction"],"task_id":q["task_id"],"chat_id":q["chat_id"]});
     fields["scheduled_at"] = scheduling::parse_date(&q["scheduled_at"])?;
+    for (key, dest) in [
+        ("model", "model_override"),
+        ("reasoning_effort", "effort_override"),
+    ] {
+        if let Some(v) = q.get(key) {
+            let s = v
+                .as_str()
+                .filter(|s| !s.is_empty() && s.len() <= 160 && !s.chars().any(char::is_control))
+                .ok_or("invalid runtime override")?;
+            fields[dest] = json!(s);
+        }
+    }
     let chat = q["chat_id"]
         .as_str()
         .map(|id| read(c, "chat", id))
@@ -915,6 +950,9 @@ fn current_reason(
 }
 fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
     let machine = authenticate(c, q)?;
+    if storage_management::reserved(c, &machine.id)? {
+        return Ok(Value::Null);
+    }
     let at = now();
     let previous = c.records("run")?;
     expire(c, &previous, at)?;

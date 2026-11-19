@@ -64,6 +64,13 @@ enum Command {
     Search {
         query: String,
     },
+    /// Set a group's avatar from a local image using its current revision.
+    GroupAvatar {
+        id: String,
+        path: PathBuf,
+        #[arg(long)]
+        rev: i64,
+    },
     /// Attach a local file, or create a private document if no document ID is given.
     Upload {
         path: PathBuf,
@@ -227,6 +234,13 @@ fn execute(cli: Cli) -> Result<Value, String> {
             r
         }
         Command::Search { query } => json!({"op":"search","query":query}),
+        Command::GroupAvatar { id, path, rev } => {
+            let mut file = shipforge_client::upload_file(&path)?;
+            file["op"] = json!("chat.avatar.set");
+            file["id"] = json!(id);
+            file["expected_rev"] = json!(rev);
+            file
+        }
         Command::Upload {
             path,
             kind,
@@ -279,6 +293,16 @@ fn execute(cli: Cli) -> Result<Value, String> {
     };
     if !body.is_object() {
         return Err("invalid: request must be a JSON object".into());
+    }
+    if body["op"]
+        .as_str()
+        .is_some_and(|op| shipforge_client::DEVICE_OPS.contains(&op))
+    {
+        let dir = match cli.data_dir {
+            Some(dir) => dir,
+            None => shipforge_client::data_dir()?,
+        };
+        return shipforge_client::device_command(&dir, &body);
     }
     if body.get("space").is_none() {
         body["space"] = json!(cli.space);

@@ -221,7 +221,9 @@ impl Store {
             && !worker::OPS.contains(&op)
             && op != "provider.ingest"
             && !op.starts_with("cnb.internal.")
+            && !op.starts_with("forge.")
             && op != "jira.write"
+            && op != "assistant.open"
             && !matches!(
                 op,
                 "organization.depart" | "organization.configure" | "organization.ownership"
@@ -288,6 +290,7 @@ impl Store {
             }
             "jira.read" | "jira.write" => jira::execute(&c, &request, read),
             op if op.starts_with("cnb.internal.") => vcs::cnb_command(&c, &request, op),
+            op if op.starts_with("forge.") => vcs::forge::command(&c, op, &request),
             op if op.starts_with("imports.") || op.starts_with("bugly.") => {
                 vendors::execute(&c, &request, op)
             }
@@ -337,6 +340,7 @@ impl Store {
                 inbox::execute(&c, &request, op)
             }
             op if op.starts_with("chat.") => chat::execute(&c, &request, op),
+            op if op.starts_with("assistant.") => chat::assistant::execute(&c, &request, op),
             "create" | "update" | "delete" => write_request(&c, &request),
             "list" | "get" | "search" | "directory.people" | "events" | "space.list"
             | "organization.list" | "view.run" | "dashboard" | "task.relations"

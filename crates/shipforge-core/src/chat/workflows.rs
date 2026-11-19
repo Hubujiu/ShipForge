@@ -146,7 +146,7 @@ pub(crate) fn handler<'a>(c: &Context<'_>, room: &'a Record) -> Result<(&'a str,
         return Err(invalid("select an Agent conversation"));
     }
     let kind = room.fields["handler_kind"].as_str().unwrap_or("agent");
-    if !matches!(kind, "agent" | "crew") {
+    if !matches!(kind, "agent" | "crew" | "assistant") {
         return Err(invalid("an Agent or crew is required"));
     }
     let id = room.fields["handler_id"]
@@ -328,6 +328,9 @@ fn pending(c: &Context<'_>, room: &Record) -> Result<Option<String>> {
     c.db.query_row("SELECT x.run FROM chat_conversion x JOIN records r ON r.space=x.space AND r.kind='run' AND r.id=x.run WHERE x.space=? AND x.chat=? AND json_extract(r.fields,'$.status') IN ('queued','running','waiting','waiting_children','cancelling') LIMIT 1",params![c.space,room.id],|r|r.get(0)).optional().map_err(storage)
 }
 pub(super) fn bind(c: &Context<'_>, room: &Record, q: &Value) -> Result<Value> {
+    if super::assistant::is_room(room) {
+        return Err(invalid("personal assistants use independent conversations"));
+    }
     super::require_owner(c, room)?;
     handler(c, room)?;
     domain::check_rev(q, room)?;

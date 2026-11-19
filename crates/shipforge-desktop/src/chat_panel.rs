@@ -34,11 +34,17 @@ impl Workbench {
         let menu = room.clone();
         let prefix = if compact { "side" } else { "page" };
         let hover = SharedString::from(format!("chat-row-{prefix}-{}", room.id));
+        let selected = self
+            .loc
+            .selected
+            .as_ref()
+            .is_some_and(|r| r.kind == "chat" && r.id == room.id && r.space == room.space);
         let mut line = row()
             .gap(px(3.))
             .min_h(px(if compact { 29. } else { 43. }))
             .w_full()
             .group(hover.clone())
+            .when(selected, |line| line.bg(rgb(SELECTED)).rounded(px(6.)))
             .on_mouse_down(
                 MouseButton::Right,
                 cx.listener(move |v, _, w, cx| {
@@ -55,18 +61,24 @@ impl Workbench {
                 .min_w_0()
                 .flex_1()
                 .justify_start()
-                .child(icon(
-                    if room
-                        .fields
-                        .get("sidebar")
-                        .is_some_and(|v| v["pinned"] == true)
-                    {
-                        "pin"
-                    } else {
-                        "messages-square"
-                    },
-                    14.,
-                ))
+                .child(
+                    crate::app::assistant_ui::avatar(room.fields.get("group_avatar"), 18.)
+                        .unwrap_or_else(|| {
+                            icon(
+                                if room
+                                    .fields
+                                    .get("sidebar")
+                                    .is_some_and(|v| v["pinned"] == true)
+                                {
+                                    "pin"
+                                } else {
+                                    "messages-square"
+                                },
+                                14.,
+                            )
+                            .into_any_element()
+                        }),
+                )
                 .child(text(room.title.clone(), 13., INK).truncate()),
             );
         if compact {
@@ -201,7 +213,11 @@ impl Workbench {
             ))
             .child(crate::locale::label(label))
         };
-        if self.writable() && managed && (owner || !group) {
+        if self.writable()
+            && managed
+            && room.field("handler_kind") != "assistant"
+            && (owner || !group)
+        {
             let label = if owner {
                 "管理成员"
             } else {
@@ -218,6 +234,17 @@ impl Workbench {
         }
         if self.writable() && owner && group {
             actions = actions.child(button(
+                "group-avatar",
+                "更换群头像",
+                UiAction::Form(Mode::Workflow {
+                    op: "chat.avatar.set",
+                    record: room.clone(),
+                }),
+            ));
+            if info["avatar"].is_object() {
+                actions=actions.child(button("remove-avatar","移除群头像",UiAction::Form(Mode::Confirm{label:"移除群头像".into(),command:json!({"op":"chat.avatar.set","id":room.id,"space":self.loc.space,"expected_rev":room.rev,"remove":true})})));
+            }
+            actions = actions.child(button(
                 "agents",
                 "管理 Agent",
                 UiAction::Form(Mode::Workflow {
@@ -228,6 +255,7 @@ impl Workbench {
         }
         if self.writable() && owner {
             if chat_actions::agent_room(room)
+                && room.field("handler_kind") != "assistant"
                 && room.field("task").is_empty()
                 && room.field("task_id").is_empty()
             {
@@ -286,6 +314,9 @@ impl Workbench {
             actions = actions.child(confirm("dissolve", "解散群聊"));
         }
         let mut section = col().gap(px(5.));
+        if let Some(image) = crate::app::assistant_ui::avatar(info.get("avatar"), 32.) {
+            section = section.child(image);
+        }
         for share in info["shares"].as_array().into_iter().flatten() {
             if let Some(key) = share["share"].as_str() {
                 let count = share["message_ids"].as_array().map_or(0, Vec::len);

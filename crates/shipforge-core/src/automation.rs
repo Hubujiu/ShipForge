@@ -428,10 +428,16 @@ pub(super) fn notify(c: &Context<'_>, run: &Record) -> Result<()> {
             continue;
         }
         // Task runs also emit the task notification through inbox::task_run.
-        if run.fields["task_id"].is_null() {
-            crate::inbox::deliver_mail(c, &recipient, event, ("run", &run.id), None)?;
-        }
-        if !crate::inbox::channel_enabled(c, &recipient, event)? {
+        let inbox = if run.fields["task_id"].is_null() {
+            let target = run.fields["automation_id"]
+                .as_str()
+                .map(|id| ("automation", id))
+                .unwrap_or(("run", run.id.as_str()));
+            crate::inbox::route(c, &recipient, event, target, Some(("run", &run.id)))?
+        } else {
+            crate::inbox::channel_enabled(c, &recipient, event)?
+        };
+        if !inbox {
             continue;
         }
         let group = run.fields["automation_id"]
@@ -472,6 +478,10 @@ fn mapped_task(c: &Context<'_>, record: &Record) -> Result<Value> {
     )
 }
 fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
+    crate::vcs::forge::require_legacy(c, req(q, "id")?)?;
+    ingest_verified(c, q)
+}
+pub(crate) fn ingest_verified(c: &Context<'_>, q: &Value) -> Result<Value> {
     c.require_admin()?;
     let connector = read(c, "connector", req(q, "id")?)?;
     if crate::vendors::uses_project(&connector.fields) {
@@ -625,6 +635,7 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
     Ok(response)
 }
 fn export(c: &Context<'_>, q: &Value) -> Result<Value> {
+    crate::vcs::forge::require_legacy(c, req(q, "id")?)?;
     c.require_admin()?;
     let connector = read(c, "connector", req(q, "id")?)?;
     let task = read(c, "task", req(q, "task_id")?)?;

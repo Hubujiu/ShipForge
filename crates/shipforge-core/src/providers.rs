@@ -13,6 +13,7 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, preview: bool) -> Result<Value
     let id = required(q, "id")?;
     let connector = c.readable("connector", id)?;
     if !preview {
+        crate::vcs::forge::require_legacy(c, id)?;
         c.require_admin()?;
     }
     if connector.fields["enabled"] == false {

@@ -35,7 +35,7 @@ pub(super) fn endpoint(address: &str, token: &str) -> Result<String, String> {
 }
 
 pub(super) struct Remote {
-    http: ureq::Agent,
+    http: crate::network::TeamTransport,
     command_url: String,
     credential: String,
     cache: Connection,
@@ -68,12 +68,7 @@ impl Remote {
         cache.execute_batch("PRAGMA journal_mode=WAL;
           CREATE TABLE IF NOT EXISTS reads(query TEXT PRIMARY KEY, answer TEXT NOT NULL, at INTEGER NOT NULL);
           CREATE TABLE IF NOT EXISTS drafts(seq INTEGER PRIMARY KEY, id TEXT UNIQUE NOT NULL, body TEXT NOT NULL, problem TEXT);").map_err(storage)?;
-        let http = ureq::Agent::config_builder()
-            .max_redirects(0)
-            .http_status_as_error(false)
-            .timeout_global(Some(Duration::from_secs(12)))
-            .build()
-            .new_agent();
+        let http = crate::network::TeamTransport::new(directory, &address)?;
         Ok(Self {
             http,
             command_url: format!("{address}/v1/command"),
@@ -84,9 +79,14 @@ impl Remote {
         })
     }
 
+    pub(super) fn network_changed(&mut self) {
+        self.last_network_failure = None;
+        self.online = None;
+    }
     pub(super) fn send(&mut self, body: &Value) -> Result<Value, String> {
         let call = self
             .http
+            .agent()?
             .post(&self.command_url)
             .header("Authorization", format!("Bearer {}", self.credential))
             .send_json(body);
@@ -99,10 +99,15 @@ impl Remote {
             Err(e) => {
                 self.online = Some(false);
                 self.last_network_failure = Some(Instant::now());
-                return Err(format!("offline: {e}"));
+                return Err(crate::network::failure(e));
             }
         };
         let status = response.status().as_u16();
+        if status == 407 {
+            self.online = Some(false);
+            self.last_network_failure = Some(Instant::now());
+            return Err("offline: proxy authentication required".into());
+        }
         if matches!(status, 502..=504) {
             self.online = Some(false);
             self.last_network_failure = Some(Instant::now());
