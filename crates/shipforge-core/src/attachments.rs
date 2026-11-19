@@ -15,7 +15,7 @@ pub(crate) fn hash(bytes: &[u8]) -> String {
 }
 pub(crate) fn receipt(request: &Value, op: &str) -> Value {
     let mut fingerprint = request.clone();
-    if op == "attachment.upload"
+    if matches!(op, "attachment.upload" | "chat.avatar.set")
         && let Some(encoded) = request["content_base64"].as_str()
     {
         fingerprint["content_base64"] = json!({"sha256":hash(encoded.as_bytes())});

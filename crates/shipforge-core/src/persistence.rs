@@ -152,10 +152,17 @@ impl Context<'_> {
             .map_err(storage)
     }
     pub(crate) fn find(&self, kind: &str, id: &str) -> Result<Option<Record>> {
+        let organization;
+        let scope = if kind == "assistant" {
+            organization = self.org_id()?;
+            organization.as_str()
+        } else {
+            self.space
+        };
         self.db
             .query_row(
                 &format!("SELECT {COLUMNS} FROM records WHERE space=?1 AND kind=?2 AND id=?3"),
-                params![self.space, kind, id],
+                params![scope, kind, id],
                 from_row,
             )
             .optional()

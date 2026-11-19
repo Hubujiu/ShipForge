@@ -22,9 +22,10 @@ sha2.workspace = true
 ring = "0.17"
 shipforge-core.workspace = true
 tempfile.workspace = true
-ureq.workspace = true
+ureq = { workspace = true, features = ["socks-proxy", "platform-verifier"] }
+semver = "1"
 url.workspace = true
 uuid.workspace = true
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_Networking_WinHttp"] }

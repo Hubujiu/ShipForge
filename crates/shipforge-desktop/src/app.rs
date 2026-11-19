@@ -9,10 +9,14 @@ use gpui_kit::{prelude::*, *};
 mod account_ui;
 #[path = "agent_directory.rs"]
 pub(crate) mod agent_directory;
+#[path = "assistant_ui.rs"]
+pub(crate) mod assistant_ui;
 #[path = "chat_actions.rs"]
 pub(crate) mod chat_actions;
 #[path = "conversation_ui.rs"]
 pub(crate) mod conversation_ui;
+#[path = "device_ui.rs"]
+pub(crate) mod device_ui;
 #[path = "identity_ui.rs"]
 pub(crate) mod identity_ui;
 #[path = "inbox_ui.rs"]
@@ -29,6 +33,8 @@ pub(crate) mod onboarding;
 pub(crate) mod personal;
 #[path = "personal_bots_ui.rs"]
 pub(crate) mod personal_bots_ui;
+#[path = "repository_ui.rs"]
+pub(crate) mod repository_ui;
 #[path = "review_ui.rs"]
 pub(crate) mod review_ui;
 #[path = "runtime_ui.rs"]
@@ -75,9 +81,12 @@ impl Default for Location {
 }
 #[derive(Clone)]
 pub enum UiAction {
+    SendAssistantDraft,
     FoldStatuses(String, bool),
     MachineManagement(machine_management::Action),
+    Device(device_ui::Action),
     LibraryDetails(String),
+    Forge(repository_ui::Action),
     Bot(personal_bots_ui::Action),
     IdentityProfile,
     IdentityClose,
@@ -147,8 +156,12 @@ pub enum UiAction {
     NewPersonalToken(bool),
 }
 enum After {
+    AssistantOpened,
+    AssistantSent(u64),
     MachineManagement(machine_management::Reply),
+    Device(device_ui::Reply),
     Library(market_ui::Reply),
+    Forge(repository_ui::Next),
     Bot(personal_bots_ui::Reply),
     Identity(identity_ui::Reply),
     Inbox(inbox_ui::Reply),
@@ -199,6 +212,7 @@ struct Pending {
     write: bool,
 }
 pub struct Workbench {
+    pub assistant_draft: crate::controls::Field,
     pub status_folds: HashMap<String, bool>,
     pub offline: bool,
     pub people_query: String,
@@ -268,6 +282,14 @@ impl Workbench {
         let root_focus = cx.focus_handle();
         root_focus.focus(window, cx);
         let app = Self {
+            assistant_draft: crate::controls::Field::new(
+                "",
+                "给小助手发消息",
+                true,
+                false,
+                window,
+                cx,
+            ),
             offline: false,
             machine_poll_at: Instant::now(),
             people_query: String::new(),
@@ -473,7 +495,8 @@ impl Workbench {
             }
             Page::Iterations => kinds.extend(["task", "iteration_settings"]),
             Page::Dashboard | Page::Projects | Page::Views => kinds.extend(["task", "status"]),
-            Page::Assistant | Page::Chats => kinds.extend(["agent", "chat", "chat_invitation"]),
+            Page::Assistant => kinds.push("assistant_home"),
+            Page::Chats => kinds.extend(["agent", "chat", "chat_invitation"]),
             Page::Connectors => kinds.push("agent"),
             Page::Market => kinds.extend(["skill", "agent"]),
             Page::Skills => kinds.extend(["machine", "agent"]),
@@ -492,6 +515,9 @@ impl Workbench {
             _ => {}
         }
         if let Some(item) = &self.loc.selected {
+            if item.kind == "chat" && item.field("handler_kind") == "assistant" {
+                kinds.push("assistant_home");
+            }
             kinds.push(&item.kind);
             if item.kind == "task" && item.field("external_provider") == "asana" {
                 kinds.push("connector");
@@ -937,7 +963,9 @@ impl Workbench {
         }
         match after {
             After::MachineManagement(reply) => self.machine_management_reply(reply, value, w, cx),
+            After::Device(reply) => self.device_reply(reply, value, w, cx),
             After::Library(reply) => self.library_reply(reply, value, w, cx),
+            After::Forge(reply) => self.repository_result(reply, value, w, cx),
             After::Bot(reply) => self.bot_reply(reply, value, w, cx),
             After::Identity(reply) => self.identity_reply(reply, value, w, cx),
             After::Inbox(reply) => self.inbox_reply(reply, value, w, cx),
@@ -974,6 +1002,18 @@ impl Workbench {
             After::Review(r) => self.review_response(r, value, w, cx),
             After::Work(r) => self.work_reply(r, value, w, cx),
             After::OrganizedChat => self.chat_organized(&value, w, cx),
+            After::AssistantOpened => {
+                if self.loc.page == Page::Assistant {
+                    self.read(false);
+                }
+            }
+            After::AssistantSent(revision) => {
+                if revision == self.revision
+                    && let (Some(scope), Some(id)) = (value["space"].as_str(), value["id"].as_str())
+                {
+                    self.send(json!({"op":"get","kind":"chat","space":scope,"id":id,"allow_cached":false}),After::SearchTarget{space:scope.to_owned(),revision},false);
+                }
+            }
             After::OpenChat => {
                 self.close_form(w, cx);
                 if let Ok(room) = serde_json::from_value(value) {
@@ -1483,6 +1523,8 @@ impl Workbench {
                 }
             }
             Mode::MachineManagement(f) => value = f.prefill(),
+            Mode::Device(f) => value = f.prefill(),
+            Mode::Forge(f) => value = f.prefill(),
             Mode::Bot(f) => {
                 value = f.prefill();
                 if matches!(f, personal_bots_ui::BotForm::Start(_))
@@ -1513,6 +1555,12 @@ impl Workbench {
             } => value = record.fields.clone(),
             Mode::Workflow { op, record } if status_ui::handles(op) => {
                 value = self.status_prefill(op, record)
+            }
+            Mode::Workflow {
+                op: "assistant.send",
+                record,
+            } => {
+                value = self.assistant_values(record, cx);
             }
             Mode::Create(k) if k == "agent" => {
                 if let Some(default) = self
@@ -1612,6 +1660,8 @@ impl Workbench {
         match action {
             FoldStatuses(key,collapsed)=>{self.status_folds.insert(key,collapsed);}
             MachineManagement(action)=>self.machine_management_action(action,w,cx),
+            Device(action)=>self.device_action(action,w,cx),
+            Forge(action)=>self.repository_action(action),
             Bot(action)=>self.bot_action(action,w,cx),
             IdentityProfile => self.send(
                 json!({"op":"access.account.profile"}),
@@ -1647,6 +1697,17 @@ impl Workbench {
                 self.loc.section = "settings".into();
                 self.history[self.pos] = self.loc.clone();
             }
+            Go(Page::Assistant) => {
+                self.assistant_draft=crate::controls::Field::new("","给小助手发消息",true,false,w,cx);
+                self.navigate(Page::Assistant);
+                if self.writable(){self.send(json!({"op":"assistant.open","space":self.loc.space}),After::AssistantOpened,false);}
+            }
+            SendAssistantDraft => {
+                let body=self.assistant_draft.value(cx);
+                if !body.trim().is_empty() && self.writable(){
+                    self.send(json!({"op":"assistant.send","space":self.loc.space,"body":body,"request_id":uuid::Uuid::new_v4().to_string()}),After::AssistantSent(self.revision),true);
+                }
+            }
             Go(p) => self.navigate_space_page(p),
             Jump(p) => {self.close_form(w,cx); self.navigate_space_page(p);}
             People => {self.navigate(Page::Members);self.loc.section="people".into();self.read(true);}
@@ -1662,6 +1723,7 @@ impl Workbench {
             Forward => self.history(true),
             CloseDetail => self.act_detail_close(),
 
+            Create(k) if self.loc.page==Page::Assistant && k=="chat" => self.act(Go(Page::Assistant),w,cx),
             Create(k) if k == "agent" => self.send(
                 json!({"op":"list","kind":"machine","space":self.loc.space}),
                 After::CheckAgent(self.revision),
@@ -2143,6 +2205,8 @@ cx);
                 self.guide_action(onboarding::Action::Start("connect_machine"), w, cx);
             }
             Mode::MachineManagement(f)=>self.machine_management_submit(f,Value::Object(values),w,cx)?,
+            Mode::Device(f)=>self.device_submit(f,Value::Object(values),w,cx),
+            Mode::Forge(f)=>self.repository_submit(f,Value::Object(values),w,cx),
             Mode::Bot(f)=>self.bot_submit(f,Value::Object(values),w,cx)?,
             Mode::Identity(f) => self.identity_submit(f, Value::Object(values))?,
             Mode::Directory(f) => self.directory_submit(f, values, w, cx)?,
@@ -2502,6 +2566,22 @@ cx);
             }
 
             Mode::Workflow {op,record} if status_ui::handles(op) => self.submit_status(op,&record,values),
+            Mode::Workflow {op:"assistant.send",record} => {
+                let body = val("body");
+                if body.is_empty(){return Err(crate::locale::label("请输入消息").into());}
+                let runtime=val("runtime");
+                if runtime.is_empty(){return Err(crate::locale::label("请选择在线 Runtime").into());}
+                let mut q=json!({"op":"assistant.send","space":self.loc.space,"body":body,"runtime":runtime,"model":val("model"),"request_id":uuid::Uuid::new_v4().to_string()});
+                if record.kind=="chat"{q["id"]=json!(record.id);}
+                self.send(q,After::AssistantSent(self.revision),true);
+            }
+            Mode::Workflow {op:"chat.avatar.set",record} => {
+                let path=PathBuf::from(val("path"));
+                if path.as_os_str().is_empty(){return Err(crate::locale::label("请选择头像文件").into());}
+                let command=json!({"op":"chat.avatar.set","space":self.loc.space,"id":record.id,"expected_rev":record.rev,"request_id":uuid::Uuid::new_v4().to_string()});
+                let ticket=self.register(After::Notice("已更新群头像".into()),true);
+                self.backend.sender.send(Request::Attachment{ticket,command,path}).map_err(|e|e.to_string())?;
+            }
             Mode::Workflow { op, record } => {
                 let mut q = Value::Object(values);
                 if op == "iteration.configure" {
@@ -2815,6 +2895,7 @@ cx);
                 v
             }
             "$statuses" => self.status_choices(""),
+            "$assistant_runtimes" => self.assistant_runtimes(),
             "$task_statuses" => self.task_form_statuses(),
             "$workflow_statuses" | "$workflow_defaults" | "$org_status_targets" => {
                 self.workflow_choices(source)
@@ -2994,6 +3075,9 @@ fn overlay_options(defaults: &mut Vec<(String, String)>, records: Vec<(String, S
 #[path = "agent_directory_ui_test.rs"]
 mod agent_directory_ui_test;
 #[cfg(all(test, windows))]
+#[path = "assistant_ui_test.rs"]
+mod assistant_ui_test;
+#[cfg(all(test, windows))]
 #[path = "chat_ui_test.rs"]
 mod chat_ui_test;
 #[cfg(all(test, windows))]
@@ -3024,6 +3108,9 @@ pub(crate) mod onboarding_ui;
 #[path = "personal_bots_ui_test.rs"]
 mod personal_bots_ui_test;
 #[cfg(all(test, windows))]
+#[path = "repository_ui_test.rs"]
+mod repository_ui_test;
+#[cfg(all(test, windows))]
 #[path = "review_ui_test.rs"]
 mod review_ui_test;
 #[cfg(all(windows, test))]
@@ -3035,6 +3122,9 @@ mod space_ui_test;
 #[cfg(all(test, windows))]
 #[path = "status_ui_test.rs"]
 mod status_ui_test;
+#[cfg(all(test, windows))]
+#[path = "storage_ui_test.rs"]
+mod storage_ui_test;
 #[cfg(all(test, windows))]
 #[path = "tag_ui.rs"]
 mod tag_ui;

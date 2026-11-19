@@ -146,6 +146,35 @@ pub(super) fn query(c: &Context<'_>, q: &Value, write: bool) -> Result<Value> {
         json!({"section":section,"rows":rows.into_iter().skip(offset).take(limit).collect::<Vec<_>>(),"total":total,"unread":{"all":counts[0]+counts[1],"important":counts[1],"other":counts[0]},"clear_statuses":cfg.clear_statuses}),
     )
 }
+struct DesktopDestination {
+    target: Record,
+    comment: Option<String>,
+    opened: bool,
+}
+fn desktop_destination(c: &Context<'_>, id: &str) -> Result<Option<DesktopDestination>> {
+    if !id.starts_with("desktop-") {
+        return Ok(None);
+    }
+    c.role()?;
+    let destination=c.db.query_row("SELECT d.kind,d.target,d.opened,s.source_kind,s.source_id FROM desktop_notifications d JOIN inbox_signals s ON s.notice=d.id AND s.actor=d.actor AND s.space=d.space WHERE d.id=? AND d.space=? AND d.actor=?",
+        params![id,c.space,c.actor],|r|Ok((r.get::<_,String>(0)?,r.get::<_,String>(1)?,r.get::<_,bool>(2)?,r.get::<_,Option<String>>(3)?,r.get::<_,Option<String>>(4)?))).optional().map_err(storage)?;
+    let Some((kind, target, opened, source_kind, source_id)) = destination else {
+        return Ok(None);
+    };
+    let record = c.readable(&kind, &target)?;
+    let mut comment = None;
+    if let Some((kind, id)) = source_kind.zip(source_id) {
+        let source = c.readable(&kind, &id)?;
+        if kind == "comment" && source.fields["task"] == record.id {
+            comment = Some(id);
+        }
+    }
+    Ok(Some(DesktopDestination {
+        target: record,
+        comment,
+        opened,
+    }))
+}
 pub(super) fn open(c: &Context<'_>, q: &Value) -> Result<Value> {
     if let Some(origin) = q.get("origin")
         && origin.as_str() != Some(crate::saved_views::workspace(c)?.as_str())
@@ -154,7 +183,18 @@ pub(super) fn open(c: &Context<'_>, q: &Value) -> Result<Value> {
             "connect to the workspace that issued this notification",
         ));
     }
-    let row = c.readable("notification", required(q, "id")?)?;
+    let id = required(q, "id")?;
+    if let Some(dest) = desktop_destination(c, id)? {
+        if q["op"] == "inbox.open" && !dest.opened {
+            c.db.execute(
+                "UPDATE desktop_notifications SET opened=1 WHERE id=? AND space=? AND actor=?",
+                params![id, c.space, c.actor],
+            )
+            .map_err(storage)?;
+        }
+        return Ok(json!({"target":dest.target,"comment":dest.comment,"space":c.space}));
+    }
+    let row = c.readable("notification", id)?;
     let mut target = None;
     for (field, kind) in [
         ("chat", "chat"),
@@ -221,16 +261,24 @@ pub(super) fn feed(c: &Context<'_>, q: &Value) -> Result<Value> {
         {
             continue;
         }
-        if let Ok(row) = scope.readable("notification", &id)
-            && row.fields["read"] != true
-            && row.fields["state"] != "cleared"
-        {
+        let title = if let Ok(Some(dest)) = desktop_destination(&scope, &id) {
+            (!dest.opened).then_some(dest.target.title)
+        } else {
+            scope
+                .readable("notification", &id)
+                .ok()
+                .filter(|r| r.fields["read"] != true && r.fields["state"] != "cleared")
+                .map(|r| r.title)
+        };
+        if let Some(title) = title {
             let link = format!(
                 "shipforge://inbox/{origin}/{}/{}",
                 URL_SAFE_NO_PAD.encode(&space),
                 URL_SAFE_NO_PAD.encode(&id)
             );
-            items.push(json!({"seq":seq,"id":id,"space":space,"title":row.title,"event":event,"link":link}));
+            items.push(
+                json!({"seq":seq,"id":id,"space":space,"title":title,"event":event,"link":link}),
+            );
         }
     }
     Ok(json!({"cursor":cursor,"items":items}))

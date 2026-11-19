@@ -217,7 +217,8 @@ fn stop(state: &Path, cfg: &Config, data: &Path) -> Result<Value> {
 fn identity(config: &Path) -> String {
     hex_digest(config.to_string_lossy().as_bytes())
 }
-fn track(data: &Path, config: &Path) -> Result<()> {
+pub(crate) fn track(data: &Path, config: &Path) -> Result<()> {
+    let _bindings = bindings_guard(data)?;
     save(
         &data
             .join("machine-services")
@@ -225,9 +226,12 @@ fn track(data: &Path, config: &Path) -> Result<()> {
         &json!({"config":config}),
     )
 }
-pub(crate) fn desktop(action: Operation, data: &Path, keep: Option<bool>) -> Result<Value> {
+pub(crate) fn bindings_guard(data: &Path) -> Result<File> {
+    fs::create_dir_all(data).map_err(|e| e.to_string())?;
+    guard(&data.join("machine-bindings.lock"))
+}
+pub(crate) fn known_configs(data: &Path) -> Result<std::collections::BTreeSet<std::path::PathBuf>> {
     let index = data.join("machine-services");
-    let mut out = Vec::new();
     let mut configs = std::collections::BTreeSet::new();
     if let Ok(path) = data.join("machine.json").canonicalize() {
         configs.insert(path);
@@ -242,11 +246,6 @@ pub(crate) fn desktop(action: Operation, data: &Path, keep: Option<bool>) -> Res
                 configs.insert(path);
             }
         }
-    }
-    if action == Operation::DesktopExit
-        && let Some(keep) = keep
-    {
-        update_desktop(data, Some(keep), None)?;
     }
     if index.is_dir() {
         for e in fs::read_dir(index).map_err(|e| e.to_string())? {
@@ -263,7 +262,17 @@ pub(crate) fn desktop(action: Operation, data: &Path, keep: Option<bool>) -> Res
             }
         }
     }
-    for config in configs {
+    Ok(configs)
+}
+pub(crate) fn desktop(action: Operation, data: &Path, keep: Option<bool>) -> Result<Value> {
+    let mut out = Vec::new();
+    if action == Operation::DesktopExit
+        && let Some(keep) = keep
+    {
+        update_desktop(data, Some(keep), None)?;
+    }
+
+    for config in known_configs(data)? {
         out.push(match execute(action, &config, data, None, None, None) {
             Ok(v) => v,
             Err(e) => json!({"error":e}),

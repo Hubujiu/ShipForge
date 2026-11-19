@@ -1,3 +1,5 @@
+pub(crate) mod assistant;
+mod avatar;
 mod share_image;
 mod shares;
 pub use share_image::render as render_share_png;
@@ -37,6 +39,8 @@ pub(crate) fn init(db: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS chat_user_settings(space TEXT,chat TEXT,actor TEXT,muted INTEGER NOT NULL DEFAULT 0,ignore_all INTEGER NOT NULL DEFAULT 0,clear_seq INTEGER NOT NULL DEFAULT 0,PRIMARY KEY(space,chat,actor));
     ").map_err(storage)?;
     sidebar::init(db)?;
+    avatar::init(db)?;
+    assistant::init(db)?;
     start::init(db)?;
     workflows::init(db)?;
     shares::init(db)
@@ -115,6 +119,30 @@ pub(crate) fn require_owner(c: &Context<'_>, room: &Record) -> Result<()> {
 }
 
 pub(crate) fn validate(c: &Context<'_>, old: Option<&Record>, room: &mut Record) -> Result<()> {
+    if assistant::is_room(room) || old.is_some_and(assistant::is_room) {
+        let prior = old.filter(|p| assistant::is_room(p)).ok_or_else(|| {
+            invalid("create assistant conversations from your personal assistant")
+        })?;
+        if [
+            "visibility",
+            "handler_kind",
+            "handler_id",
+            "agent",
+            "creator",
+            "owner",
+            "task",
+            "task_id",
+            "runtime",
+            "model",
+        ]
+        .iter()
+        .any(|key| prior.fields[*key] != room.fields[*key])
+        {
+            return Err(invalid(
+                "personal assistant conversations retain their owner and runtime binding",
+            ));
+        }
+    }
     if let Some(old) = old
         && crate::bots::external_room(c, &old.id)?
         && (room.fields["visibility"] != "private"
@@ -185,6 +213,7 @@ pub(crate) fn before_delete(c: &Context<'_>, room: &Record) -> Result<()> {
         "chat_user_settings",
         "chat_management",
         "chat_sidebar",
+        "sf_chat_avatar",
     ] {
         c.db.execute(
             &format!("DELETE FROM {table} WHERE space=? AND chat=?"),
@@ -249,6 +278,9 @@ fn info(c: &Context<'_>, room: &Record) -> Result<Value> {
     let (muted, ignore_all) = settings(c, &room.id, c.actor)?;
     let mut value = json!({"id":room.id,"owner":leader,"is_owner":is_owner,"group":group(room),"muted":muted,"ignore_all":ignore_all});
     value["completed"] = json!(crate::conversation_tools::reviews::completed(c, &room.id)?);
+    if group(room) {
+        value["avatar"] = avatar::icon(c, room)?;
+    }
     if group(room) || is_owner {
         let mut members = people(c, &room.id, "member")?;
         members.retain(|s| s != &leader);
@@ -353,10 +385,15 @@ fn execute_origin(c: &Context<'_>, q: &Value, op: &str, origin: &str) -> Result<
         crate::domain::check_rev(q, &room)?;
     }
     match op {
+        "chat.avatar" | "chat.avatar.set" => avatar::execute(c, &room, op, q),
         "chat.organize" => sidebar::organize(c, &room, q),
         "chat.fork" => workflows::fork(c, &room, q),
+        "chat.bind_task" | "chat.convert" if assistant::is_room(&room) => Err(invalid(
+            "the built-in assistant supports direct conversations only",
+        )),
         "chat.bind_task" => workflows::bind(c, &room, q),
         "chat.convert" => workflows::convert(c, &room, q),
+        "chat.send" if assistant::is_room(&room) => assistant::send(c, q),
         "chat.send" => workflows::send(c, &room, q, origin),
         "chat.info" => info(c, &room),
         "chat.history" => Ok(json!(workflows::ordered(c, &room)?)),
@@ -409,6 +446,11 @@ fn manage(c: &Context<'_>, q: &Value, room: &Record) -> Result<Value> {
     let action = required(q, "action")?;
     let (leader, _) = owner(c, room)?;
     let is_owner = leader == c.actor;
+    if action != "clear" && assistant::is_room(room) {
+        return Err(forbidden(
+            "personal assistant conversations are private to their member",
+        ));
+    }
     if action != "clear" && start::direct(c, room)? {
         return Err(invalid("a direct conversation is between its two members"));
     }
@@ -444,6 +486,11 @@ fn manage(c: &Context<'_>, q: &Value, room: &Record) -> Result<Value> {
             return Err(invalid("only a group can be dissolved"));
         }
         crate::worker::allow_delete(c, room)?;
+        c.db.execute(
+            "DELETE FROM sf_chat_avatar WHERE space=? AND chat=?",
+            params![c.space, id],
+        )
+        .map_err(storage)?;
         c.db.execute(
             "DELETE FROM chat_shares WHERE space=? AND chat=?",
             params![c.space, id],
@@ -588,14 +635,13 @@ pub(crate) fn notify(c: &Context<'_>, message: &Record) -> Result<()> {
             continue;
         }
         let event = if direct { "chat_mention" } else { "chat" };
-        crate::inbox::deliver_mail(
+        if !crate::inbox::route(
             c,
             &recipient,
             event,
             ("chat", &room.id),
             Some(("message", &message.id)),
-        )?;
-        if !crate::inbox::channel_enabled(c, &recipient, event)? {
+        )? {
             continue;
         }
         let notice=c.create("notification",None,&room.title,json!({"recipient":recipient,"chat":room.id,"message":message.id,"read":false,"state":"inbox","important":direct,"importance":if direct{"important"}else{"other"},"event":event,"mention":direct,"mention_all":everyone,"creator":c.actor}))?;
@@ -608,6 +654,11 @@ pub(crate) fn extend_schema(schema: &mut Value) {
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"chat.start"}}},"then":{"required":["mode"],"properties":{"mode":{"enum":["member","agent","crew","group"]},"members":{"type":"array","items":{"type":"string"}},"agents":{"type":"array","items":{"type":"string"}}},"if":{"properties":{"mode":{"const":"group"}}},"then":{"required":["title"]},"else":{"required":["target"]}}}));
     workflows::schema(schema);
     let rules = schema["allOf"].as_array_mut().expect("schema rules");
+    rules.push(json!({"if":{"properties":{"op":{"const":"assistant.send"}}},"then":{"required":["body"],"properties":{"runtime":{"type":["string","null"]},"model":{"type":["string","null"],"maxLength":256},"body":{"type":"string","minLength":1,"maxLength":262144}}}}));
+    rules.push(
+        json!({"if":{"properties":{"op":{"const":"chat.avatar"}}},"then":{"required":["id"]}}),
+    );
+    rules.push(json!({"if":{"properties":{"op":{"const":"chat.avatar.set"}}},"then":{"required":["id","expected_rev"],"oneOf":[{"required":["content_base64"]},{"required":["remove"],"properties":{"remove":{"const":true}}}]}}));
     rules.push(json!({"if":{"properties":{"op":{"enum":["chat.info","chat.manage","chat.preferences"]}}},"then":{"required":["id"]}}));
     rules.push(json!({"if":{"properties":{"op":{"const":"chat.manage"}}},"then":{
         "required":["action"],"properties":{"action":{"enum":["add","remove","invite","accept","decline","revoke","transfer","leave","dissolve","clear"]},"target_kind":{"enum":["member","agent"]}},

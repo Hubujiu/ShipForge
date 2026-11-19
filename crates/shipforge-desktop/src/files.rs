@@ -14,7 +14,7 @@ pub fn attachment(client: &mut Client, mut request: Value, path: &Path) -> Resul
     let upload = shipforge_client::upload_file(path)?;
     let fields = request.as_object_mut().ok_or("invalid upload request")?;
     if let Value::Object(file) = upload {
-        fields.extend(file);
+        fields.extend(file.into_iter().filter(|(key, _)| key != "op"));
     }
     client.execute(request)
 }

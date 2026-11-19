@@ -101,6 +101,11 @@ impl Context<'_> {
     }
     pub(crate) fn intrinsic_visibility(&self, r: &Record) -> Result<bool> {
         let fields = &r.fields;
+        if r.kind == "assistant" {
+            return Ok(fields["owner"] == self.actor
+                && r.space == self.org_id()?
+                && self.role().is_ok());
+        }
         if r.space != self.space {
             return Ok(false);
         }
@@ -254,6 +259,12 @@ impl Context<'_> {
     }
     pub(crate) fn authorize_replay(&self, q: &Value, result: &Value) -> Result<()> {
         let op = required(q, "op")?;
+        if op == "chat.avatar.set" {
+            return crate::chat::require_owner(self, &self.readable("chat", required(q, "id")?)?);
+        }
+        if op == "assistant.send" {
+            return crate::chat::assistant::replay(self, result);
+        }
         if crate::statuses::WRITES.contains(&op) {
             if op == "task_type.workflow.save" {
                 self.require_admin()?;

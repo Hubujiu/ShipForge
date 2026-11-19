@@ -5,7 +5,6 @@ use std::{
     fs,
     io::{Cursor, Read},
     path::Path,
-    time::Duration,
 };
 use url::Url;
 type Result<T> = std::result::Result<T, String>;
@@ -244,20 +243,19 @@ fn public_url(raw: &str) -> Result<Url> {
     }
     Ok(u)
 }
-fn read_url(url: &Url) -> Result<Vec<u8>> {
-    let agent = ureq::Agent::config_builder()
-        .max_redirects(0)
-        .timeout_global(Some(Duration::from_secs(15)))
-        .build()
-        .new_agent();
-    let mut response = agent.get(url.as_str()).call().map_err(io)?;
+fn read_url(directory: Option<&Path>, url: &Url) -> Result<Vec<u8>> {
+    let agent = crate::network::http(directory, url.as_str(), 15)?;
+    let mut response = agent
+        .get(url.as_str())
+        .call()
+        .map_err(crate::network::failure)?;
     if response.status() != 200 {
         return Err(format!("skill source returned {}", response.status()));
     }
     bytes(response.body_mut().as_reader(), TOTAL)
 }
-pub(crate) fn prepare(q: Value) -> Result<Value> {
-    import_with(q, read_url)
+pub(crate) fn prepare(q: Value, directory: Option<&Path>) -> Result<Value> {
+    import_with(q, |url| read_url(directory, url))
 }
 fn import_with(mut q: Value, fetch: impl FnOnce(&Url) -> Result<Vec<u8>>) -> Result<Value> {
     if q["op"] != "skill.import" {

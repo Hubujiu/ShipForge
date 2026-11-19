@@ -3,15 +3,19 @@ mod bots;
 mod credentials;
 mod files;
 mod identity;
+mod network;
 mod remote;
 pub mod skill_files;
 mod vendors;
 
 pub use bots::qr_png;
+pub use bots::qr_png as png_data_url;
 pub use files::{save_attachment, upload_file};
 pub use identity::link_id as identity_link_id;
+pub use network::{DEVICE_OPS, device_command};
 pub use shipforge_core::runtime_diagnostics;
 pub use shipforge_core::skill_package;
+pub use vendors::forge::verify_forge_hook;
 pub use vendors::receive_cnb;
 
 use directories::ProjectDirs;
@@ -85,6 +89,7 @@ pub fn schema() -> Value {
         operations.extend(bots::LOCAL.iter().map(|op| json!(op)));
         operations.extend(vendors::HOSTED.iter().map(|op| json!(op)));
     }
+    vendors::forge::schema(&mut schema);
     let props = schema["properties"]
         .as_object_mut()
         .expect("core schema properties");
@@ -134,6 +139,7 @@ pub fn schema() -> Value {
         "label":{"type":"string","minLength":1,"maxLength":100}},"not":{"anyOf":[{"required":["actor"]},{"required":["scope"]}]}}}));
     bots::schema(&mut schema);
     identity::schema(&mut schema);
+    network::schema(&mut schema);
     schema
 }
 
@@ -286,6 +292,23 @@ impl Client {
         }
     }
     pub fn execute(&mut self, request: Value) -> Result<Value, String> {
+        let _profile = network::ProfileScope::enter(self.directory.as_deref());
+        if request["op"]
+            .as_str()
+            .is_some_and(|op| DEVICE_OPS.contains(&op))
+        {
+            let dir = self
+                .directory
+                .as_deref()
+                .ok_or("invalid: a device profile is required")?;
+            let reply = device_command(dir, &request)?;
+            if request["op"] == "network.save"
+                && let Backend::Remote(remote) = &mut self.backend
+            {
+                remote.network_changed();
+            }
+            return Ok(reply);
+        }
         if request["op"]
             .as_str()
             .is_some_and(|op| bots::LOCAL.contains(&op))
@@ -298,7 +321,7 @@ impl Client {
             }
             return vendors::hosted(self, op, &request);
         }
-        let request = skill_files::prepare(request)?;
+        let request = skill_files::prepare(request, self.directory.as_deref())?;
         if request["op"]
             .as_str()
             .is_some_and(|op| identity::DEVICE_OPS.contains(&op))

@@ -98,7 +98,11 @@ pub(super) fn list(c: &Context<'_>) -> Result<Value> {
             }
         }
         let id = room.id.clone();
+        let avatar = super::avatar::icon(c, &room)?;
         let mut row = as_value(room);
+        if !avatar.is_null() {
+            row["fields"]["group_avatar"] = avatar;
+        }
         row["fields"]["sidebar"] = json!({"pinned":pin>0,"last_activity":at});
         result.push((std::cmp::Reverse(pin), std::cmp::Reverse(at), id, row));
     }

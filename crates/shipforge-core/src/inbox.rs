@@ -10,6 +10,7 @@ pub(crate) fn init(db: &Connection) -> Result<()> {
         CREATE TABLE IF NOT EXISTS inbox_signals(seq INTEGER PRIMARY KEY AUTOINCREMENT,org TEXT NOT NULL,space TEXT NOT NULL,actor TEXT NOT NULL,event TEXT NOT NULL,notice TEXT NOT NULL,source_kind TEXT,source_id TEXT,desktop INTEGER NOT NULL);
         CREATE INDEX IF NOT EXISTS inbox_desktop_cursor ON inbox_signals(org,actor,desktop,seq);
         CREATE INDEX IF NOT EXISTS inbox_subject ON inbox_signals(space,actor,notice);
+        CREATE TABLE IF NOT EXISTS desktop_notifications(id TEXT PRIMARY KEY,space TEXT NOT NULL,actor TEXT NOT NULL,kind TEXT NOT NULL,target TEXT NOT NULL,opened INTEGER NOT NULL DEFAULT 0);
         CREATE TABLE IF NOT EXISTS follower_objects(space TEXT NOT NULL,task TEXT NOT NULL,kind TEXT NOT NULL,id TEXT NOT NULL,PRIMARY KEY(space,task,kind,id));
         CREATE TABLE IF NOT EXISTS inbox_migrations(version INTEGER PRIMARY KEY);
         CREATE INDEX IF NOT EXISTS records_recipient ON records(space,json_extract(fields,'$.recipient'),updated_at DESC) WHERE kind='notification';").map_err(storage)?;
@@ -152,9 +153,7 @@ pub(crate) fn task_notice(
     {
         return Ok(());
     }
-    let cfg = settings::Settings::load(c, recipient)?;
-    deliver_mail(c, recipient, event, ("task", &task.id), source)?;
-    if !cfg.enabled("inbox", event) {
+    if !route(c, recipient, event, ("task", &task.id), source)? {
         return Ok(());
     }
     let previous:Option<String>=c.db.query_row("SELECT id FROM records WHERE space=?1 AND kind='notification' AND json_extract(fields,'$.task')=?2 AND json_extract(fields,'$.recipient')=?3 AND json_extract(fields,'$.automation') IS NULL AND json_extract(fields,'$.chat') IS NULL ORDER BY created_at,id LIMIT 1",params![c.space,task.id,recipient],|r|r.get(0)).optional().map_err(storage)?;
@@ -178,7 +177,7 @@ pub(crate) fn task_notice(
         Some(r) => c.update(&r, &task.title, fields)?,
         None => c.create("notification", None, &task.title, fields)?,
     };
-    signal(c, &notice, event, source, cfg.enabled("desktop", event))
+    notify_record(c, &notice, event, source)
 }
 fn signal(
     c: &Context<'_>,
@@ -196,17 +195,30 @@ pub(crate) fn channel_enabled(c: &Context<'_>, recipient: &str, event: &str) -> 
 pub(crate) fn email_enabled(c: &Context<'_>, recipient: &str, event: &str) -> Result<bool> {
     Ok(settings::Settings::load(c, recipient)?.enabled("email", event))
 }
-pub(crate) fn deliver_mail(
+/// Deliver independent channels and return whether the caller should update the inbox.
+pub(crate) fn route(
     c: &Context<'_>,
     recipient: &str,
     event: &str,
     target: (&str, &str),
     source: Option<(&str, &str)>,
-) -> Result<()> {
-    if email_enabled(c, recipient, event)? {
+) -> Result<bool> {
+    let config = settings::Settings::load(c, recipient)?;
+    if config.enabled("email", event) {
         crate::mail::notification(c, recipient, event, target, source)?;
     }
-    Ok(())
+    let inbox = config.enabled("inbox", event);
+    if !inbox && config.enabled("desktop", event) {
+        let id = format!("desktop-{}", uuid::Uuid::new_v4());
+        c.db.execute(
+            "INSERT INTO desktop_notifications(id,space,actor,kind,target) VALUES(?,?,?,?,?)",
+            params![id, c.space, recipient, target.0, target.1],
+        )
+        .map_err(storage)?;
+        c.db.execute("INSERT INTO inbox_signals(org,space,actor,event,notice,source_kind,source_id,desktop) VALUES(?,?,?,?,?,?,?,1)",
+            params![c.org_id()?,c.space,recipient,event,id,source.map(|s|s.0),source.map(|s|s.1)]).map_err(storage)?;
+    }
+    Ok(inbox)
 }
 pub(crate) fn task_run(c: &Context<'_>, run: &Record) -> Result<()> {
     let Some(id) = run.fields["task_id"].as_str() else {

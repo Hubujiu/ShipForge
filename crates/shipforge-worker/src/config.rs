@@ -55,6 +55,8 @@ pub struct Config {
     pub runtimes: BTreeMap<String, Runtime>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub runtime_management: BTreeMap<String, crate::runtime_tools::Management>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub runtime_launch: BTreeMap<String, crate::launch_options::Profile>,
     #[serde(default)]
     pub skill_roots: BTreeMap<String, Vec<PathBuf>>,
     #[serde(default)]
@@ -96,6 +98,12 @@ impl Config {
             if tool.tool_name.trim().is_empty() {
                 return Err("an approved MCP tool needs a tool_name".into());
             }
+        }
+        for (name, profile) in &config.runtime_launch {
+            if !config.runtimes.contains_key(name) {
+                return Err("runtime launch profile must name a configured runtime".into());
+            }
+            profile.validate()?;
         }
         for runtime in config
             .runtimes
@@ -199,6 +207,7 @@ impl Config {
             direct_profiles: Default::default(),
             runtimes,
             runtime_management: BTreeMap::new(),
+            runtime_launch: BTreeMap::new(),
             approved_tools: BTreeMap::new(),
             skill_roots: BTreeMap::new(),
         };

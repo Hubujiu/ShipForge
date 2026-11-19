@@ -112,7 +112,12 @@ fn snapshot(cfg: &Config, name: &str, cache: &Value) -> Value {
     let setup = cfg.runtime_management.get(name);
     let manual = win_package(name).is_some() && winget().is_some();
     let previous = cache.get(name).filter(|v| v["present"] == has);
-    json!({"name":name,"kind":if ENVIRONMENTS.contains(&name){"environment"}else{"runtime"},"status":previous.map(|v|v["status"].clone()).unwrap_or_else(||json!(if has{"available"}else{"not_detected"})),"version":previous.and_then(|v|v["version"].as_str()),"configured":cfg.runtimes.contains_key(name),"installable":setup.is_some_and(|m|m.install.is_some())||manual,"upgradable":setup.is_some_and(|m|m.upgrade.is_some())||manual,"testable":cfg.runtimes.contains_key(name)||name=="claude"})
+    let launch = cfg
+        .runtime_launch
+        .get(name)
+        .zip(cfg.runtimes.get(name))
+        .map(|(profile, spec)| profile.public(name, spec));
+    json!({"launch":launch,"name":name,"kind":if ENVIRONMENTS.contains(&name){"environment"}else{"runtime"},"status":previous.map(|v|v["status"].clone()).unwrap_or_else(||json!(if has{"available"}else{"not_detected"})),"version":previous.and_then(|v|v["version"].as_str()),"configured":cfg.runtimes.contains_key(name),"installable":setup.is_some_and(|m|m.install.is_some())||manual,"upgradable":setup.is_some_and(|m|m.upgrade.is_some())||manual,"testable":cfg.runtimes.contains_key(name)||name=="claude"})
 }
 pub fn inventory(cfg: &Config, state: &Path) -> Value {
     let cache = read_cache(state);

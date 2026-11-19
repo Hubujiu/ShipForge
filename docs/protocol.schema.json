@@ -532,6 +532,203 @@
       "if": {
         "properties": {
           "op": {
+            "const": "agent.runtime.options"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "run.enqueue"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "model": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          },
+          "reasoning_effort": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "machine.storage.preview"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "machine.storage.request"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "action"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "machine.storage.take"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "machine_key"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "machine.storage.reserve"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "machine_key",
+          "id",
+          "lease"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "machine.storage.finish"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "machine_key",
+          "id",
+          "lease",
+          "outcome"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "machine.storage.request"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "action": {
+            "enum": [
+              "scan",
+              "clean"
+            ]
+          },
+          "request_id": {
+            "maxLength": 160,
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "action": {
+            "const": "clean"
+          },
+          "op": {
+            "const": "machine.storage.request"
+          }
+        },
+        "required": [
+          "action"
+        ]
+      },
+      "then": {
+        "properties": {
+          "confirm": {
+            "const": true
+          },
+          "expected_snapshot": {
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "type": "string"
+          },
+          "workspace": {
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "type": "string"
+          }
+        },
+        "required": [
+          "workspace",
+          "expected_snapshot",
+          "confirm"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "machine.storage.finish"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "outcome": {
+            "enum": [
+              "success",
+              "reclaim_pending",
+              "conflict",
+              "rescan_required",
+              "failed"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "enum": [
               "run.trigger_now",
               "run.diagnostics",
@@ -2189,6 +2386,86 @@
             ]
           }
         }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "assistant.send"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "maxLength": 262144,
+            "minLength": 1,
+            "type": "string"
+          },
+          "model": {
+            "maxLength": 256,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "runtime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "body"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "chat.avatar"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "chat.avatar.set"
+          }
+        }
+      },
+      "then": {
+        "oneOf": [
+          {
+            "required": [
+              "content_base64"
+            ]
+          },
+          {
+            "properties": {
+              "remove": {
+                "const": true
+              }
+            },
+            "required": [
+              "remove"
+            ]
+          }
+        ],
+        "required": [
+          "id",
+          "expected_rev"
+        ]
       }
     },
     {
@@ -4292,6 +4569,102 @@
       "if": {
         "properties": {
           "op": {
+            "const": "forge.status"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "forge.thread"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "task_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "forge.unlink"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "pair"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "forge.internal"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "action"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "enum": [
               "document.share",
               "chat.slash",
@@ -5389,6 +5762,488 @@
       "if": {
         "properties": {
           "op": {
+            "const": "forge.authorize"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "backlinks": {
+            "type": "boolean"
+          },
+          "body": {
+            "maxLength": 60000,
+            "type": "string"
+          },
+          "commits": {
+            "type": "boolean"
+          },
+          "confirm_public": {
+            "type": "boolean"
+          },
+          "direction": {
+            "enum": [
+              "incoming",
+              "both",
+              "off"
+            ]
+          },
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          },
+          "pull_requests": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "enum": [
+              "organization",
+              "personal"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "purpose"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "forge.credential"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "backlinks": {
+            "type": "boolean"
+          },
+          "body": {
+            "maxLength": 60000,
+            "type": "string"
+          },
+          "commits": {
+            "type": "boolean"
+          },
+          "confirm_public": {
+            "type": "boolean"
+          },
+          "direction": {
+            "enum": [
+              "incoming",
+              "both",
+              "off"
+            ]
+          },
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          },
+          "pull_requests": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "enum": [
+              "organization",
+              "personal"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "purpose",
+          "token"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "forge.disconnect"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "backlinks": {
+            "type": "boolean"
+          },
+          "body": {
+            "maxLength": 60000,
+            "type": "string"
+          },
+          "commits": {
+            "type": "boolean"
+          },
+          "confirm_public": {
+            "type": "boolean"
+          },
+          "direction": {
+            "enum": [
+              "incoming",
+              "both",
+              "off"
+            ]
+          },
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          },
+          "pull_requests": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "enum": [
+              "organization",
+              "personal"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "purpose"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "forge.repositories"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "backlinks": {
+            "type": "boolean"
+          },
+          "body": {
+            "maxLength": 60000,
+            "type": "string"
+          },
+          "commits": {
+            "type": "boolean"
+          },
+          "confirm_public": {
+            "type": "boolean"
+          },
+          "direction": {
+            "enum": [
+              "incoming",
+              "both",
+              "off"
+            ]
+          },
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          },
+          "pull_requests": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "enum": [
+              "organization",
+              "personal"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "forge.pair"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "backlinks": {
+            "type": "boolean"
+          },
+          "body": {
+            "maxLength": 60000,
+            "type": "string"
+          },
+          "commits": {
+            "type": "boolean"
+          },
+          "confirm_public": {
+            "type": "boolean"
+          },
+          "direction": {
+            "enum": [
+              "incoming",
+              "both",
+              "off"
+            ]
+          },
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          },
+          "pull_requests": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "enum": [
+              "organization",
+              "personal"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "direction"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "forge.reply"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "backlinks": {
+            "type": "boolean"
+          },
+          "body": {
+            "maxLength": 60000,
+            "type": "string"
+          },
+          "commits": {
+            "type": "boolean"
+          },
+          "confirm_public": {
+            "type": "boolean"
+          },
+          "direction": {
+            "enum": [
+              "incoming",
+              "both",
+              "off"
+            ]
+          },
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          },
+          "pull_requests": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "enum": [
+              "organization",
+              "personal"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "task_id",
+          "pair",
+          "body",
+          "request_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "forge.deliver"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "backlinks": {
+            "type": "boolean"
+          },
+          "body": {
+            "maxLength": 60000,
+            "type": "string"
+          },
+          "commits": {
+            "type": "boolean"
+          },
+          "confirm_public": {
+            "type": "boolean"
+          },
+          "direction": {
+            "enum": [
+              "incoming",
+              "both",
+              "off"
+            ]
+          },
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          },
+          "pull_requests": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "enum": [
+              "organization",
+              "personal"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "pair"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "forge.refresh"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "backlinks": {
+            "type": "boolean"
+          },
+          "body": {
+            "maxLength": 60000,
+            "type": "string"
+          },
+          "commits": {
+            "type": "boolean"
+          },
+          "confirm_public": {
+            "type": "boolean"
+          },
+          "direction": {
+            "enum": [
+              "incoming",
+              "both",
+              "off"
+            ]
+          },
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          },
+          "pull_requests": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "enum": [
+              "organization",
+              "personal"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "pair",
+          "task_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "forge.push"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "backlinks": {
+            "type": "boolean"
+          },
+          "body": {
+            "maxLength": 60000,
+            "type": "string"
+          },
+          "commits": {
+            "type": "boolean"
+          },
+          "confirm_public": {
+            "type": "boolean"
+          },
+          "direction": {
+            "enum": [
+              "incoming",
+              "both",
+              "off"
+            ]
+          },
+          "id": {
+            "enum": [
+              "github",
+              "gitlab",
+              "gitlab-self"
+            ]
+          },
+          "pull_requests": {
+            "type": "boolean"
+          },
+          "purpose": {
+            "enum": [
+              "organization",
+              "personal"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "pair",
+          "task_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "enum": [
               "asana.accounts",
               "asana.credential",
@@ -5403,6 +6258,15 @@
               "teambition.preview",
               "teambition.synchronize",
               "teambition.push",
+              "forge.authorize",
+              "forge.credential",
+              "forge.repositories",
+              "forge.pair",
+              "forge.disconnect",
+              "forge.reply",
+              "forge.deliver",
+              "forge.push",
+              "forge.refresh",
               "cnb.credential",
               "cnb.repositories",
               "cnb.pair",
@@ -6143,6 +7007,61 @@
           "id"
         ]
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "network.save"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "mode",
+          "expected_rev"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "network.save",
+              "network.test"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "clear_password": {
+            "type": "boolean"
+          },
+          "endpoint": {
+            "type": "string"
+          },
+          "mode": {
+            "enum": [
+              "system",
+              "direct",
+              "manual"
+            ]
+          },
+          "password": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "test_url": {
+            "format": "uri",
+            "type": "string"
+          },
+          "username": {
+            "type": "string"
+          }
+        }
+      }
     }
   ],
   "properties": {
@@ -6396,6 +7315,8 @@
         "jira.read",
         "invitation.list",
         "chat.info",
+        "chat.avatar",
+        "assistant.history",
         "chat.sidebar",
         "chat.history",
         "chat.invitations",
@@ -6481,6 +7402,9 @@
         "invitation.revoke",
         "invitation.accept",
         "chat.manage",
+        "chat.avatar.set",
+        "assistant.open",
+        "assistant.send",
         "chat.start",
         "organization.configure",
         "organization.depart",
@@ -6537,6 +7461,7 @@
         "status.library.remove",
         "task_type.workflow.save",
         "agent.resolve",
+        "agent.runtime.options",
         "catalog.list",
         "catalog.install",
         "catalog.detail",
@@ -6556,6 +7481,11 @@
         "machine.heartbeat",
         "machine.stopped",
         "machine.runtimes",
+        "machine.storage.preview",
+        "machine.storage.request",
+        "machine.storage.take",
+        "machine.storage.reserve",
+        "machine.storage.finish",
         "machine.runtime.request",
         "machine.runtime.jobs",
         "machine.runtime.finish",
@@ -6580,6 +7510,10 @@
         "connector.ingest",
         "connector.export",
         "bot.bindings",
+        "forge.status",
+        "forge.thread",
+        "forge.internal",
+        "forge.unlink",
         "bot.attach",
         "bot.policy",
         "bot.detach",
@@ -6670,6 +7604,15 @@
         "teambition.preview",
         "teambition.synchronize",
         "teambition.push",
+        "forge.authorize",
+        "forge.credential",
+        "forge.repositories",
+        "forge.pair",
+        "forge.disconnect",
+        "forge.reply",
+        "forge.deliver",
+        "forge.push",
+        "forge.refresh",
         "cnb.credential",
         "cnb.repositories",
         "cnb.pair",
@@ -6687,7 +7630,12 @@
         "access.account.impact",
         "access.account.verify",
         "access.account.close",
-        "access.account.logout"
+        "access.account.logout",
+        "network.settings",
+        "network.save",
+        "network.test",
+        "device.about",
+        "device.update"
       ],
       "type": "string"
     },

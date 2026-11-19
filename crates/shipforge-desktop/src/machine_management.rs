@@ -15,6 +15,9 @@ mod tray;
 
 #[derive(Clone)]
 pub enum Dialog {
+    AgentLaunch(Value),
+    Storage(Value),
+    CleanStorage(String, Value),
     SettingsFile(String),
     Policy(String, Value),
     Restart(String),
@@ -24,11 +27,17 @@ pub enum Dialog {
 }
 #[derive(Clone)]
 pub enum Action {
+    AgentLaunch(String),
+    Storage(String),
+    Scan(String),
     Settings,
     Inventory(String),
     Quit,
 }
 pub(super) enum Reply {
+    AgentLaunch,
+    Storage,
+    StorageQueued(String),
     Policy(String),
     Saved,
     Quit,
@@ -47,11 +56,17 @@ impl Dialog {
             Self::Restart(_) => "重新启动工作机",
             Self::Quit(_) => "退出 ShipForge",
             Self::Runtimes(_) => "运行时能力",
+            Self::AgentLaunch(_) => "模型与运行参数",
+            Self::Storage(_) => "管理存储空间",
+            Self::CleanStorage(..) => "确认清理工作目录",
             Self::Command(_, _, op) => operation(op),
         }
     }
     pub fn submit(&self) -> &'static str {
         match self {
+            Self::AgentLaunch(_) => "关闭",
+            Self::Storage(_) => "关闭",
+            Self::CleanStorage(..) => "确认清理",
             Self::SettingsFile(_) => "读取配置",
             Self::Policy(..) => "保存",
             Self::Restart(_) => "确认重启",
@@ -104,6 +119,27 @@ fn operation(op: &str) -> &'static str {
         "upgrade" => "升级运行时",
         "test" => "测试模型连接",
         _ => "刷新",
+    }
+}
+fn format_bytes(n: u64) -> String {
+    if n >= 1024 * 1024 * 1024 {
+        format!("{:.2} GiB", n as f64 / 1_073_741_824.)
+    } else if n >= 1024 * 1024 {
+        format!("{:.1} MiB", n as f64 / 1_048_576.)
+    } else {
+        format!("{n} B")
+    }
+}
+fn storage_reason(v: &Value) -> &'static str {
+    match v.as_str() {
+        None => "可清理",
+        Some("active") => "运行中",
+        Some("pending" | "recovery") => "等待恢复",
+        Some("open_task") => "任务尚未结束",
+        Some("conversation") => "对话可继续",
+        Some("bound_repository") => "绑定目录",
+        Some("links" | "git_locked") => "目录受保护",
+        _ => "归属未确认",
     }
 }
 fn state(s: &Value) -> String {
@@ -211,6 +247,9 @@ impl Workbench {
                 After::MachineManagement(Reply::Inventory),
                 false,
             ),
+            Action::AgentLaunch(id)=>self.send(json!({"op":"agent.runtime.options","space":self.loc.space,"id":id}),After::MachineManagement(Reply::AgentLaunch),false),
+            Action::Storage(id)=>self.send(json!({"op":"machine.storage.preview","space":self.loc.space,"id":id}),After::MachineManagement(Reply::Storage),false),
+            Action::Scan(id)=>self.send(json!({"op":"machine.storage.request","space":self.loc.space,"id":id,"request_id":uuid::Uuid::new_v4().to_string(),"action":"scan"}),After::MachineManagement(Reply::StorageQueued(id)),true),
         }
     }
     pub(super) fn machine_management_submit(
@@ -226,6 +265,9 @@ impl Workbench {
         Dialog::Restart(path)=>{self.local_service_request(json!({"config":path,"service_operation":"restart"}),Reply::Policy(path))?;}
         Dialog::Quit(_)=>{values["all"]=json!(true);values["service_operation"]=json!("desktop-exit");self.local_service_request(values,Reply::Quit)?;}
         Dialog::Runtimes(_)=>self.close_form(w,cx),
+        Dialog::AgentLaunch(_)=>self.close_form(w,cx),
+        Dialog::Storage(_)=>self.close_form(w,cx),
+        Dialog::CleanStorage(id,entry)=>self.send(json!({"op":"machine.storage.request","action":"clean","confirm":true,"space":self.loc.space,"id":id,"workspace":entry["id"],"expected_snapshot":entry["snapshot"],"request_id":uuid::Uuid::new_v4().to_string()}),After::MachineManagement(Reply::StorageQueued(id)),true),
         Dialog::Command(id,runtime,action)=>self.send(json!({"op":"machine.runtime.request","space":self.loc.space,"id":id,"runtime":runtime,"action":action,"request_id":uuid::Uuid::new_v4().to_string()}),After::MachineManagement(Reply::Queued(id)),true)
     }
         Ok(())
@@ -261,6 +303,17 @@ impl Workbench {
                 self.open_form(Mode::MachineManagement(Dialog::Runtimes(v)), w, cx);
                 self.machine_poll_at = Instant::now() + Duration::from_secs(2);
             }
+            Reply::AgentLaunch => {
+                self.open_form(Mode::MachineManagement(Dialog::AgentLaunch(v)), w, cx)
+            }
+            Reply::Storage => {
+                self.open_form(Mode::MachineManagement(Dialog::Storage(v)), w, cx);
+                self.machine_poll_at = Instant::now() + Duration::from_secs(2);
+            }
+            Reply::StorageQueued(id) => {
+                self.notify_text("已加入工作机队列");
+                self.machine_management_action(Action::Storage(id), w, cx);
+            }
             Reply::Queued(id) => self.machine_management_action(Action::Inventory(id), w, cx),
         }
     }
@@ -272,6 +325,20 @@ impl Workbench {
                 .values()
                 .any(|p| matches!(p.after, After::MachineManagement(_)))
         {
+            return;
+        }
+        if let Some(Mode::MachineManagement(Dialog::Storage(data))) =
+            self.form.as_ref().map(|f| &f.mode)
+        {
+            if data["jobs"].as_array().into_iter().flatten().any(|j| {
+                matches!(
+                    j["state"].as_str(),
+                    Some("queued" | "running" | "committing")
+                )
+            }) {
+                self.machine_poll_at = Instant::now() + Duration::from_secs(2);
+                self.send(json!({"op":"machine.storage.preview","space":self.loc.space,"id":data["machine"]}),After::MachineManagement(Reply::Storage),false);
+            }
             return;
         }
         let Some(Mode::MachineManagement(Dialog::Runtimes(data))) =
@@ -413,6 +480,207 @@ impl Workbench {
                         MUTED,
                     ));
                 }
+            }
+            Dialog::AgentLaunch(v) => {
+                let select = |model: Option<&str>, effort: Option<&str>| {
+                    UiAction::Apply(
+                        json!({"op":"update","space":self.loc.space,"kind":"agent","id":v["id"],"expected_rev":v["rev"],"fields":{"model":model.unwrap_or(""),"reasoning_effort":effort.unwrap_or("")}}),
+                        "已保存模型设置".into(),
+                    )
+                };
+                if v["machines"].as_array().is_none_or(Vec::is_empty) {
+                    body = body.child(text("该运行时尚未公布模型与参数。", 13., MUTED));
+                }
+                for m in v["machines"].as_array().into_iter().flatten() {
+                    let launch = &m["launch"];
+                    let mid = m["id"].as_str().unwrap_or("");
+                    body = body.child(text(m["title"].as_str().unwrap_or("").to_owned(), 14., INK));
+                    if let Some(fixed) = launch["fixed_model"].as_str() {
+                        body = body.child(text(
+                            format!("{} · {fixed}", crate::locale::label("机器固定模型")),
+                            13.,
+                            MUTED,
+                        ));
+                    }
+                    if v["can_manage"] == true && launch["fixed_model"].is_null() {
+                        body = body.child(btn(
+                            format!("model-default-{mid}"),
+                            "跟随运行时默认模型",
+                            select(None, None),
+                        ));
+                    }
+                    for (name, efforts) in launch["models"].as_object().into_iter().flatten() {
+                        let current = launch["fixed_model"]
+                            .as_str()
+                            .or(v["model"].as_str().filter(|s| !s.is_empty()))
+                            .or(launch["default_model"].as_str())
+                            == Some(name);
+                        if v["can_manage"] == true && launch["fixed_model"].is_null() {
+                            body = body.child(
+                                outlined(self.button(
+                                    format!("choose-model-{mid}-{name}"),
+                                    name.clone(),
+                                    select(Some(name), None),
+                                    cx,
+                                ))
+                                .child(name.clone()),
+                            );
+                        }
+                        if current && v["can_manage"] == true {
+                            for effort in efforts
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(Value::as_str)
+                            {
+                                let label = format!("{name} · {effort}");
+                                body = body.child(
+                                    outlined(self.button(
+                                        format!("choose-effort-{mid}-{effort}"),
+                                        label.clone(),
+                                        select(
+                                            launch["fixed_model"].is_null().then_some(name),
+                                            Some(effort),
+                                        ),
+                                        cx,
+                                    ))
+                                    .child(label),
+                                );
+                            }
+                        }
+                    }
+                    for (name, values) in
+                        launch["argument_choices"].as_object().into_iter().flatten()
+                    {
+                        body = body.child(text(
+                            format!(
+                                "{name} · {}",
+                                values
+                                    .as_array()
+                                    .into_iter()
+                                    .flatten()
+                                    .filter_map(Value::as_str)
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            ),
+                            12.,
+                            MUTED,
+                        ));
+                    }
+                    for name in launch["environment_names"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter_map(Value::as_str)
+                    {
+                        body = body.child(text(format!("ENV · {name}"), 12., MUTED));
+                    }
+                }
+            }
+            Dialog::Storage(v) => {
+                let id = v["machine"].as_str().unwrap_or("");
+                if let Some(scanned) = v["scanned_at"].as_i64() {
+                    let at = chrono::DateTime::from_timestamp_millis(scanned)
+                        .map(|v| {
+                            v.with_timezone(&chrono::Local)
+                                .format("%Y-%m-%d %H:%M")
+                                .to_string()
+                        })
+                        .unwrap_or_default();
+                    body = body.child(text(
+                        format!(
+                            "{} · {} · {at}",
+                            crate::locale::label("本机服务占用"),
+                            format_bytes(v["total_bytes"].as_u64().unwrap_or(0))
+                        ),
+                        14.,
+                        INK,
+                    ));
+                }
+                if let Some(bytes) = v["pending_reclaim_bytes"].as_u64().filter(|b| *b > 0) {
+                    body = body.child(text(
+                        format!(
+                            "{} · {}",
+                            crate::locale::label("待释放空间"),
+                            format_bytes(bytes)
+                        ),
+                        13.,
+                        MUTED,
+                    ));
+                }
+                if v["online"] == true {
+                    body = body.child(btn(
+                        "scan-worker-storage".into(),
+                        "重新统计",
+                        UiAction::MachineManagement(Action::Scan(id.into())),
+                    ));
+                }
+                if v["entries"].as_array().is_none_or(Vec::is_empty) {
+                    body = body.child(text(
+                        if v["scanned_at"].is_null() {
+                            "尚未统计，请连接工作机并重新统计。"
+                        } else {
+                            "暂无已登记的工作目录。"
+                        },
+                        13.,
+                        MUTED,
+                    ));
+                }
+                for entry in v["entries"].as_array().into_iter().flatten() {
+                    let key = entry["id"].as_str().unwrap_or("");
+                    let name = entry["title"]
+                        .as_str()
+                        .unwrap_or_else(|| &key[..key.len().min(10)]);
+                    body = body.child(text(
+                        format!(
+                            "{name} · {} · {}",
+                            format_bytes(entry["bytes"].as_u64().unwrap_or(0)),
+                            crate::locale::label(storage_reason(&entry["protection"]))
+                        ),
+                        13.,
+                        INK,
+                    ));
+                    if v["online"] == true && entry["protection"].is_null() {
+                        body = body.child(btn(
+                            format!("clean-storage-{key}"),
+                            "清理工作目录",
+                            form(Dialog::CleanStorage(id.into(), entry.clone())),
+                        ));
+                    }
+                }
+                for j in v["jobs"].as_array().into_iter().flatten().take(3) {
+                    body = body.child(text(
+                        format!(
+                            "{} · {}",
+                            crate::locale::label(if j["action"] == "scan" {
+                                "重新统计"
+                            } else {
+                                "清理工作目录"
+                            }),
+                            crate::locale::label(match j["state"].as_str() {
+                                Some("queued") => "排队中",
+                                Some("done") => "成功",
+                                Some("failed") => "目录状态已变化，请重新统计",
+                                _ => "处理中",
+                            })
+                        ),
+                        12.,
+                        MUTED,
+                    ));
+                }
+            }
+            Dialog::CleanStorage(_, entry) => {
+                body = body
+                    .child(text(
+                        format!(
+                            "{} · {}",
+                            entry["title"].as_str().unwrap_or("工作目录"),
+                            format_bytes(entry["bytes"].as_u64().unwrap_or(0))
+                        ),
+                        14.,
+                        INK,
+                    ))
+                    .child(text("确认后删除这份工作副本及其中的本地更改。", 13., MUTED))
             }
         }
         body.into_any_element()

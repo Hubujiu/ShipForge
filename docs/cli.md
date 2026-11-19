@@ -1,5 +1,19 @@
 # ShipForge 命令行与 JSON 协议
 
+### 个人小助手与群头像
+
+`assistant.open` 首次为当前组织成员创建系统助手，返回首选 Runtime 和最近会话。`assistant.history` 以只读方式查看已建立的助手、可用 Runtime 和最多 200 条会话。`assistant.send` 接受 `body`、可选的 `runtime`、`model` 和 `request_id`。省略 `id` 开始新会话，提供 `id` 继续同一会话。结果中的 `space` 是运行和消息所在的空间。使用该空间和返回的 `id` 查询 `chat.history`。
+
+```json
+{"op":"assistant.send","space":"default","body":"整理这段会议记录","runtime":"local-tool","request_id":"meeting-01"}
+```
+
+`chat.avatar` 读取群头像、摘要和群修订号。群主调用 `chat.avatar.set` 时提供 `id` 和 `expected_rev`，用 `content_base64` 上传图片，或用 `"remove":true` 移除图片。可用 `shipforge --space SPACE group-avatar CHAT ./avatar.png --rev 3` 直接选本地图片。参与者通过 `chat.info` 或 `chat.sidebar` 获得缩略图。[Windows 使用方法](conversations.md)
+
+`machine.storage.preview` 返回工作机存储占用、受保护副本和清理结果。工作机所有者使用 `machine.storage.request` 请求统计或确认清理；工作机用 `machine.storage.take`、`machine.storage.reserve`、`machine.storage.finish` 完成操作。`agent.runtime.options` 返回可见机器公布的模型、思考深度和启动参数，`run.enqueue` 可传本次运行的 `model` 和 `reasoning_effort`。[存储及运行参数示例](storage-and-models.md)
+
+`network.settings` 查看设备代理，`network.test` 测试当前草稿，`network.save` 按 `expected_rev` 保存并应用。`device.about` 读取安装版本及随包手册，`device.update` 查询正式版和 Windows 安装包。五项操作可独立于项目数据库运行。[设备网络与更新](device-network.md)
+
 `status.library` 读取当前组织的状态定义、译名、用量及其在当前空间的 ID。`status.library.save` 创建或按 `expected_rev` 编辑定义。`task_type.workflow` 读取当前空间指定类型的有序状态及有效默认值，`task_type.workflow.save` 按类型的修订号保存有序的 `statuses` 和可选 `default_status`。`status.library.removal` 预览删除与迁入影响，`status.library.remove` 使用同一目标及刚获得的 `preview` 原子迁移数据。[组织状态与类型工作流示例](status-workflows.md)
 
 `machine.runtimes` 读取已发现的工具、版本、在线状态与操作历史。机器所有者通过 `machine.runtime.request` 发起 `rescan`、`install`、`upgrade` 或 `test`。受托工作机通过 `machine.runtime.publish`、`machine.runtime.jobs`、`machine.runtime.finish` 与 `machine.stopped` 报告执行情况。本机 `shipforge-worker service` 管理监督进程、Windows 登录与退出策略。[机器管理命令与配置](machine-management.md)
@@ -159,6 +173,15 @@ $task = (.\shipforge.exe --data-dir $workspace create task '发布前检查' | C
 管理员可用 `im.bind`、`im.unbind` 管理任务与话题的绑定，请求中传连接器 `id`、`task_id`、`provider` 和已预览的 `payload`。查看任务的外发目标用 `im.threads`。向特定 Slack 话题发送评论用 `im.reply`，传入目标连接器与话题对象、任务 ID、正文和稳定的 `request_id`。标准任务评论供内部讨论。原生 Slack 服务支持签名回调、URL 验证和多空间分流。`shipforge-worker slack-deliver --space <空间> --connector <ID>` 领取已授权的消息并回原线程。队列可用 `im.outbox` 按投递状态查询。`im.claim` 和 `im.ack` 领取与确认一次投递。通过 `im.retry` 核对远端已收消息，或在确认需要重发后重新入队。[Slack 配置与恢复](../crates/shipforge-core/PROVIDERS.md)
 
 GitHub Issues 可通过机器端 `github-sync` 拉取，`github-push` 显式回写。要将 GitHub/GitLab 提交与 PR/MR 关联到已有任务，在对应连接器上设置 `repository`、`enabled:true` 与 `link_tasks:true`。原生 GitHub 与 GitLab 回调或 CLI 验证的原始载荷能按提交正文、请求标题、描述及源分支中的任务编号记录活动。结果含 `links` 和 `review_runs`。可选的 `review_rule_id` 将需要审查的请求路由给已有 Webhook 自动化。任务详情提供原页面链接，PR 合并后也能查看活动。[代码仓库接入与自动审查](../crates/shipforge-core/PROVIDERS.md)
+
+#### GitHub App 与 GitLab 项目配对
+
+`forge.status` 返回当前空间的仓库及本人和组织的连接状态。`id` 取 `github`、`gitlab` 或 `gitlab-self`。管理员用 `forge.authorize` 发起 GitHub 或 GitLab.com 的浏览器授权，再提交同一操作的 `callback`。GitHub 组织授权另传 `installation`。自建 GitLab 使用 `forge.credential` 并传 `instance` 和 `token`。授权及 `forge.disconnect` 的 `purpose` 为 `organization` 或 `personal`。请通过标准输入传入令牌与回调。
+
+`forge.repositories` 枚举安装范围内的仓库或具有 Maintainer 权限的 GitLab 项目。`forge.pair` 接收来源提供的 `repository_id`，方向为 `incoming` 或 `both`，可设置 `backlinks`、`pull_requests`、`commits`。私有空间向公开仓库外发时需传 `confirm_public:true`。以 `direction:"off"` 和 `pair` 解除仓库配对。配对后才新建的来源 Issue 会同步为任务。
+
+`forge.thread` 按 `task_id` 读取来源信息和评论。以 `pair`、`task_id`、`body`、稳定的 `request_id` 调用 `forge.reply` 可向双向配对的 Issue 发言，回执含 `identity` 和 `fallback`。`forge.refresh` 从来源读取该配对任务的最新字段。`forge.push` 显式发布本地修改，远端版本冲突时先刷新。`forge.unlink` 解除单个任务的关联并保留任务。三者都传 `pair` 和 `task_id`。`forge.deliver` 让管理员重试一个仓库配对的待发任务回链。`forge.internal` 由已验证的服务适配器调用；团队命令端点会拒绝直接提交此操作。[部署、Webhook 与 Windows 操作](repository-integrations.md)
+
 
 ### Agent 工作时段
 

@@ -32,6 +32,16 @@ pub(crate) fn export(c: &Context<'_>) -> Result<Value> {
                 .into_iter()
                 .filter(|row| row.space == c.space)
                 .map(|mut row| {
+                    // A system assistant belongs to one member of one organization. Import its
+                    // saved conversation as private history without the source execution binding.
+                    if row.kind == "chat"
+                        && crate::chat::assistant::is_room(&row)
+                        && let Some(fields) = row.fields.as_object_mut()
+                    {
+                        for key in ["handler_kind", "handler_id", "runtime", "model"] {
+                            fields.remove(key);
+                        }
+                    }
                     if row.kind == "task"
                         && let Some(f) = row.fields.as_object_mut()
                     {

@@ -5,9 +5,11 @@ use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet};
 use uuid::Uuid;
 mod cnb;
+pub(crate) mod forge;
 pub(crate) use cnb::command as cnb_command;
 
 pub(crate) fn init(db: &Connection) -> Result<()> {
+    forge::init(db)?;
     cnb::init(db)?;
     db.execute_batch("CREATE TABLE IF NOT EXISTS sf_vcs_events (
         space TEXT NOT NULL,connector TEXT NOT NULL,event TEXT NOT NULL,hash TEXT NOT NULL,response TEXT NOT NULL,
