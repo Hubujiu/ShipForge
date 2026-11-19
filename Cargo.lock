@@ -6199,6 +6199,7 @@ dependencies = [
  "tiny_http",
  "ureq",
  "uuid",
+ "windows 0.61.3",
 ]
 
 [[package]]
