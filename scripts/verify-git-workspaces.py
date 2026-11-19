@@ -138,15 +138,15 @@ print(json.dumps({"status":"done","result":Path("baseline.txt").read_text()}))
             before = call("git.settings", level=level, **fields)
             return call("git.configure", level=level, expected_rev=before["rev"], settings=settings, **fields)
 
-        def queued_run(**extra):
-            row = call("run.enqueue", handler_id="build", instruction="Verify baseline", **extra)
+        def queued_run(instruction, **extra):
+            row = call("run.enqueue", handler_id="build", instruction=instruction, **extra)
             result = run_worker("run", "--once")
             assert len(result["runs"]) == 1 and result["runs"][0]["id"] == row["id"], result
             row = call("get", kind="run", id=row["id"])
             fields = row["fields"]
             assert fields["status"] == "done", fields
             checkout = next(Path(item["location"]) for item in fields["artifacts"] if item["type"] == "workspace")
-            return checkout, fields["result"], row["id"]
+            return checkout, fields["result"]
 
         with git_http(bare, env) as url:
             save("organization", {
@@ -154,14 +154,15 @@ print(json.dumps({"status":"done","result":Path("baseline.txt").read_text()}))
             })
             save("space", {"repositories": [{"url": url, "branch": "feature/base"}]})
             call("create", kind="agent", id="build", title="Builder", fields={"runtime": "fixture"})
-            one, feature, first_run = queued_run()
+            first_title = "Remote feature branch"
+            one, feature = queued_run(first_title)
             assert feature == "feature"
             assert git(one, "show", "-s", "--format=%an|%ae|%cn|%ce") == "组织作者|author@example.test|Machine Committer|machine@example.test"
             trailer = "Co-authored-by: ShipForge <shipforge@users.noreply.github.com>"
             assert git(one, "log", "-1", "--format=%B").splitlines().count(trailer) == 1
             assert (one / "user-hook-output").read_text(encoding="ascii").strip() == "existing hook"
             save("agent", {"author": {"coauthor": False}}, id="build")
-            two, default, _ = queued_run(checkout_branch="main")
+            two, default = queued_run("Remote branch override", checkout_branch="main")
             assert default == "main" and one != two
             assert git(one, "rev-parse", "--git-common-dir") == git(two, "rev-parse", "--git-common-dir")
             assert trailer not in git(two, "log", "-1", "--format=%B")
@@ -170,21 +171,22 @@ print(json.dumps({"status":"done","result":Path("baseline.txt").read_text()}))
             git(upstream, "config", "user.name", "Local Author")
             git(upstream, "config", "user.email", "local@example.test")
             call("update", kind="agent", id="build", fields={"directory_mode": "isolated", "profile": "@workspace"})
-            local, _, _ = queued_run()
+            local, _ = queued_run("Explicit machine workspace")
             assert git(local, "show", "-s", "--format=%an|%ae") == "Local Author|local@example.test"
             assert git(upstream, "log", "-1", "--format=%s") == "default"
             call("update", kind="agent", id="build", fields={"directory_mode": "temporary"})
-            empty, result, _ = queued_run()
+            empty, result = queued_run("Empty temporary workspace")
             assert result == "temporary" and not (empty / ".git").exists()
             machine = settings["machine_id"]
             call("machine.storage.request", id=machine, action="scan")
             run_worker("run", "--once")
             listing = call("machine.storage.preview", id=machine)
-            item = next(entry for entry in listing["entries"] if first_run in entry["runs"])
+            item = next(entry for entry in listing["entries"] if entry["title"] == first_title)
             assert item["protection"] is None, item
             call("machine.storage.request", id=machine, action="clean", workspace=item["id"],
                  expected_snapshot=item["snapshot"], confirm=True)
             run_worker("run", "--once")
+            assert call("machine.storage.preview", id=machine)["jobs"][0]["outcome"] == "success"
             assert not one.exists() and two.is_dir() and upstream.is_dir()
             assert git(two, "rev-parse", "--is-inside-work-tree") == "true"
     print("Verified actual Git HTTP fetch, shared cache, independent branches, author inheritance, Git committer, existing hooks, opt-out and verified cleanup.")
