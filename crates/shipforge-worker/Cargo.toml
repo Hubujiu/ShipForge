@@ -7,6 +7,7 @@ license = "MIT"
 description = "ShipForge local machine agent host and integration adapters"
 
 [dependencies]
+chrono.workspace = true
 dunce.workspace = true
 base64 = "0.22"
 shipforge-client = { path = "../shipforge-client" }

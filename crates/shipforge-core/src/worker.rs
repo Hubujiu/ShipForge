@@ -8,6 +8,8 @@ use uuid::Uuid;
 
 #[path = "automation.rs"]
 mod automation;
+#[path = "automation_runs.rs"]
+pub(crate) mod automation_runs;
 pub(crate) use automation::ingest_verified as forge_ingest;
 mod capabilities;
 mod crew_workspace;
@@ -41,6 +43,8 @@ pub(crate) const OPS: &[&str] = &[
     "machine.stopped",
     "machine.runtimes",
     "machine.storage.preview",
+    "machine.storage.configure",
+    "machine.storage.pin",
     "machine.storage.request",
     "machine.storage.take",
     "machine.storage.reserve",
@@ -65,11 +69,18 @@ pub(crate) const OPS: &[&str] = &[
     "run.tool",
     "run.discussion",
     "automation.fire",
+    "automation.history",
+    "automation.status",
+    "automation.lifecycle",
+    "automation.conversation",
+    "automation.retry",
     "automation.tick",
     "connector.ingest",
     "connector.export",
 ];
 pub(crate) const READ_OPS: &[&str] = &[
+    "automation.history",
+    "automation.status",
     "agent.runtime.options",
     "machine.storage.preview",
     "machine.runtimes",
@@ -86,6 +97,7 @@ pub(crate) const READ_OPS: &[&str] = &[
 const LEASE_MS: i64 = 120_000;
 
 pub(crate) fn extend_schema(schema: &mut Value) {
+    automation_runs::schema(schema);
     capabilities::schema(schema);
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"agent.runtime.options"}}},"then":{"required":["id"]}}));
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"run.enqueue"}}},"then":{"properties":{"model":{"type":"string","minLength":1,"maxLength":160},"reasoning_effort":{"type":"string","minLength":1,"maxLength":160}}}}));
@@ -229,6 +241,7 @@ fn sql_init(db: &Connection) -> Result<()> {
        CREATE INDEX IF NOT EXISTS sf_lease_expiry ON sf_run_leases(expires,space) WHERE response_hash IS NULL;").map_err(db_error)
 }
 pub(crate) fn init(db: &Connection) -> Result<()> {
+    automation_runs::init(db)?;
     capabilities::init(db)?;
     storage_management::init(db)?;
     directories::init(db)?;
@@ -248,6 +261,11 @@ pub(crate) fn dispatch(c: &Context<'_>, q: &Value) -> Option<Result<Value>> {
             c.require_edit()?;
         }
         match op {
+            "automation.history"
+            | "automation.status"
+            | "automation.lifecycle"
+            | "automation.conversation"
+            | "automation.retry" => automation_runs::execute(c, op, q),
             "run.trigger_now" => scheduling::trigger_now(c, q),
             "run.diagnostics" => crate::runtime_diagnostics::report(c, q),
             "machine.diagnostics" => crate::runtime_diagnostics::machine(c, q),
@@ -519,7 +537,7 @@ pub(crate) fn enqueue(
         return read(c, "run", &id);
     }
     crate::agents::usable(c, kind, handler, fields["parent_id"].as_str())?;
-    let config = if kind == "assistant" {
+    let mut config = if kind == "assistant" {
         crate::chat::assistant::configuration(c, handler, &fields)?
     } else {
         snapshot(c, handler, kind)?
@@ -538,9 +556,32 @@ pub(crate) fn enqueue(
     }
     fields["task"] = fields["task_id"].clone();
     fields["chat"] = fields["chat_id"].clone();
+    if fields["unattended"] != true
+        && let Some(room) = fields["chat_id"].as_str()
+    {
+        let chat = c.get("chat", room)?;
+        if chat.fields["automation_rule"].is_string()
+            || chat.fields["external_provider"].is_string()
+        {
+            fields["unattended"] = json!(true);
+            automation_runs::continuation(c, &chat, &mut fields)?;
+        }
+    }
+    if fields["unattended"] == true
+        || fields["origin_kind"] == "automation"
+        || kind == crate::task_assistants::KIND
+    {
+        fields["unattended"] = json!(true);
+        fields["interaction"] =
+            json!({"mode":"unattended","ask_user":false,"request_approval":false});
+    }
     fields["handler_id"] = json!(handler);
     fields["handler_kind"] = json!(kind);
     fields["runtime"] = config["runtime"].clone();
+    let workspace = crate::chat::fork_directory::pin(c, &fields["chat_id"], &mut config)?;
+    if !workspace.is_null() {
+        fields["directory_fork"] = workspace;
+    }
     fields["config"] = config;
     fields["crew_workspace"] = crew_workspace::snapshot(c, &handler_record, &fields)?;
     scheduling::initialize(&mut fields, now())?;
@@ -765,6 +806,9 @@ pub(crate) fn cancel(c: &Context<'_>, r: &Record) -> Result<Record> {
 }
 fn retry(c: &Context<'_>, q: &Value) -> Result<Value> {
     let run = read(c, "run", req(q, "id")?)?;
+    if run.fields["automation_id"].is_string() {
+        automation_runs::can_retry(c, &run)?;
+    }
     crate::agents::usable(
         c,
         req(&run.fields, "handler_kind")?,
@@ -988,7 +1032,9 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
         .count() as u64
         >= capacity;
     for run in runs.iter().filter(|r| r.fields["status"] == "queued") {
-        if !crate::agents::requester_can_continue(c, run)? {
+        if !crate::agents::requester_can_continue(c, run)?
+            || !crate::chat::fork_directory::can_continue(c, run)?
+        {
             cancel(c, run)?;
             continue;
         }
@@ -999,6 +1045,17 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
             continue;
         }
         let mut f = run.fields.clone();
+        let directory_fork = f["directory_fork"].is_object();
+        if directory_fork
+            && f["config"]["machine_id"] == machine.id
+            && q["workspace_continuation"] != true
+        {
+            if f["waiting_reason"] != "workspace_worker_upgrade" {
+                f["waiting_reason"] = json!("workspace_worker_upgrade");
+                c.update(run, &run.title, f)?;
+            }
+            continue;
+        }
         let git = crate::git_workspace::execution(c, run)?;
         let config = &f["config"];
         let mode = config["directory_mode"].as_str().unwrap_or("isolated");
@@ -1013,7 +1070,7 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
             && git["repositories"]
                 .as_array()
                 .is_some_and(|items| !items.is_empty());
-        let directory = if use_remote || mode == "temporary" {
+        let directory = if directory_fork || use_remote || mode == "temporary" {
             f["assigned_directory"] = Value::Null;
             directories::Choice::Legacy
         } else {
@@ -1097,6 +1154,10 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
         f["run_deadline"] = json!(at + (scheduling::run_limit(&f) as i64) * 1000);
         f["waiting_reason"] = Value::Null;
         let mut current = c.update(run, &run.title, f)?;
+        if directory_fork {
+            current.fields["directory_fork"] =
+                crate::chat::fork_directory::for_claim(c, run, &machine)?;
+        }
         if !context.is_null() {
             current.fields["chat_context"] = context;
         }
@@ -1230,6 +1291,27 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
     if let Some(progress) = q.get("progress").filter(|v| !v.is_null()) {
         fingerprint.push(progress);
     }
+    if automation_runs::unattended(&run.fields)
+        && automation_runs::asks_for_input(q)
+        && q["status"] != "waiting"
+    {
+        for field in [
+            "event",
+            "type",
+            "question",
+            "questions",
+            "permission_request",
+            "approval_request",
+            "tool_calls",
+        ] {
+            if let Some(value) = q.get(field) {
+                fingerprint.push(value);
+            }
+        }
+    }
+    if let Some(checkpoint) = q.get("workspace_checkpoint").filter(|v| !v.is_null()) {
+        fingerprint.push(checkpoint);
+    }
     let body_digest = digest(&json!(fingerprint).to_string());
     if let Some(prior) = last {
         if prior != body_digest {
@@ -1250,6 +1332,12 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
         && crate::agents::requester_can_continue(c, &run)?;
     let q = if authorized && scheduling::has_timed_out(&run.fields, at) {
         private_result = json!({"status":"failed","result":"运行已超时","error":{"code":"run_timeout"},"artifacts":[]});
+        &private_result
+    } else if authorized
+        && automation_runs::unattended(&run.fields)
+        && automation_runs::asks_for_input(q)
+    {
+        private_result = automation_runs::input_failure();
         &private_result
     } else if authorized {
         q
@@ -1281,6 +1369,10 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
         f["usage"] = usage;
     }
     f["result"] = json!(text);
+    let checkpoint = crate::chat::fork_directory::checkpoint(&run, q)?;
+    if !checkpoint.is_null() {
+        f["workspace_checkpoint"] = checkpoint;
+    }
     if f["status"] == "failed" {
         f["failure"] = crate::runtime_diagnostics::classify(&q["error"], text);
     }
@@ -1317,7 +1409,7 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
                 return Err("agent is not a member of this crew".into());
             }
             let instruction = req(d, "instruction")?;
-            let context = json!({"instruction":instruction,"visibility":run.fields["visibility"],"parent_id":run.id,"task_id":run.fields["task_id"],"task":run.fields["task_context"],"chat_id":run.fields["chat_id"]});
+            let context = json!({"instruction":instruction,"visibility":run.fields["visibility"],"parent_id":run.id,"task_id":run.fields["task_id"],"task":run.fields["task_context"],"chat_id":run.fields["chat_id"],"unattended":true});
             children.push(
                 enqueue(
                     &requester,

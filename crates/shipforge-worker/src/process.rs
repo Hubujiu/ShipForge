@@ -7,6 +7,7 @@ use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
+mod continuations;
 mod crew_workspace;
 mod git_author;
 mod repositories;
@@ -19,12 +20,15 @@ struct WorkingDir {
     local_repository: bool,
 }
 fn git_at(source: &Path, args: &[&str], destination: &Path) -> Result<()> {
+    git_at_revision(source, args, destination, "HEAD")
+}
+fn git_at_revision(source: &Path, args: &[&str], destination: &Path, revision: &str) -> Result<()> {
     let out = Command::new(program_path(Path::new("git"))?)
         .arg("-C")
         .arg(dunce::simplified(source))
         .args(args)
         .arg(dunce::simplified(destination))
-        .arg("HEAD")
+        .arg(revision)
         .stdout(Stdio::null())
         .output()
         .map_err(|e| e.to_string())?;
@@ -43,6 +47,10 @@ fn directory(
     pulse: &mut impl FnMut() -> Result<bool>,
     timeout: Duration,
 ) -> Result<WorkingDir> {
+    let continuation = &run["fields"]["directory_fork"];
+    if !continuation.is_null() {
+        return continuations::resume(cfg, state, run, pulse, Instant::now() + timeout);
+    }
     let settings = &run["fields"]["config"];
     let assigned = &run["fields"]["assigned_directory"];
     let chosen = assigned["profile"]
@@ -268,14 +276,35 @@ pub(crate) fn approve_directory(
     temporary.persist(file).map_err(|e| e.to_string())?;
     Ok(json!({"machine":cfg.machine_id,"profile":name,"direct":cfg.allow_direct||direct}))
 }
-fn read_output(stream: impl Read) -> String {
+fn read_output(stream: impl Read, request: Option<std::sync::mpsc::SyncSender<()>>) -> String {
     let mut reader = std::io::BufReader::new(stream);
     let mut bytes = Vec::new();
     let mut chunk = [0u8; 8192];
     let mut truncated = false;
+    let mut line = Vec::new();
+    let mut oversized = false;
     while let Ok(size) = reader.read(&mut chunk) {
         if size == 0 {
             break;
+        }
+        if let Some(tx) = request.as_ref() {
+            for &byte in &chunk[..size] {
+                if byte == b'\n' {
+                    if !oversized
+                        && serde_json::from_slice::<Value>(&line).is_ok_and(|frame| {
+                            shipforge_client::runtime_diagnostics::requests_input(&frame)
+                        })
+                    {
+                        let _ = tx.try_send(());
+                    }
+                    line.clear();
+                    oversized = false;
+                } else if line.len() < 65536 {
+                    line.push(byte);
+                } else {
+                    oversized = true;
+                }
+            }
         }
         let n = size.min(CAPTURE_BYTES - bytes.len());
         bytes.extend_from_slice(&chunk[..n]);
@@ -497,6 +526,9 @@ pub fn execute(
                     .expect("artifact array")
                     .push(json!({"name":"工作目录","location":canonical,"type":"workspace"}));
             }
+            if let Some(checkpoint) = continuations::record(state, run, &workspace) {
+                result["workspace_checkpoint"] = checkpoint;
+            }
             return Ok(result);
         }
         let calls = calls.expect("nonempty array");
@@ -549,8 +581,11 @@ fn execute_round(
     });
     let stdout = child.stdout.take().expect("piped stdout");
     let stderr = child.stderr.take().expect("piped stderr");
-    let output = thread::spawn(move || read_output(stdout));
-    let errors = thread::spawn(move || read_output(stderr));
+    let unattended =
+        run["fields"]["unattended"] == true || run["fields"]["automation_id"].is_string();
+    let (request_tx, request_rx) = std::sync::mpsc::sync_channel(1);
+    let output = thread::spawn(move || read_output(stdout, unattended.then_some(request_tx)));
+    let errors = thread::spawn(move || read_output(stderr, None));
     let mut end_reason = None;
     let succeeded = loop {
         match child.try_wait() {
@@ -562,7 +597,9 @@ fn execute_round(
             }
             Ok(None) => {}
         }
-        let reason = if Instant::now() >= until {
+        let reason = if unattended && request_rx.try_recv().is_ok() {
+            Some("unattended_input".to_owned())
+        } else if Instant::now() >= until {
             Some("runtime timeout".to_owned())
         } else {
             match pulse() {
@@ -603,6 +640,20 @@ fn execute_round(
         .ok()
         .filter(Value::is_object)
         .unwrap_or(Value::Null);
+    if unattended
+        && (end_reason.as_deref() == Some("unattended_input")
+            || end_reason.is_none()
+                && (request_rx.try_recv().is_ok()
+                    || shipforge_client::runtime_diagnostics::requests_input(&parsed)))
+    {
+        let failure = shipforge_client::runtime_diagnostics::classify(
+            &json!({"code":"unattended_input"}),
+            "",
+        );
+        return Ok(
+            json!({"status":"failed","result":failure["message"],"error":failure,"artifacts":[]}),
+        );
+    }
     let default = if succeeded && parsed["error"].is_null() {
         "done"
     } else {

@@ -36,7 +36,7 @@ fn hidden_storage_confirmation_and_model_configuration() {
     let ticket = call(json!({"op":"machine.storage.take","machine_id":"box","machine_key":key}));
     let entry = json!({"id":"c".repeat(64),"category":"run","bytes":8192,"files":2,"snapshot":"a".repeat(64),"runs":[r["id"]]});
     call(
-        json!({"op":"machine.storage.finish","id":ticket["id"],"lease":ticket["lease"],"machine_id":"box","machine_key":key,"outcome":"success","inventory":{"entries":[entry],"total_bytes":8192}}),
+        json!({"op":"machine.storage.finish","id":ticket["id"],"lease":ticket["lease"],"machine_id":"box","machine_key":key,"outcome":"success","inventory":{"entries":[entry],"total_bytes":8192,"available_bytes":123456,"local_hour":13}}),
     );
     gpui_kit::application().with_assets(crate::assets::Assets).run(move|cx|{
         gpui_kit::init(cx);let(handle,view)=gpui_kit::open_window(WindowOptions{show:false,focus:false,window_bounds:Some(WindowBounds::Windowed(Bounds::centered(None,size(px(1440.),px(1400.)),cx))),..Default::default()},cx,|w,cx|cx.new(|cx|Workbench::new(Some(data.clone()),false,false,w,cx))).unwrap();
@@ -44,6 +44,7 @@ fn hidden_storage_confirmation_and_model_configuration() {
             activate_accessibility(w);settle(&view,w,cx);let act=|a,w:&mut Window,cx:&mut App|{view.update(cx,|s,cx|s.act(a,w,cx));settle(&view,w,cx);};let has=|s:&str,w:&Window|buttons(w).iter().any(|b|b==s);
             act(UiAction::Go(Page::Machines),w,cx);let m=view.read(cx).find("machine","box").unwrap().clone();act(UiAction::Open(m),w,cx);assert!(has("管理存储空间",w),"{:?}",buttons(w));
             act(UiAction::MachineManagement(Action::Storage("box".into())),w,cx);assert!(has("重新统计",w)&&has("清理工作目录",w));
+            policy_controls(&view, &mut c, w, cx);
             act(UiAction::Form(Mode::MachineManagement(Dialog::CleanStorage("box".into(),entry.clone()))),w,cx);assert!(has("确认清理",w));act(UiAction::CloseForm,w,cx);assert_eq!(c.execute(json!({"op":"machine.storage.preview","id":"box"})).unwrap()["jobs"].as_array().unwrap().len(),1);
             act(UiAction::Form(Mode::MachineManagement(Dialog::CleanStorage("box".into(),entry.clone()))),w,cx);act(UiAction::Submit,w,cx);assert_eq!(c.execute(json!({"op":"machine.storage.preview","id":"box"})).unwrap()["jobs"][0]["action"],"clean");act(UiAction::CloseForm,w,cx);
             act(UiAction::Go(Page::Agents),w,cx);let agent=view.read(cx).find("agent","a").unwrap().clone();act(UiAction::Open(agent.clone()),w,cx);assert!(has("模型与运行参数",w));act(UiAction::MachineManagement(Action::AgentLaunch("a".into())),w,cx);assert!(has("small",w)&&has("small · high",w),"{:?}",buttons(w));
@@ -51,4 +52,62 @@ fn hidden_storage_confirmation_and_model_configuration() {
             assert_eq!(c.execute(json!({"op":"agent.runtime.options","id":"a"})).unwrap()["reasoning_effort"],"high");
         }).unwrap();cx.quit();
     });
+}
+
+fn policy_controls(view: &Entity<Workbench>, client: &mut Client, w: &mut Window, cx: &mut App) {
+    let act = |action, w: &mut Window, cx: &mut App| {
+        view.update(cx, |s, cx| s.act(action, w, cx));
+        settle(view, w, cx);
+    };
+    assert!(buttons(w).iter().any(|b| b == "存储配额与清理策略"));
+    let Mode::MachineManagement(Dialog::Storage(data)) =
+        view.read(cx).form.as_ref().unwrap().mode.clone()
+    else {
+        panic!("storage overview")
+    };
+    assert_eq!(data["policy"]["enabled"], false);
+    let key = data["entries"][0]["id"].as_str().unwrap().to_owned();
+    act(
+        UiAction::Form(Mode::MachineManagement(Dialog::StoragePolicy(data))),
+        w,
+        cx,
+    );
+    assert!(buttons(w).iter().any(|b| b == "保存存储策略"));
+    let fields = &view.read(cx).form.as_ref().unwrap().entries;
+    let index = fields.iter().position(|e| e.spec.key == "enabled").unwrap();
+    let minimum = fields
+        .iter()
+        .find(|e| e.spec.key == "min_free_gib")
+        .unwrap()
+        .control
+        .clone();
+    let crate::forms::Control::Text(crate::controls::Field::Single(minimum)) = minimum else {
+        panic!("numeric input")
+    };
+    minimum.update(cx, |s, cx| s.set_value("1", w, cx));
+    act(UiAction::Choose(index, "true".into()), w, cx);
+    act(UiAction::Submit, w, cx);
+    let status = client
+        .execute(json!({"op":"machine.storage.preview","id":"box"}))
+        .unwrap();
+    assert_eq!(status["policy"]["enabled"], true);
+    assert_eq!(status["health"]["state"], "low_disk");
+    assert!(
+        w.debug_a11y_tree_json()
+            .unwrap()
+            .contains("磁盘可用空间过低")
+    );
+    act(
+        UiAction::MachineManagement(Action::PinStorage("box".into(), key.clone(), true)),
+        w,
+        cx,
+    );
+    assert!(buttons(w).iter().any(|b| b == "取消固定工作区"));
+    assert!(!buttons(w).iter().any(|b| b == "清理工作目录"));
+    act(
+        UiAction::MachineManagement(Action::PinStorage("box".into(), key, false)),
+        w,
+        cx,
+    );
+    assert!(buttons(w).iter().any(|b| b == "清理工作目录"));
 }

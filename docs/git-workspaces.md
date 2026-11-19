@@ -13,6 +13,8 @@
 
 作者名称支持触发成员、触发成员与 Agent 名称、Agent 所有者、所有者与 Agent 名称、机器 Git 配置或自填。作者邮箱可以选触发成员、所有者、机器 Git 配置或自填。留空表示继承上一层。各层均留空时使用触发成员与 Agent 名称，邮箱取机器配置，缺省时使用平台的 noreply 地址。
 
+自动化使用实际触发成员。时间表和 Webhook 没有真人触发者时，默认作者取 Agent 名称，邮箱按工作机设置解析。
+
 使用已有 Git 目录时，优先读取该仓库的本地 `user.name` 和 `user.email`。运行时通过 `GIT_AUTHOR_NAME` 与 `GIT_AUTHOR_EMAIL` 获得作者。Git 提交者和签名遵循机器 Git 配置。Co-authored-by 默认开启，可按层关闭。运行时临时追加尾注并保留已有 Git 钩子。
 
 ## CLI

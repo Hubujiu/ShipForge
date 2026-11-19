@@ -46,6 +46,7 @@ pub(super) fn checkout(
             .open(cache.join(format!("{key}.lock")))
             .map_err(|e| e.to_string())?;
         wait(&lock, pulse, until)?;
+        crate::host::mark_cache_used(state, &key)?;
         let source = cache.join(&key);
         if !source.exists() {
             let mut init = command()?;
@@ -126,7 +127,11 @@ pub(super) fn checkout(
     Ok(())
 }
 
-fn wait(file: &File, pulse: &mut impl FnMut() -> Result<bool>, until: Instant) -> Result<()> {
+pub(super) fn wait(
+    file: &File,
+    pulse: &mut impl FnMut() -> Result<bool>,
+    until: Instant,
+) -> Result<()> {
     loop {
         match file.try_lock() {
             Ok(()) => return Ok(()),

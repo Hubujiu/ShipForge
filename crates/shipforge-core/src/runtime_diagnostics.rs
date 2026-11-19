@@ -1,6 +1,53 @@
 use crate::{Context, Result, required as req};
 use serde_json::{Value, json};
 
+/// Structured requests on the worker protocol. Ordinary text can describe a question.
+pub fn requests_input(value: &Value) -> bool {
+    let signal = |v: &Value| {
+        v.as_str().is_some_and(|s| {
+            matches!(
+                s,
+                "request_user_input"
+                    | "ask_user"
+                    | "ask_user_question"
+                    | "AskUserQuestion"
+                    | "permission_request"
+                    | "approval_request"
+                    | "request_approval"
+                    | "input_required"
+                    | "waiting_for_input"
+                    | "waiting_for_approval"
+            )
+        })
+    };
+    value["status"] == "waiting"
+        || ["type", "event", "status"]
+            .iter()
+            .any(|key| signal(&value[*key]))
+        || [
+            "question",
+            "questions",
+            "permission_request",
+            "approval_request",
+        ]
+        .iter()
+        .any(|key| match &value[*key] {
+            Value::Object(o) => !o.is_empty(),
+            Value::Array(a) => !a.is_empty(),
+            Value::String(s) => !s.is_empty(),
+            Value::Bool(b) => *b,
+            _ => false,
+        })
+        || value["tool_calls"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|call| {
+                ["name", "tool", "type"].iter().any(|k| signal(&call[*k]))
+                    || signal(&call["function"]["name"])
+            })
+}
+
 /// Classify only recognized provider/worker signals. Private output never enters diagnostic records.
 pub fn classify(error: &Value, detail: &str) -> Value {
     let supplied = error["code"]
@@ -17,6 +64,7 @@ pub fn classify(error: &Value, detail: &str) -> Value {
         .and_then(Value::as_u64)
         .filter(|s| (100..600).contains(s));
     let category = match code.as_str() {
+        "unattended_input" => "unattended_input",
         "network_unavailable"
         | "connection_refused"
         | "econnrefused"
@@ -121,6 +169,10 @@ pub fn classify(error: &Value, detail: &str) -> Value {
         "content_policy" => ("服务拒绝处理内容", "查看服务的内容要求并调整输入。"),
         "request_timeout" => ("上游请求超时", "查看服务状态、代理及网络延迟。"),
         "run_timeout" => ("运行已超时", "检查执行步骤及 Agent 和工作机的运行时限。"),
+        "unattended_input" => (
+            "无人值守运行需要人工输入",
+            "调整规则指令，或在有人值守的会话中处理提问和授权。",
+        ),
         "queue_timeout" => (
             "排队等待已超时",
             "检查工作时间、空闲目录、机器和 Agent 并发。",

@@ -20,7 +20,7 @@ pub(super) enum Inclusion {
     Selected { urls: Vec<String> },
 }
 
-fn remote(raw: &str) -> Result<String> {
+pub(super) fn remote(raw: &str) -> Result<String> {
     let raw = raw.trim();
     if raw.len() > 2048 || raw.contains(['\\', '\n', '\r', '\t']) {
         return Err(invalid("invalid Git repository URL"));

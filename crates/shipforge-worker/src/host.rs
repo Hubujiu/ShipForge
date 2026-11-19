@@ -17,7 +17,7 @@ struct Host {
 }
 mod runtime;
 mod storage;
-pub(crate) use storage::{mark_process, protect_run};
+pub(crate) use storage::{mark_cache_used, mark_process, protect_run};
 mod skills;
 struct ProgressFile(PathBuf);
 impl ProgressFile {
@@ -340,7 +340,10 @@ pub fn run(file: &Path, once: bool) -> Result<Value> {
                 .is_none_or(|last: Instant| last.elapsed() >= Duration::from_secs(3))
         {
             last_capabilities = Some(Instant::now());
-            let storage = host.call(&mut client, json!({"op":"machine.storage.take"}));
+            let storage = host.call(
+                &mut client,
+                json!({"op":"machine.storage.take","policy_version":1}),
+            );
             if let Ok(job) = &storage
                 && job.is_object()
             {
@@ -362,7 +365,7 @@ pub fn run(file: &Path, once: bool) -> Result<Value> {
         while jobs.len() < host.cfg.capacity as usize {
             let claim = match host.call(
                 &mut client,
-                json!({"op":"run.claim","busy_directories":process::busy_directories(&host.cfg)}),
+                json!({"op":"run.claim","workspace_continuation":true,"busy_directories":process::busy_directories(&host.cfg)}),
             ) {
                 Ok(v) => v,
                 Err(e) if once => return Err(e),

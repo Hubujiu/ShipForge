@@ -1,4 +1,5 @@
 mod auth;
+mod automation_webhook;
 mod bugly;
 mod conversation_http;
 mod forge;
@@ -178,6 +179,7 @@ fn serve(
             let bugly_origin = &bugly_origin;
             scope.spawn(move||{
                 for mut request in server.incoming_requests() {
+                    if automation_webhook::matches(&request){automation_webhook::serve(request,&mut store);continue;}
                     if request.method()==&Method::Get && request.url().split('?').next()==Some("/v1/forge/oauth/callback"){
                         forge::oauth_landing(request);continue;
                     }
@@ -203,7 +205,7 @@ fn serve(
                     }
                     let native_slack=request.url().starts_with("/v1/slack/");
                     let share=request.url().starts_with("/share/");
-                    let answer=handle(&mut request,&auth,&mut store,routes,github);
+                    let answer=handle(&mut request,&auth,&mut store,routes,github,bugly_origin);
                     let (status,body)=match answer {
                         Ok(data) if native_slack => (200,data),
                         Ok(data) if share => (200,data),
@@ -235,6 +237,7 @@ fn handle(
     store: &mut Store,
     routes: &slack::Routes,
     github: &github::Routes,
+    public_origin: &url::Url,
 ) -> Result<Value, String> {
     if let Some(share) = request.url().strip_prefix("/share/") {
         if request.method() != &Method::Get {
@@ -371,7 +374,15 @@ fn handle(
         body["space"] = json!(space);
         body["id"] = json!(rule);
     }
-    dispatch(auth, &principal, store, body)
+    let issued = matches!(
+        body["op"].as_str(),
+        Some("automation.hook.save" | "automation.hook.issue" | "automation.hook.rotate")
+    );
+    let mut answer = dispatch(auth, &principal, store, body)?;
+    if issued {
+        automation_webhook::absolute(&mut answer, public_origin);
+    }
+    Ok(answer)
 }
 fn split_target(route: &str) -> Result<(&str, &str), String> {
     let (space, target) = route

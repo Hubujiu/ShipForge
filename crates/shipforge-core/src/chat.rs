@@ -1,5 +1,6 @@
 pub(crate) mod assistant;
 mod avatar;
+pub(crate) mod fork_directory;
 mod share_image;
 mod shares;
 pub use share_image::render as render_share_png;
@@ -89,7 +90,7 @@ fn set_member(c: &Context<'_>, room: &Record, actor: &str, level: &str) -> Resul
 }
 
 pub(crate) fn can_read(c: &Context<'_>, room: &Record) -> Result<bool> {
-    if !task_visible(c, room) {
+    if !task_visible(c, room) || !crate::worker::automation_runs::room_visible(c, room)? {
         return Ok(false);
     }
     let (leader, dissolved) = owner(c, room)?;
@@ -119,6 +120,34 @@ pub(crate) fn require_owner(c: &Context<'_>, room: &Record) -> Result<()> {
 }
 
 pub(crate) fn validate(c: &Context<'_>, old: Option<&Record>, room: &mut Record) -> Result<()> {
+    if room.fields["automation_rule"].is_string()
+        || old.is_some_and(|r| r.fields["automation_rule"].is_string())
+    {
+        let prior =
+            old.ok_or_else(|| invalid("automation conversations are created by a rule run"))?;
+        if [
+            "automation_rule",
+            "automation_run",
+            "visibility",
+            "owner",
+            "creator",
+            "origin_kind",
+            "handler_id",
+            "handler_kind",
+            "agent",
+            "task",
+            "task_id",
+            "project",
+            "chat_type",
+        ]
+        .iter()
+        .any(|k| room.fields[*k] != prior.fields[*k])
+        {
+            return Err(invalid(
+                "automation conversations retain their source, owner and executor",
+            ));
+        }
+    }
     if assistant::is_room(room) || old.is_some_and(assistant::is_room) {
         let prior = old.filter(|p| assistant::is_room(p)).ok_or_else(|| {
             invalid("create assistant conversations from your personal assistant")
@@ -381,6 +410,13 @@ fn execute_origin(c: &Context<'_>, q: &Value, op: &str, origin: &str) -> Result<
         return Ok(json!({"id":id,"action":q["action"]}));
     }
     let room = c.readable("chat", id)?;
+    if room.fields["automation_rule"].is_string()
+        && matches!(op, "chat.manage" | "chat.bind_task" | "chat.convert")
+    {
+        return Err(invalid(
+            "automation conversations retain their owner and triggering context",
+        ));
+    }
     if op == "chat.manage" {
         crate::domain::check_rev(q, &room)?;
     }
@@ -388,6 +424,7 @@ fn execute_origin(c: &Context<'_>, q: &Value, op: &str, origin: &str) -> Result<
         "chat.avatar" | "chat.avatar.set" => avatar::execute(c, &room, op, q),
         "chat.organize" => sidebar::organize(c, &room, q),
         "chat.fork" => workflows::fork(c, &room, q),
+        "chat.workspace" => fork_directory::available(c, &room),
         "chat.bind_task" | "chat.convert" if assistant::is_room(&room) => Err(invalid(
             "the built-in assistant supports direct conversations only",
         )),

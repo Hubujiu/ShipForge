@@ -306,6 +306,16 @@ fn write_inner(
     for (k, v) in patch {
         f[&k] = v;
     }
+    if kind == "automation" {
+        if old.as_ref().is_some_and(|r| r.fields["archived"] == true) && f["archived"] != true {
+            return Err(invalid(
+                "archived automations retain their history and cannot be resumed",
+            ));
+        }
+        if old.is_none() && f["notify"].is_null() {
+            f["notify"] = json!([c.actor]);
+        }
+    }
     let at = now();
     let rev = if let Some(previous) = &old {
         previous.rev + 1
@@ -322,6 +332,9 @@ fn write_inner(
         created_at: at,
         updated_at: at,
     };
+    if kind == "automation" {
+        crate::automation_hooks::identify(&mut row.fields)?;
+    }
     let explicit_admin_status =
         !from_source && old.is_none() && kind == "task" && q["fields"]["status"].is_string() && {
             let org = c.org_id()?;

@@ -115,7 +115,10 @@ impl Context<'_> {
         if r.kind == "chat" {
             return crate::chat::can_read(self, r);
         }
-        if r.kind == "run" && !crate::agents::run_source_visible(self, r)? {
+        if r.kind == "run"
+            && (!crate::worker::automation_runs::run_visible(self, r)?
+                || !crate::agents::run_source_visible(self, r)?)
+        {
             return Ok(false);
         }
         if matches!(r.kind.as_str(), "agent" | "crew") {
@@ -161,6 +164,7 @@ impl Context<'_> {
         let parent_keys: &[(&str, &str)] = match r.kind.as_str() {
             "message" => &[("chat", "chat")],
             "notification" => &[
+                ("automation", "automation"),
                 ("task", "task"),
                 ("run", "run"),
                 ("run_id", "run"),
@@ -262,6 +266,12 @@ impl Context<'_> {
     }
     pub(crate) fn authorize_replay(&self, q: &Value, result: &Value) -> Result<()> {
         let op = required(q, "op")?;
+        if matches!(
+            op,
+            "automation.lifecycle" | "automation.conversation" | "automation.retry"
+        ) {
+            return crate::worker::automation_runs::replay(self, op, q, result);
+        }
         if op == "chat.avatar.set" {
             return crate::chat::require_owner(self, &self.readable("chat", required(q, "id")?)?);
         }

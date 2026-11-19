@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 use std::collections::HashSet;
 #[path = "automation/schedule.rs"]
 mod schedule;
+use super::automation_runs as history;
 use schedule::Schedule;
 
 pub(super) fn init(db: &Connection) -> Result<()> {
@@ -72,7 +73,8 @@ pub(super) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
         }
         return Ok(());
     }
-    let enabled = f["enabled"].as_bool().unwrap_or(false);
+    history::validate(c, f)?;
+    let enabled = history::active(r);
     if !enabled && f["handler_id"].is_null() {
         return Ok(());
     }
@@ -138,11 +140,14 @@ pub(super) fn dispatch(c: &Context<'_>, q: &Value) -> Result<Value> {
                 return Err("invalid automation event ID".into());
             }
             let source = q["source"].as_str().unwrap_or("manual");
-            if rule.fields["enabled"] != true {
+            if !history::active(&rule) {
                 return Err("automation is disabled".into());
             }
             if source == "webhook"
-                && !enabled_triggers(&rule).any(|(_, trigger)| trigger["type"] == "webhook")
+                && !enabled_triggers(&rule).any(|(_, trigger)| {
+                    trigger["type"] == "webhook"
+                        && q.get("trigger_id").is_none_or(|id| &trigger["id"] == id)
+                })
             {
                 return Err("no enabled webhook trigger".into());
             }
@@ -154,10 +159,19 @@ pub(super) fn dispatch(c: &Context<'_>, q: &Value) -> Result<Value> {
                 .map(|id| read(c, "task", id))
                 .transpose()?;
             let payload = &q["payload"];
+            if !history::eligible(c, &rule, task.as_ref())? {
+                return Err(crate::forbidden(
+                    "automation execution context is unavailable",
+                ));
+            }
             if !payload.is_null() && (!payload.is_object() || payload.to_string().len() > 131072) {
                 return Err("webhook payload must be an object under 128 KiB".into());
             }
-            let content = digest(&json!([q["task_id"], payload]).to_string());
+            let content = if q["trigger_id"].is_null() {
+                digest(&json!([q["task_id"], payload]).to_string())
+            } else {
+                digest(&json!([q["task_id"], payload, q["trigger_id"]]).to_string())
+            };
             let receipt:Option<(String,String)>=c.db.query_row("SELECT payload,run FROM sf_automation_deliveries WHERE space=? AND rule=? AND source=? AND event=?",params![c.space,rule.id,source,event],|row|Ok((row.get(0)?,row.get(1)?))).optional().map_err(db_error)?;
             if let Some((delivered, id)) = receipt {
                 if delivered != content {
@@ -173,7 +187,7 @@ pub(super) fn dispatch(c: &Context<'_>, q: &Value) -> Result<Value> {
                 &format!("{source}:{event}"),
                 source,
                 task.as_ref(),
-                json!({"webhook_payload":payload}),
+                json!({"webhook_payload":payload,"trigger_id":q["trigger_id"],"trigger_actor":if source=="manual"{json!(c.actor)}else{Value::Null}}),
             )?;
             c.db.execute("INSERT INTO sf_automation_deliveries(space,rule,source,event,payload,run) VALUES(?,?,?,?,?,?)",params![c.space,rule.id,source,event,content,run.id]).map_err(db_error)?;
             encoded(run)
@@ -202,28 +216,29 @@ fn fire(
 ) -> Result<Record> {
     let handler = req(&rule.fields, "handler_id")?;
     let kind = rule.fields["handler_kind"].as_str().unwrap_or("agent");
-    let mut fields = json!({"origin_kind":"automation","automation_id":rule.id,"instruction":rule.fields["instruction"],"source":source});
+    let mut fields = json!({"origin_kind":"automation","automation_id":rule.id,"instruction":rule.fields["instruction"],"source":source,"trigger_event":event,"project":rule.fields["project"],"visibility":"private","unattended":true});
     if let Some(values) = extra.as_object() {
         fields.as_object_mut().unwrap().extend(values.clone());
-    }
-    if rule.fields["visibility"] == "private" {
-        fields["visibility"] = json!("private");
     }
     if let Some(t) = task {
         fields["task_id"] = json!(t.id);
         fields["task"] = super::task_context(c, t)?;
     }
-    enqueue(
+    let run = enqueue(
         c,
         &format!("rule:{}:{event}", rule.id),
         handler,
         kind,
         &rule.title,
         fields,
-    )
+    )?;
+    history::link(c, &run)
 }
 pub(super) fn changed(c: &Context<'_>, before: Option<&Record>, item: &Record) -> Result<()> {
     if item.kind == "automation" {
+        if before.is_some_and(history::active) && !history::active(item) {
+            history::stop_scheduled(c, item)?;
+        }
         return reset_schedules(c, before, item);
     }
     let (trigger_kind, task) = match item.kind.as_str() {
@@ -236,11 +251,7 @@ pub(super) fn changed(c: &Context<'_>, before: Option<&Record>, item: &Record) -
         }
         _ => return Ok(()),
     };
-    for rule in c
-        .records("automation")?
-        .into_iter()
-        .filter(|r| r.fields["enabled"] == true)
-    {
+    for rule in c.records("automation")?.into_iter().filter(history::active) {
         let Some(owner) = rule.fields["creator"].as_str() else {
             continue;
         };
@@ -249,7 +260,11 @@ pub(super) fn changed(c: &Context<'_>, before: Option<&Record>, item: &Record) -
             space: c.space,
             actor: owner,
         };
-        if engine.require_edit().is_err() || !engine.visible(&task)? || !engine.visible(&rule)? {
+        if engine.require_edit().is_err()
+            || !engine.visible(&task)?
+            || !engine.visible(item)?
+            || !engine.visible(&rule)?
+        {
             continue;
         }
         if crate::agents::usable(
@@ -267,9 +282,12 @@ pub(super) fn changed(c: &Context<'_>, before: Option<&Record>, item: &Record) -
                 continue;
             }
             if trigger_kind == "status"
-                && t["status"].as_str().is_some_and(|s| {
+                && (t["status"].as_str().or(t["to"].as_str()).is_some_and(|s| {
                     !s.is_empty() && s != task.fields["status"].as_str().unwrap_or_default()
-                })
+                }) || t["from"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .is_some_and(|s| before.is_none_or(|r| r.fields["status"] != s)))
             {
                 continue;
             }
@@ -280,20 +298,25 @@ pub(super) fn changed(c: &Context<'_>, before: Option<&Record>, item: &Record) -
             {
                 continue;
             }
-            fire(
-                &engine,
-                &rule,
-                &format!("{trigger_kind}:{}:{}:{idx}", item.id, item.rev),
-                trigger_kind,
-                Some(&task),
-                Value::Null,
-            )?;
+            let owner = t["run_owner"]
+                .as_str()
+                .or(rule.fields["run_owner"].as_str())
+                .filter(|s| !s.is_empty() && *s != "triggerer")
+                .unwrap_or(c.actor);
+            let executor = Context { actor: owner, ..*c };
+            let event = format!("{trigger_kind}:{}:{}:{idx}", item.id, item.rev);
+            let extra = json!({"trigger_id":t["id"],"trigger_index":idx,"trigger_actor":c.actor,"trigger_record":item.id,"from_status":if trigger_kind=="status"{before.map(|r|&r.fields["status"])}else{None},"to_status":if trigger_kind=="status"{Some(&task.fields["status"])}else{None}});
+            if !history::eligible(&executor, &rule, Some(&task))? || !executor.visible(item)? {
+                history::skip(&engine, &rule, &event, trigger_kind, &task, owner, extra)?;
+                continue;
+            }
+            fire(&executor, &rule, &event, trigger_kind, Some(&task), extra)?;
         }
     }
     Ok(())
 }
 fn schedules(r: &Record) -> Result<Vec<(usize, String, Schedule)>> {
-    if r.fields["enabled"] != true {
+    if !history::active(r) {
         return Ok(Vec::new());
     }
     enabled_triggers(r)
@@ -318,7 +341,12 @@ fn reset_schedules(c: &Context<'_>, before: Option<&Record>, r: &Record) -> Resu
     }
     for (_, key, schedule) in current {
         if !prior.iter().any(|(_, k, _)| k == &key) {
-            c.db.execute("INSERT INTO sf_schedule_cursors(space,rule,slot,seen,last_run) VALUES(?,?,?,?,NULL) ON CONFLICT(space,rule,slot) DO UPDATE SET seen=excluded.seen,last_run=NULL",params![c.space,r.id,key,schedule.start_cursor(r.updated_at)]).map_err(db_error)?;
+            let cursor = if before.is_some_and(|old| !history::active(old)) {
+                r.updated_at
+            } else {
+                schedule.start_cursor(r.updated_at)
+            };
+            c.db.execute("INSERT INTO sf_schedule_cursors(space,rule,slot,seen,last_run) VALUES(?,?,?,?,NULL) ON CONFLICT(space,rule,slot) DO UPDATE SET seen=excluded.seen,last_run=NULL",params![c.space,r.id,key,cursor]).map_err(db_error)?;
         }
     }
     Ok(())
@@ -333,11 +361,7 @@ fn tick(c: &Context<'_>, q: &Value) -> Result<Value> {
 }
 fn tick_at(c: &Context<'_>, timestamp: i64) -> Result<Value> {
     let mut results = Vec::new();
-    for rule in c
-        .records("automation")?
-        .into_iter()
-        .filter(|r| r.fields["enabled"] == true)
-    {
+    for rule in c.records("automation")?.into_iter().filter(history::active) {
         let Some(owner) = rule.fields["creator"].as_str() else {
             continue;
         };
@@ -346,15 +370,7 @@ fn tick_at(c: &Context<'_>, timestamp: i64) -> Result<Value> {
             space: c.space,
             actor: owner,
         };
-        if engine.require_edit().is_err()
-            || crate::agents::usable(
-                &engine,
-                rule.fields["handler_kind"].as_str().unwrap_or("agent"),
-                req(&rule.fields, "handler_id")?,
-                None,
-            )
-            .is_err()
-        {
+        if !history::eligible(&engine, &rule, None)? {
             continue;
         }
         for (idx, key, schedule) in schedules(&rule)? {
@@ -378,7 +394,7 @@ fn tick_at(c: &Context<'_>, timestamp: i64) -> Result<Value> {
                     &occurrence.event,
                     "schedule",
                     None,
-                    json!({"scheduled_for":occurrence.at}),
+                    json!({"scheduled_for":occurrence.at,"trigger_index":idx,"trigger_id":rule.fields["triggers"][idx]["id"]}),
                 )?;
                 if c.visible(&run)? {
                     results.push(run.id.clone());
@@ -424,16 +440,19 @@ pub(super) fn notify(c: &Context<'_>, run: &Record) -> Result<()> {
         } else {
             "run_done"
         };
-        if receiver.role().is_err() || !receiver.visible(run)? {
+        let direct = receiver.role().is_ok() && receiver.visible(run)?;
+        let is_rule = run.fields["automation_id"].is_string();
+        if !direct && !(is_rule && history::summary_allowed(&receiver, run)?) {
             continue;
         }
+        let source = direct.then_some(("run", run.id.as_str()));
         // Task runs also emit the task notification through inbox::task_run.
-        let inbox = if run.fields["task_id"].is_null() {
+        let inbox = if is_rule || run.fields["task_id"].is_null() {
             let target = run.fields["automation_id"]
                 .as_str()
                 .map(|id| ("automation", id))
                 .unwrap_or(("run", run.id.as_str()));
-            crate::inbox::route(c, &recipient, event, target, Some(("run", &run.id)))?
+            crate::inbox::route(c, &recipient, event, target, source)?
         } else {
             crate::inbox::channel_enabled(c, &recipient, event)?
         };
@@ -447,6 +466,10 @@ pub(super) fn notify(c: &Context<'_>, run: &Record) -> Result<()> {
         let id = format!("run-{}", digest(&format!("{recipient}:{group}")));
         let mut fields = json!({"recipient":recipient,"run":run.id,"task":run.fields["task_id"],"automation":run.fields["automation_id"],"state":"inbox","importance":if run.fields["status"]=="done"{"other"}else{"important"},"status":run.fields["status"],"subject":group,"count":1,"read":false});
         fields["event"] = json!(event);
+        if !direct {
+            fields["run"] = Value::Null;
+            fields["task"] = Value::Null;
+        }
         let notice = if let Some(old) = c.find("notification", &id)? {
             fields["count"] = json!(old.fields["count"].as_i64().unwrap_or(1) + 1);
             if old.fields["state"] == "snoozed"
@@ -459,7 +482,7 @@ pub(super) fn notify(c: &Context<'_>, run: &Record) -> Result<()> {
         } else {
             c.create("notification", Some(&id), &run.title, fields)?
         };
-        crate::inbox::notify_record(c, &notice, event, Some(("run", &run.id)))?;
+        crate::inbox::notify_record(c, &notice, event, source)?;
     }
     Ok(())
 }

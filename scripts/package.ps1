@@ -70,6 +70,9 @@ try {
     $licenseDirectory = Join-Path $packageDirectory 'licenses'
     New-Item -ItemType Directory -Path $licenseDirectory -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $workspaceRoot 'crates\shipforge-desktop\assets\LUCIDE-LICENSE.txt') -Destination $licenseDirectory
+    foreach ($notice in @('LICENSE-MIT', 'LICENSE-APACHE', 'SHIPFORGE.md')) {
+        Copy-Item -LiteralPath (Join-Path $workspaceRoot "vendor/tiny-http/$notice") -Destination (Join-Path $licenseDirectory "tiny-http-$notice")
+    }
     Copy-Item -LiteralPath (Join-Path $workspaceRoot 'LICENSE') -Destination (Join-Path $packageDirectory 'LICENSE')
     $checksums = foreach ($executable in @('shipforge.exe', 'shipforge-desktop.exe', 'shipforge-server.exe', 'shipforge-worker.exe')) {
         $hash = (Get-FileHash -LiteralPath (Join-Path $packageDirectory $executable) -Algorithm SHA256).Hash.ToLowerInvariant()

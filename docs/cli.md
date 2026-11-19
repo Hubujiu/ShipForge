@@ -1,5 +1,7 @@
 # ShipForge 命令行与 JSON 协议
 
+机器所有者通过 `machine.storage.preview` 查看磁盘剩余量、配额压力和当前可回收容量。调用 `machine.storage.configure` 时将快照中的 `policy_rev` 作为 `expected_rev`，再调整监测阈值或开启定时清理。`machine.storage.pin` 可按快照标识固定或取消固定某个工作区。[配额和保留策略](storage-and-models.md)
+
 ### 个人小助手与群头像
 
 `assistant.open` 首次为当前组织成员创建系统助手，返回首选 Runtime 和最近会话。`assistant.history` 以只读方式查看已建立的助手、可用 Runtime 和最多 200 条会话。`assistant.send` 接受 `body`、可选的 `runtime`、`model` 和 `request_id`。省略 `id` 开始新会话，提供 `id` 继续同一会话。结果中的 `space` 是运行和消息所在的空间。使用该空间和返回的 `id` 查询 `chat.history`。
@@ -78,6 +80,8 @@ TAPD 的 `tapd.credential` 保存当前身份的凭据，`tapd.projects` 发现�
 
 `chat.fork` 以指定 `message` 为最后一条继承消息，返回新分支记录。普通 Agent 对话和任务 Agent 对话均可分叉。`chat.bind_task` 用现有 `task` 绑定当前对话，`chat.convert` 则让 Agent 根据对话起草新任务。两项绑定操作均由对话所有者发起。`chat.send` 以 `body` 发送消息并将本轮排入该对话的运行队列。转换排队时返回运行 ID。工作机成功调用 `run.report` 时可提交 `task_draft` 对象，包含 `title` 和 `description` 两个字符串。创建和绑定在同一次数据库事务内完成。发送、分叉与转换可设置 `request_id` 安全重试。 [对话操作与示例](conversations.md)
 
+`chat.workspace` 读取工作机上已就绪的对话目录能力及可选目标工作机。`chat.fork` 可用 `workspace_mode: "reuse"` 复用目录，或用 `workspace_mode: "branch"` 创建独立 Git 工作树。`checkout_branch` 指定基线。跨机器还需 `target_machine_id` 和目标工作机可获取的同一仓库分支。[对话工作目录](conversations.md)
+
 Zoho BugTracker 的连接器支持 `zoho.credential`、`zoho.projects` 和 `zoho.preview`。预览号可用于 `imports.commit` 和 `imports.rollback`，`imports.history` 查看批次。腾讯 Bugly 使用 `bugly.rotate` 创建提单地址，管理员可通过 `bugly.credentials`、`bugly.deliver` 和 `bugly.outbox` 管理可选的状态回写，`bugly.revoke` 断开接入。[字段、授权与可执行示例](vendor-imports.md)
 
 自建导入客户端先用 `imports.binding` 读取项目、绑定修订号和检查点，再用 `imports.stage` 提交该批来源数据并生成预览。Bugly 投递程序通过 `bugly.binding` 读取绑定的组织与产品，用 `bugly.claim` 领取待投递记录，随后用 `bugly.settle` 提交投递结果及租约。[请求字段与重试](vendor-imports.md)
@@ -139,6 +143,9 @@ $task = (.\shipforge.exe --data-dir $workspace create task '发布前检查' | C
 | `machine.register`、`machine.heartbeat`、`machine.disable`、`machine.enable` | 注册机器、更新实时能力、禁用或重新启用机器。机器凭据保存在机器配置旁的状态目录中。 |
 | `run.enqueue`、`run.claim`、`run.heartbeat`、`run.report`、`run.cancel`、`run.retry`、`run.reply`、`run.tool` | 创建运行、认领/续租、提交结果、请求取消、重试或回复。`run.tool` 使用机器密钥、当前租约、工具 ID 和调用 ID 复核并记录授权。 |
 | `automation.fire`、`automation.tick` | 触发启用的规则，或扫描到期时间计划。用相同事件 ID 重放同一次触发。 |
+| `automation.history`、`automation.status` | 按规则读取可见历史、最新版号与健康度。历史支持 `limit` 和服务返回的 `next_cursor`。 |
+| `automation.conversation`、`automation.retry` | 负责人按规则 ID 和运行 ID 打开对应私有对话或重试原执行。 |
+| `automation.lifecycle` | 用 `expected_rev` 和 `action` 暂停、恢复或归档规则。变更及执行范围见[自动化运行指南](automation-history.md)。 |
 | `connector.ingest`、`connector.export`、`provider.preview`、`provider.ingest` | 外部任务三方合并、导出回写数据、预览供应商载荷或落单。绑定连接器和稳定事件标识。 |
 
 记录的常用 `kind` 包括 `task`、`task_type`、`status`、`field`、`tag`、`relation`、`view`、`iteration`、`project`、`member`、`document`、`chat`、`message`、`agent`、`crew`、`skill`、`machine`、`automation`、`connector` 与 `tool`。任务的 `fields` 可含 `description`、`status`、`priority`、`type`、`labels` 和 `due_date`，具体类型的必填字段和角色由核心校验。
@@ -187,6 +194,10 @@ GitHub Issues 可通过机器端 `github-sync` 拉取，`github-push` 显式回�
 ### Agent 工作时段
 
 Agent 的 `fields.working_hours` 可设每周排班。例如对已有 Agent 提交 `{"op":"update","kind":"agent","id":"inspector","fields":{"working_hours":{"timezone":"Asia/Shanghai","week":{"1":[{"start":"09:00","end":"12:00"},{"start":"13:30","end":"18:00"}]}}}}`，可让它仅在周一两个时段接新运行。周一至周日用 `1`–`7` 的字符串键表示。分身可用 `agent.resolve` 查有效配置；设成 `null` 恢复继承。旧版整点加固定偏移的配置继续有效。[工作时段与夏令时](../crates/shipforge-worker/README.md)
+
+## 自动化的私密 Webhook
+
+`automation.hook.save` 在创建或更新规则时为新增 Webhook 触发器签发一次性 URL。已保存的触发器用 `automation.hook.issue` 首次签发，`automation.hook.rotate` 更换 URL，`automation.hook.revoke` 吊销。`automation.hook.settings` 读取开关、规范化名单、最近来源和修订号。`automation.hook.configure` 保存签名校验和 IP 白名单。编辑者可用 `automation.hook.secret` 明确读取签名密钥，或用 `automation.hook.reset_secret` 立即重置。`automation.hook.history` 用 `before` 与 `limit` 分页读取投递。管理已有触发器时传 `space`、规则 `id` 和 `trigger_id`。[签名算法、Windows 设置与请求示例](automation-webhooks.md)
 
 ## 团队身份与离线草稿
 

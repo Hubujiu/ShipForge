@@ -163,6 +163,13 @@ fn bound(room: &Record) -> Option<&str> {
         .or(room.fields["task_id"].as_str())
 }
 pub(crate) fn check_binding(c: &Context<'_>, old: Option<&Record>, room: &Record) -> Result<()> {
+    if room.fields.get("directory_fork").is_some()
+        && old.is_none_or(|row| row.fields["directory_fork"] != room.fields["directory_fork"])
+    {
+        return Err(invalid(
+            "conversation workspace selections are set when forking",
+        ));
+    }
     if ["task", "task_id"].iter().any(|key| {
         room.fields
             .get(*key)
@@ -187,7 +194,10 @@ pub(crate) fn check_binding(c: &Context<'_>, old: Option<&Record>, room: &Record
 }
 pub(super) fn fork(c: &Context<'_>, room: &Record, q: &Value) -> Result<Value> {
     c.require_edit()?;
-    let (kind, agent) = handler(c, room)?;
+    let (source_kind, source) = handler(c, room)?;
+    let agent = q["handler_id"].as_str().unwrap_or(source);
+    let kind = q["handler_kind"].as_str().unwrap_or(source_kind);
+    crate::agents::usable(c, kind, agent, None)?;
     let anchor = c.readable("message", required(q, "message")?)?;
     if anchor.fields["chat"] != room.id {
         return Err(invalid(
@@ -203,6 +213,10 @@ pub(super) fn fork(c: &Context<'_>, room: &Record, q: &Value) -> Result<Value> {
         return Err(invalid("fork title must have 1–500 characters"));
     }
     let mut fields = json!({"chat_type":"conversation","visibility":"private","creator":c.actor,"owner":c.actor,"handler_kind":kind,"handler_id":agent});
+    let workspace = super::fork_directory::for_fork(c, room, q)?;
+    if !workspace.is_null() {
+        fields["directory_fork"] = workspace;
+    }
     if kind == "agent" {
         fields["agent"] = json!(agent);
     }
@@ -210,7 +224,7 @@ pub(super) fn fork(c: &Context<'_>, room: &Record, q: &Value) -> Result<Value> {
         fields["task"] = json!(task);
     }
     for key in ["runtime", "model"] {
-        if room.fields[key].is_string() {
+        if source == agent && source_kind == kind && room.fields[key].is_string() {
             fields[key] = room.fields[key].clone();
         }
     }
@@ -302,6 +316,9 @@ pub(crate) fn content_context(c: &Context<'_>, run: &Record) -> Result<Value> {
     Ok(json!({"id":room.id,"title":room.title,"messages":messages,"private":private}))
 }
 pub(crate) fn claim_still_visible(c: &Context<'_>, run: &Record) -> Result<bool> {
+    if !super::fork_directory::can_continue(c, run)? {
+        return Ok(false);
+    }
     let Some(id) = run.fields["chat_id"].as_str() else {
         return Ok(true);
     };

@@ -1,4 +1,6 @@
 use super::*;
+mod cache;
+pub(crate) use cache::mark_cache_used;
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -65,6 +67,7 @@ fn shape(state: &Path, path: &Path) -> Option<(&'static str, String)> {
         ["work", run] if run.strip_prefix("run-").is_some_and(|id| hex(id, 32)) => "run",
         ["crew-workspaces", key, id] if hex(key, 64) && hex(id, 32) => "crew",
         ["execution-workspaces", key, id] if hex(key, 64) && hex(id, 32) => "task",
+        ["git-cache", key] if hex(key, 64) => "cache",
         _ => return None,
     };
     Some((
@@ -283,7 +286,12 @@ fn managed_cache(repo: &Path) -> bool {
 }
 fn candidates(state: &Path) -> Result<Vec<PathBuf>> {
     let mut out = Vec::new();
-    for area in ["work", "execution-workspaces", "crew-workspaces"] {
+    for area in [
+        "work",
+        "execution-workspaces",
+        "crew-workspaces",
+        "git-cache",
+    ] {
         let root = state.join(area);
         if !root.exists() {
             continue;
@@ -295,7 +303,7 @@ fn candidates(state: &Path) -> Result<Vec<PathBuf>> {
             if verified_dir(&bucket).as_deref() != Ok(bucket.as_path()) {
                 continue;
             }
-            if area == "work" {
+            if area == "work" || area == "git-cache" {
                 if shape(state, &bucket).is_some() {
                     out.push(bucket);
                 }
@@ -331,6 +339,9 @@ fn inspect(
 ) -> Result<Value> {
     let state = verified_dir(&host.dir)?;
     let (kind, key) = shape(&state, path).ok_or("invalid storage checkout")?;
+    if kind == "cache" {
+        return cache::inspect(host, &state, path, &key, held);
+    }
     let journal = ledger(&state)?;
     let tracked = known(&journal.join(format!("{key}.json")));
     let mut ids = tracked.clone().unwrap_or_default();
@@ -366,8 +377,27 @@ fn inspect(
     } else {
         source(&host.cfg, &state, path).err()
     };
+    let last_used = cache::modified_ms(&journal.join(format!("{key}.json")))
+        .or_else(|| cache::modified_ms(path));
+    let schedule = reason.is_none()
+        && if path.join(".git").is_file() {
+            git(
+                path,
+                &[
+                    "--no-optional-locks",
+                    "status",
+                    "--porcelain",
+                    "--ignored",
+                    "--untracked-files=all",
+                ],
+                &[],
+            )
+            .is_ok_and(|output| output.is_empty())
+        } else {
+            true
+        };
     Ok(
-        json!({"id":key,"category":kind,"bytes":usage.bytes,"files":usage.files,"snapshot":h.finalize().iter().map(|b|format!("{b:02x}")).collect::<String>(),"runs":ids.into_iter().take(128).collect::<Vec<_>>(),"protection":reason}),
+        json!({"id":key,"category":kind,"bytes":usage.bytes,"files":usage.files,"snapshot":h.finalize().iter().map(|b|format!("{b:02x}")).collect::<String>(),"runs":ids.into_iter().take(128).collect::<Vec<_>>(),"protection":reason,"safe_for_schedule":schedule,"last_used_at":last_used}),
     )
 }
 fn scan(host: &Host, history: &BTreeMap<PathBuf, BTreeSet<String>>) -> Result<Value> {
@@ -391,7 +421,7 @@ fn scan(host: &Host, history: &BTreeMap<PathBuf, BTreeSet<String>>) -> Result<Va
         walk(&trash, &mut retired, None)?;
     }
     Ok(
-        json!({"entries":entries,"total_bytes":total.bytes,"other_bytes":total.bytes.saturating_sub(size),"pending_reclaim_bytes":retired.bytes,"omitted":count.saturating_sub(2048)}),
+        json!({"entries":entries,"total_bytes":total.bytes,"other_bytes":total.bytes.saturating_sub(size),"pending_reclaim_bytes":retired.bytes,"omitted":count.saturating_sub(2048),"available_bytes":cache::free_bytes(&state),"local_hour":chrono::Timelike::hour(&chrono::Local::now())}),
     )
 }
 fn purge_owned(cfg: &Config, state: &Path, trash: &Path, target: &Path) -> Result<()> {
@@ -465,6 +495,9 @@ fn clean(
     let lock = file_lock(&journal.join(format!("{key}.lock")))?;
     lock.try_lock().map_err(text_error)?;
     let (kind, _) = shape(&state, &path).ok_or("unverified")?;
+    if kind == "cache" {
+        return cache::clean(host, client, job, &state, &path, key);
+    }
     let bucket = path.parent().ok_or("unverified")?;
     let mut bucket_lock = None;
     if kind != "run" {
@@ -473,7 +506,10 @@ fn clean(
         bucket_lock = Some(f);
     }
     let checked = inspect(host, &path, history, true)?;
-    if checked["snapshot"] != command["expected_snapshot"] || !checked["protection"].is_null() {
+    if checked["snapshot"] != command["expected_snapshot"]
+        || !checked["protection"].is_null()
+        || !command["cycle"].is_null() && checked["safe_for_schedule"] != true
+    {
         return Err("workspace changed".into());
     }
     let repo = source(&host.cfg, &state, &path).map_err(str::to_owned)?;

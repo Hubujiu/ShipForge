@@ -74,3 +74,112 @@ fn hidden_chat_list_fork_and_binding() {
         cx.quit();
     });
 }
+
+#[::core::prelude::v1::test]
+#[ignore = "Runs an actual Windows D3D window with a lease-reported conversation workspace"]
+fn hidden_chat_workspace_choices() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().to_owned();
+    let mut cli = Client::local(&dir).unwrap();
+    let key = "fixture-key-for-native-conversation";
+    for q in [
+        json!({"op":"onboarding.setup","organization_name":"Workspace QA","organization_slug":"workspace-qa","work_type":"software","task_types":["requirement"]}),
+        json!({"op":"create","kind":"agent","id":"builder","title":"Git helper","fields":{"runtime":"local-tool"}}),
+        json!({"op":"create","kind":"chat","id":"room","title":"Existing conversation","fields":{"agent":"builder"}}),
+        json!({"op":"machine.register","machine_id":"box","machine_key":key,"title":"Fixture host","runtimes":["local-tool"]}),
+    ] {
+        cli.execute(q).unwrap();
+    }
+    let anchor = cli
+        .execute(json!({"op":"chat.send","id":"room","body":"Begin a working copy"}))
+        .unwrap()["message"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let in_progress = cli
+        .execute(json!({"op":"run.claim","machine_id":"box","machine_key":key}))
+        .unwrap();
+    cli.execute(json!({"op":"run.report","machine_id":"box","machine_key":key,"id":in_progress["run"]["id"],
+        "lease":in_progress["lease"],"status":"done","result":"Worktree is ready","workspace_checkpoint":{"git":true,"repository":"https://git.example.test/team/qa.git"}})).unwrap();
+    gpui_kit::application()
+        .with_assets(crate::assets::Assets)
+        .run(move |cx| {
+            gpui_kit::init(cx);
+            let (handle, view) = gpui_kit::open_window(
+                WindowOptions {
+                    show: false,
+                    focus: false,
+                    window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+                        None,
+                        size(px(1400.), px(1080.)),
+                        cx,
+                    ))),
+                    ..Default::default()
+                },
+                cx,
+                |w, cx| cx.new(|cx| Workbench::new(Some(dir.clone()), false, false, w, cx)),
+            )
+            .unwrap();
+            handle
+                .update(cx, |_, w, cx| {
+                    activate_accessibility(w);
+                    settle(&view, w, cx);
+                    let act = |action, w: &mut Window, cx: &mut App| {
+                        view.update(cx, |v, cx| v.act(action, w, cx));
+                        settle(&view, w, cx);
+                    };
+                    act(UiAction::Go(Page::Chats), w, cx);
+                    let room = view
+                        .read(cx)
+                        .find("chat", "room")
+                        .expect("fixture in the chat directory")
+                        .clone();
+                    act(UiAction::OpenSearch(room), w, cx);
+                    assert!(buttons(w).iter().any(|label| label == "使用工作目录分叉"));
+                    act(
+                        UiAction::Chat(Action::ForkWorkspace {
+                            room: "room".into(),
+                            message: anchor.clone(),
+                        }),
+                        w,
+                        cx,
+                    );
+                    assert!(matches!(
+                        view.read(cx).form.as_ref().map(|f| &f.mode),
+                        Some(Mode::Workflow {
+                            op: "chat.fork.workspace",
+                            ..
+                        })
+                    ));
+                    act(UiAction::Choose(0, "branch".into()), w, cx);
+                    let field = view
+                        .read(cx)
+                        .form
+                        .as_ref()
+                        .unwrap()
+                        .entries
+                        .iter()
+                        .find(|entry| entry.spec.key == "checkout_branch")
+                        .unwrap();
+                    let Control::Text(Field::Single(input)) = &field.control else {
+                        panic!("branch input")
+                    };
+                    input
+                        .clone()
+                        .update(cx, |s, cx| s.set_value("release/windows", w, cx));
+                    act(UiAction::Submit, w, cx);
+                    let id = view.read(cx).loc.selected.as_ref().unwrap().id.clone();
+                    assert_ne!(id, "room");
+                    let fork = cli
+                        .execute(json!({"op":"get","kind":"chat","id":id}))
+                        .unwrap();
+                    assert_eq!(
+                        fork["fields"]["directory_fork"]["checkout_branch"],
+                        "release/windows"
+                    );
+                    assert_eq!(fork["fields"]["directory_fork"]["mode"], "branch");
+                })
+                .unwrap();
+            cx.quit();
+        });
+}

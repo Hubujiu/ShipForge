@@ -2293,7 +2293,49 @@ impl Workbench {
                 body = body.child(self.handler_panel(r, cx));
             }
             "automation" => {
-                if self.writable() {
+                for (i, t) in r
+                    .fields
+                    .get("triggers")
+                    .and_then(Value::as_array)
+                    .into_iter()
+                    .flatten()
+                    .enumerate()
+                    .filter(|(_, t)| t["type"] == "webhook")
+                {
+                    if let Some(id) = t["id"].as_str() {
+                        if self.writable() {
+                            actions = actions.child(
+                                outlined(self.button(
+                                    format!("rule-hook-{i}"),
+                                    "Webhook 安全设置",
+                                    UiAction::Webhook(crate::app::webhook_ui::Action::Settings(
+                                        r.id.clone(),
+                                        id.into(),
+                                    )),
+                                    cx,
+                                ))
+                                .child(format!("Webhook {} 安全设置", i + 1)),
+                            );
+                        }
+                        actions = actions.child(
+                            outlined(self.button(
+                                format!("rule-deliveries-{i}"),
+                                "Webhook 投递记录",
+                                UiAction::Webhook(crate::app::webhook_ui::Action::History(
+                                    r.id.clone(),
+                                    id.into(),
+                                    None,
+                                )),
+                                cx,
+                            ))
+                            .child(format!("Webhook {} 投递记录", i + 1)),
+                        );
+                    }
+                }
+                if self.writable()
+                    && r.fields.get("enabled") == Some(&json!(true))
+                    && r.fields.get("archived") != Some(&json!(true))
+                {
                     actions = actions.child(
                         outlined(self.button(
                             "run-rule",
@@ -2306,7 +2348,7 @@ impl Workbench {
                     );
                 }
                 body = body.child(actions).child(self.attributes(r));
-                body = self.related_runs(body, r, cx);
+                body = body.child(self.rule_history_panel(r, cx));
             }
             "machine" => {
                 if r.fields["owner"] == self.actor {
@@ -2967,18 +3009,31 @@ impl Workbench {
                     .as_ref()
                     .is_some_and(crate::app::chat_actions::agent_room)
             {
-                item = item.child(
-                    outlined(self.button(
-                        format!("fork-message-{}", r.id),
-                        "从此消息分叉",
-                        UiAction::Chat(crate::app::chat_actions::Action::Fork {
-                            room: id.to_owned(),
-                            message: r.id.clone(),
-                        }),
-                        cx,
-                    ))
-                    .child(crate::locale::label("从此消息分叉")),
-                );
+                item = item
+                    .child(
+                        outlined(self.button(
+                            format!("fork-message-{}", r.id),
+                            "从此消息分叉",
+                            UiAction::Chat(crate::app::chat_actions::Action::Fork {
+                                room: id.to_owned(),
+                                message: r.id.clone(),
+                            }),
+                            cx,
+                        ))
+                        .child(crate::locale::label("从此消息分叉")),
+                    )
+                    .child(
+                        outlined(self.button(
+                            format!("fork-workspace-{}", r.id),
+                            "使用工作目录分叉",
+                            UiAction::Chat(crate::app::chat_actions::Action::ForkWorkspace {
+                                room: id.to_owned(),
+                                message: r.id.clone(),
+                            }),
+                            cx,
+                        ))
+                        .child(crate::locale::label("使用工作目录分叉")),
+                    );
             }
             col = col.child(item);
             n += 1;

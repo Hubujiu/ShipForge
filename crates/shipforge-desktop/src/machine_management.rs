@@ -9,12 +9,15 @@ use std::{
     path::PathBuf,
     time::{Duration, Instant},
 };
+#[path = "machine_management/storage_policy.rs"]
+mod storage_policy;
 #[cfg(windows)]
 #[path = "machine_management/tray.rs"]
 mod tray;
 
 #[derive(Clone)]
 pub enum Dialog {
+    StoragePolicy(Value),
     AgentLaunch(Value),
     Storage(Value),
     CleanStorage(String, Value),
@@ -27,6 +30,7 @@ pub enum Dialog {
 }
 #[derive(Clone)]
 pub enum Action {
+    PinStorage(String, String, bool),
     AgentLaunch(String),
     Storage(String),
     Scan(String),
@@ -35,6 +39,7 @@ pub enum Action {
     Quit,
 }
 pub(super) enum Reply {
+    StorageUpdated(String),
     AgentLaunch,
     Storage,
     StorageQueued(String),
@@ -58,6 +63,7 @@ impl Dialog {
             Self::Runtimes(_) => "运行时能力",
             Self::AgentLaunch(_) => "模型与运行参数",
             Self::Storage(_) => "管理存储空间",
+            Self::StoragePolicy(_) => "存储配额与清理策略",
             Self::CleanStorage(..) => "确认清理工作目录",
             Self::Command(_, _, op) => operation(op),
         }
@@ -66,6 +72,7 @@ impl Dialog {
         match self {
             Self::AgentLaunch(_) => "关闭",
             Self::Storage(_) => "关闭",
+            Self::StoragePolicy(_) => "保存存储策略",
             Self::CleanStorage(..) => "确认清理",
             Self::SettingsFile(_) => "读取配置",
             Self::Policy(..) => "保存",
@@ -78,6 +85,29 @@ impl Dialog {
     pub fn specs(&self) -> Vec<Spec> {
         match self {
             Self::SettingsFile(_) => vec![item("config", "工作机配置文件", Format::Text, "")],
+            Self::StoragePolicy(_) => vec![
+                item("enabled", "启用定时安全清理", Format::Bool, "false"),
+                item(
+                    "interval_minutes",
+                    "清理间隔（分钟）",
+                    Format::Number,
+                    "1440",
+                ),
+                item("retention_days", "终态目录保留天数", Format::Number, "7"),
+                item("cache_retention_days", "缓存保留天数", Format::Number, "7"),
+                item(
+                    "quota_gib",
+                    "托管容量上限（GiB，0 表示不限）",
+                    Format::Number,
+                    "0",
+                ),
+                item(
+                    "min_free_gib",
+                    "最低磁盘可用空间（GiB）",
+                    Format::Number,
+                    "0",
+                ),
+            ],
             Self::Policy(..) => vec![
                 item("mode", "启动方式", Format::Choice(MODES), "manual"),
                 item(
@@ -106,6 +136,7 @@ impl Dialog {
         let data = match self {
             Self::SettingsFile(path) => json!({"config":path}),
             Self::Policy(_, v) => v["policy"].clone(),
+            Self::StoragePolicy(v) => v["policy"].clone(),
             Self::Quit(keep) => json!({"keep_background":keep}),
             _ => Value::Null,
         };
@@ -137,6 +168,10 @@ fn storage_reason(v: &Value) -> &'static str {
         Some("pending" | "recovery") => "等待恢复",
         Some("open_task") => "任务尚未结束",
         Some("conversation") => "对话可继续",
+        Some("pinned") => "已固定",
+        Some("attached_worktree") => "仍有工作树引用",
+        Some("cache_in_use") => "缓存正在使用",
+        Some("local_changes") => "含本地 Git 数据",
         Some("bound_repository") => "绑定目录",
         Some("links" | "git_locked") => "目录受保护",
         _ => "归属未确认",
@@ -250,6 +285,7 @@ impl Workbench {
             Action::AgentLaunch(id)=>self.send(json!({"op":"agent.runtime.options","space":self.loc.space,"id":id}),After::MachineManagement(Reply::AgentLaunch),false),
             Action::Storage(id)=>self.send(json!({"op":"machine.storage.preview","space":self.loc.space,"id":id}),After::MachineManagement(Reply::Storage),false),
             Action::Scan(id)=>self.send(json!({"op":"machine.storage.request","space":self.loc.space,"id":id,"request_id":uuid::Uuid::new_v4().to_string(),"action":"scan"}),After::MachineManagement(Reply::StorageQueued(id)),true),
+            Action::PinStorage(id,key,pinned)=>self.send(json!({"op":"machine.storage.pin","space":self.loc.space,"id":id,"workspace":key,"pinned":pinned}),After::MachineManagement(Reply::StorageUpdated(id)),true),
         }
     }
     pub(super) fn machine_management_submit(
@@ -267,6 +303,7 @@ impl Workbench {
         Dialog::Runtimes(_)=>self.close_form(w,cx),
         Dialog::AgentLaunch(_)=>self.close_form(w,cx),
         Dialog::Storage(_)=>self.close_form(w,cx),
+        Dialog::StoragePolicy(v)=>{let id=v["machine"].as_str().ok_or("机器不可用")?.to_owned();self.send(json!({"op":"machine.storage.configure","space":self.loc.space,"id":id,"expected_rev":v["policy_rev"],"policy":values}),After::MachineManagement(Reply::StorageUpdated(id)),true);}
         Dialog::CleanStorage(id,entry)=>self.send(json!({"op":"machine.storage.request","action":"clean","confirm":true,"space":self.loc.space,"id":id,"workspace":entry["id"],"expected_snapshot":entry["snapshot"],"request_id":uuid::Uuid::new_v4().to_string()}),After::MachineManagement(Reply::StorageQueued(id)),true),
         Dialog::Command(id,runtime,action)=>self.send(json!({"op":"machine.runtime.request","space":self.loc.space,"id":id,"runtime":runtime,"action":action,"request_id":uuid::Uuid::new_v4().to_string()}),After::MachineManagement(Reply::Queued(id)),true)
     }
@@ -314,6 +351,7 @@ impl Workbench {
                 self.notify_text("已加入工作机队列");
                 self.machine_management_action(Action::Storage(id), w, cx);
             }
+            Reply::StorageUpdated(id) => self.machine_management_action(Action::Storage(id), w, cx),
             Reply::Queued(id) => self.machine_management_action(Action::Inventory(id), w, cx),
         }
     }
@@ -579,6 +617,7 @@ impl Workbench {
             }
             Dialog::Storage(v) => {
                 let id = v["machine"].as_str().unwrap_or("");
+                body = body.child(self.storage_health_panel(v, cx));
                 if let Some(scanned) = v["scanned_at"].as_i64() {
                     let at = chrono::DateTime::from_timestamp_millis(scanned)
                         .map(|v| {
@@ -628,9 +667,13 @@ impl Workbench {
                 }
                 for entry in v["entries"].as_array().into_iter().flatten() {
                     let key = entry["id"].as_str().unwrap_or("");
-                    let name = entry["title"]
-                        .as_str()
-                        .unwrap_or_else(|| &key[..key.len().min(10)]);
+                    let name = entry["title"].as_str().unwrap_or_else(|| {
+                        if entry["category"] == "cache" {
+                            crate::locale::label("托管 Git 缓存")
+                        } else {
+                            &key[..key.len().min(10)]
+                        }
+                    });
                     body = body.child(text(
                         format!(
                             "{name} · {} · {}",
@@ -640,7 +683,25 @@ impl Workbench {
                         13.,
                         INK,
                     ));
-                    if v["online"] == true && entry["protection"].is_null() {
+                    if self.access_identity["scope"] != "read" {
+                        body = body.child(btn(
+                            format!("pin-storage-{key}"),
+                            if entry["pinned"] == true {
+                                "取消固定工作区"
+                            } else {
+                                "固定工作区"
+                            },
+                            UiAction::MachineManagement(Action::PinStorage(
+                                id.into(),
+                                key.into(),
+                                entry["pinned"] != true,
+                            )),
+                        ));
+                    }
+                    if v["online"] == true
+                        && entry["protection"].is_null()
+                        && self.access_identity["scope"] != "read"
+                    {
                         body = body.child(btn(
                             format!("clean-storage-{key}"),
                             "清理工作目录",
@@ -653,9 +714,17 @@ impl Workbench {
                         format!(
                             "{} · {}",
                             crate::locale::label(if j["action"] == "scan" {
-                                "重新统计"
+                                if j["scheduled"] == true {
+                                    "后台统计"
+                                } else {
+                                    "重新统计"
+                                }
                             } else {
-                                "清理工作目录"
+                                if j["scheduled"] == true {
+                                    "定时安全清理"
+                                } else {
+                                    "清理工作目录"
+                                }
                             }),
                             crate::locale::label(match j["state"].as_str() {
                                 Some("queued") => "排队中",
@@ -668,6 +737,13 @@ impl Workbench {
                         MUTED,
                     ));
                 }
+            }
+            Dialog::StoragePolicy(_) => {
+                body = body.child(text(
+                    "启用后，工作机会按保留期限重新核验并回收符合条件的数据。",
+                    13.,
+                    MUTED,
+                ));
             }
             Dialog::CleanStorage(_, entry) => {
                 body = body

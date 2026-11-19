@@ -22,6 +22,7 @@ pub enum Request {
         stop: bool,
     },
     Read {
+        rule_cursor: Option<String>,
         language: &'static str,
         people: (&'static str, String),
         handler: Option<(String, String)>,
@@ -119,6 +120,7 @@ impl Backend {
                             let _ = events.send(Event::Reply { ticket, result });
                         }
                         Request::Read {
+                            rule_cursor,
                             language,
                             people,
                             handler,
@@ -144,6 +146,10 @@ impl Backend {
                                 } else if kind=="assistant_home" {
                                     let mut q=json!({"op":"assistant.history","space":space});
                                     if chat.is_some(){q["room_scope"]=json!(space);}
+                                    q
+                                } else if matches!(kind.as_str(),"automation_history"|"automation_status") && let Some((_,id))=&handler{
+                                    let mut q=json!({"op":if kind=="automation_history"{"automation.history"}else{"automation.status"},"id":id,"space":space});
+                                    if kind=="automation_history"{q["limit"]=json!(8);if let Some(cursor)=rule_cursor.as_ref(){q["cursor"]=json!(cursor);}}
                                     q
                                 } else if kind=="assistant_catalog" {
                                     json!({"op":"task_assistant.catalog","space":space,"language":language})
@@ -187,6 +193,8 @@ impl Backend {
                                         }).collect::<Vec<_>>())
                                     } else if kind=="assistant_home" {
                                         json!([{"kind":kind,"id":"personal","space":space,"title":value["title"],"fields":value}])
+                                    } else if matches!(kind.as_str(),"automation_history"|"automation_status"){
+                                        json!([{"kind":kind,"id":value["id"],"space":space,"title":value["id"],"fields":value}])
                                     } else if kind=="assistant_catalog" {
                                         json!(value.as_array().into_iter().flatten().map(|v|json!({"kind":kind,"id":format!("{}/{}",v["space"].as_str().unwrap_or(""),v["provider"].as_str().unwrap_or("")),"space":v["space"],"title":v["title"],"rev":v["rev"],"fields":v})).collect::<Vec<_>>())
                                     } else if kind=="organization_settings" {
