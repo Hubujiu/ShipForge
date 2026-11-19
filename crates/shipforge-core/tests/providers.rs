@@ -19,6 +19,71 @@ fn envelope(case: &Value, op: &str) -> Value {
     }
     q
 }
+
+#[test]
+fn jira_priority_handles_lowest_unmapped_missing_and_local_conflict() {
+    let mut db = Store::memory().unwrap();
+    connector(&mut db, "jira");
+    let case = cases()
+        .into_iter()
+        .find(|v| v["provider"] == "jira")
+        .unwrap();
+    let mut q = envelope(&case, "provider.ingest");
+    q["payload"]["issue"]["fields"]["priority"] = json!({"id":"10017","name":"Lowest"});
+    let mut preview = q.clone();
+    preview["op"] = json!("provider.preview");
+    let settings = json!({"op":"organization.settings"});
+    assert_eq!(db.execute("owner", preview).unwrap()["priority"], "lowest");
+    assert_eq!(
+        db.execute("owner", settings.clone()).unwrap()["priority_levels"],
+        4
+    );
+    let created = db.execute("owner", q.clone()).unwrap();
+    let get = json!({"op":"get","kind":"task","id":created["task"]});
+    assert_eq!(
+        db.execute("owner", get.clone()).unwrap()["fields"]["priority"],
+        "lowest"
+    );
+    assert_eq!(db.execute("owner", settings).unwrap()["priority_levels"], 5);
+    for (i, priority) in [None, Some(json!({"id":"5","name":"Custom"}))]
+        .into_iter()
+        .enumerate()
+    {
+        q["event_id"] = json!(format!("other-{i}"));
+        let fields = &mut q["payload"]["issue"]["fields"];
+        fields["updated"] = json!(format!("2026-01-10T14:0{i}:00.000+0000"));
+        fields.as_object_mut().unwrap().remove("priority");
+        if let Some(p) = priority {
+            fields["priority"] = p;
+        }
+        assert_eq!(
+            db.execute("owner", q.clone()).unwrap()["action"],
+            "unchanged"
+        );
+        assert_eq!(
+            db.execute("owner", get.clone()).unwrap()["fields"]["priority"],
+            "lowest"
+        );
+    }
+    db.execute(
+        "owner",
+        json!({"op":"update","kind":"task","id":created["task"],"fields":{"priority":"high"}}),
+    )
+    .unwrap();
+    q["event_id"] = json!("clear");
+    q["payload"]["issue"]["fields"]["priority"] = Value::Null;
+    q["payload"]["issue"]["fields"]["updated"] = json!("2026-01-10T15:00:00.000+0000");
+    assert_eq!(
+        db.execute("owner", q.clone()).unwrap()["fields"],
+        json!(["priority"])
+    );
+    q["resolve"] = json!("source");
+    assert_eq!(db.execute("owner", q).unwrap()["action"], "updated");
+    assert_eq!(
+        db.execute("owner", get).unwrap()["fields"]["priority"],
+        "none"
+    );
+}
 #[test]
 fn every_provider_fixture_previews_applies_and_replays() {
     let mut db = Store::memory().unwrap();

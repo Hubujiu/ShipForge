@@ -28,6 +28,12 @@ fn fingerprint(token: &str) -> Vec<u8> {
 }
 
 impl Auth {
+    pub fn data_directory(&self) -> Result<&std::path::Path, String> {
+        self.0
+            .path()
+            .and_then(|s| std::path::Path::new(s).parent())
+            .ok_or_else(|| "storage: unavailable team directory".into())
+    }
     pub fn open(dir: &Path) -> Result<Self, String> {
         std::fs::create_dir_all(dir).map_err(sql)?;
         let db = Connection::open(dir.join("identities.sqlite3")).map_err(sql)?;
@@ -204,6 +210,9 @@ pub fn execute(
 
 pub fn authorize(principal: &Principal, request: &Value) -> Result<(), String> {
     let op = request["op"].as_str().unwrap_or("");
+    if op == "organization.depart" && principal.personal {
+        return Err("forbidden: sign in as the member to leave or dissolve an organization".into());
+    }
     let allowed = match principal.scope.as_str() {
         "write" => true,
         "read" => shipforge_core::is_read_only(op),

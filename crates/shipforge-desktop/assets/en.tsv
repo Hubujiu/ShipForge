@@ -1225,3 +1225,123 @@ GitHub 文件或 Gist 原始 HTTPS 地址	Public GitHub file or raw Gist HTTPS U
 暂无记录	No records
 分类	Category
 发布	Publish
+快捷新建	Quick create
+与真人对话	Message a person
+与小队对话	Chat with a crew
+新建群聊	Start a group chat
+群聊名称	Group name
+真人成员	People
+真人	People
+打开对话	Open conversation
+查找成员与机器	Find people and machines
+名称或标识	Name or identifier
+前往	Go to
+空间成员	Space members
+团队服务离线	Team server offline
+没有匹配的对象	No matching objects
+输入任务标题或编号	Enter a task title or number
+输入关键词，在已加入的空间中查找	Search the spaces you have joined
+当前账号没有可访问的空间	This account has no accessible spaces
+最低	Lowest
+组织默认设置	Organization defaults
+组织默认语言	Default content language
+任务优先级档数	Task priority levels
+4 级	Four levels
+5 级	Five levels
+离开组织	Leave organization
+删除组织	Delete organization
+输入组织名称确认	Enter the organization name to confirm
+已保存组织默认设置	Organization defaults saved
+组织成员关系已更新	Organization membership updated
+删除后将清除组织、空间和其中的数据，此操作无法撤销。	Deleting the organization permanently removes its spaces and data.
+离开后，你将失去此组织和所属空间的访问权限。	Leaving removes your access to this organization and its spaces.
+同时发到 Asana	Also send to Asana
+发现 Asana 工作区	Find Asana workspaces
+绑定 Asana 工作区令牌	Connect Asana workspace token
+发现 Asana 项目	Find Asana projects
+预览 Asana 项目任务	Preview Asana project tasks
+读取 Asana 项目变更	Sync Asana project
+回写 Asana 字段或新评论	Publish fields or a new Asana comment
+Asana 个人访问令牌	Asana personal access token
+Asana 工作区 GID	Asana workspace GID
+清除组织的 Asana 令牌	Remove organization Asana token
+新评论	New comment
+本地评论 ID	Local comment ID
+核对已发布的远端评论 ID	Confirm published remote comment ID
+配置 Teambition 组织应用	Configure Teambition organization app
+生成 Teambition 个人授权地址	Get my Teambition authorization URL
+绑定我的 Teambition 身份	Connect my Teambition identity
+发现我加入的 Teambition 项目	Find my Teambition projects
+预览 Teambition 项目任务	Preview Teambition project tasks
+读取 Teambition 项目变更	Sync Teambition project
+以我的身份回写 Teambition	Publish to Teambition as me
+配置或校验 CNB 组令牌	Configure or verify CNB group token
+发现 CNB 组内仓库	Find CNB group repositories
+配对 CNB 仓库或轮换签名密钥	Pair CNB repository or rotate signing key
+查看 CNB 流水线片段	View CNB pipeline snippet
+查看 CNB 事件与回链记录	View CNB events and backlink history
+发送或核对 CNB 回链	Send or reconcile CNB backlinks
+代码托管仓库路径	Repository path
+CNB 组路径	CNB group path
+向 CNB 议题和合并请求发送任务回链	Post task backlinks on CNB issues and pull requests
+允许本人确认后删除远端任务	Allow individually confirmed remote task deletion
+Teambition 应用 ID	Teambition app ID
+Teambition 应用密钥	Teambition app secret
+清除组织的应用凭据	Clear organization app credentials
+Teambition 个人访问令牌	Teambition personal access token
+解除我的 Teambition 授权	Remove my Teambition authorization
+标题与描述	Title and description
+删除远端任务	Delete remote task
+删除时确认的远端任务 ID	Remote task ID to confirm deletion
+删除时确认的本地任务修订号	Local task revision to confirm deletion
+CNB 个人访问令牌	CNB personal access token
+清除组织的组令牌	Clear the organization's group token
+CNB 完整仓库路径	Full CNB repository path
+ShipForge 团队服务地址	ShipForge team server URL
+轮换此仓库的流水线密钥	Rotate this repository's pipeline secret
+预约执行（含时区的日期时间）	Scheduled start (date and time with offset)
+获准工作目录（依次择空闲）	Approved folders in preference order
+对话并发策略	Conversation concurrency
+独立对话额度	Separate conversation capacity
+共用任务额度	Share task capacity
+最大运行时长（分钟）	Maximum runtime (minutes)
+排队超时（小时）	Queue timeout (hours)
+排班方案	Working schedule
+全天接单	Always available
+工作日夜间及周末	Weekday nights and weekends
+自定义工作时段	Custom working hours
+排班时区	Schedule time zone
+指派任务遵守排班	Apply schedule to assignments
+评论提及遵守排班	Apply schedule to comment mentions
+对话消息遵守排班	Apply schedule to conversations
+默认工作目录	Default workspace
+本机进程与日志	Local processes and logs
+授权本机工作目录	Approve a local project folder
+读取本机诊断	Read local diagnostics
+批准目录	Approve folder
+本机工作目录	Local project folder
+目录显示名称	Folder display name
+允许直接写入此目录	Allow direct writes to this folder
+获准工作目录	Approved project folders
+机器诊断	Machine diagnostics
+运行诊断	Run diagnostics
+等待工作时段	Waiting for working hours
+尚未设置可用时段	No available shift configured
+立即触发	Start now
+已进入可执行队列	Ready for scheduling
+选择工作目录	Choose a project folder
+等待预约时间	Waiting for scheduled start
+Agent 并发已满	Agent at capacity
+机器并发已满	Machine at capacity
+对话中还有运行	Conversation busy
+此任务有活动运行	Task busy
+小队成员正在使用任务目录	Crew task folder in use
+获准目录均在使用	All approved folders busy
+工作目录不可用	Project folder unavailable
+工作机离线	Machine offline
+运行时不可用	Runtime unavailable
+等待原因	Waiting reason
+排队时限	Queue deadline
+执行时限	Execution deadline
+预计开始	Expected start
+请填写自定义工作时段	Enter the custom working schedule

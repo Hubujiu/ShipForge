@@ -487,6 +487,15 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
         return Err("external description exceeds 1 MiB".into());
     }
     let mut incoming = json!({"title":title,"description":description,"closed":q["closed"].as_bool().unwrap_or(false)});
+    if let Some(level) = q.get("priority") {
+        if !matches!(
+            level.as_str(),
+            Some("urgent" | "high" | "medium" | "low" | "lowest" | "none")
+        ) {
+            return Err(crate::invalid("invalid source priority"));
+        }
+        incoming["priority"] = level.clone();
+    }
     for key in ["assignees", "source_assignees"] {
         if let Some(value) = q.get(key) {
             crate::domain::strings(value, key)?;
@@ -514,6 +523,12 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
         } else {
             let mut local = mapped_task(c, &task)?;
             let mut base = base;
+            if incoming.get("priority").is_some() {
+                local["priority"] = task.fields["priority"].as_str().unwrap_or("none").into();
+                if base.get("priority").is_none() {
+                    base["priority"] = json!("none");
+                }
+            }
             for key in ["assignees", "source_assignees"] {
                 if incoming.get(key).is_some() {
                     local[key] = task.fields.get(key).cloned().unwrap_or_else(|| json!([]));
@@ -528,6 +543,7 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
                 "title",
                 "description",
                 "closed",
+                "priority",
                 "assignees",
                 "source_assignees",
             ] {
@@ -550,6 +566,9 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
                 );
             }
             let mut patch = json!({"description":merged["description"]});
+            if merged["priority"] != local["priority"] {
+                patch["priority"] = merged["priority"].clone();
+            }
             for key in ["assignees", "source_assignees"] {
                 if let Some(value) = merged.get(key) {
                     patch[key] = value.clone();
@@ -577,7 +596,7 @@ fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
         }
     } else {
         let mut record = json!({"description":description,"external_id":external,"connector":connector.id,"source":"integration"});
-        for key in ["assignees", "source_assignees"] {
+        for key in ["assignees", "source_assignees", "priority"] {
             if let Some(value) = incoming.get(key) {
                 record[key] = value.clone();
             }

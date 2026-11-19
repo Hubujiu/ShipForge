@@ -12,6 +12,7 @@ rusqlite.workspace = true
 serde_json.workspace = true
 sha2.workspace = true
 shipforge-core.workspace = true
+shipforge-client.workspace = true
 tiny_http.workspace = true
 ureq.workspace = true
 url.workspace = true

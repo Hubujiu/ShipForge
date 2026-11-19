@@ -253,7 +253,7 @@ fn impact(db: &Connection, actor: &str) -> Result<Value> {
     Ok(json!({"organizations":organizations,"shared_machines":machines}))
 }
 
-fn purge_organization(db: &Connection, org: &str) -> Result<()> {
+pub(crate) fn purge_organization(db: &Connection, org: &str) -> Result<()> {
     if org == "default" {
         return Err(forbidden("the installation workspace cannot be dissolved"));
     }

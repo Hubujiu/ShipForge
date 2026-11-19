@@ -5,7 +5,7 @@ use serde_json::{Value, json};
 mod batches;
 mod cloud;
 mod signals;
-pub(crate) use signals::{linear_relay, uses_project};
+pub(crate) use signals::{project_relay, uses_project};
 mod trackers;
 pub use trackers::zentao_installation;
 mod bugly;
@@ -36,6 +36,20 @@ pub(super) fn digits(value: &str) -> bool {
 pub(crate) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
     let f = &r.fields;
     let old = c.find("connector", &r.id)?;
+    if let Some(previous) = &old
+        && previous.fields["provider"] == "cnb"
+        && previous.fields["cnb_pair"]
+            .as_str()
+            .is_some_and(|s| !s.is_empty())
+        && (["provider", "cnb_group", "repository", "cnb_repo_id"]
+            .iter()
+            .any(|&key| previous.fields[key] != f[key])
+            || f["cnb_pair"].as_str().is_none_or(str::is_empty))
+    {
+        return Err(conflict(
+            "create a separate CNB connector for a different repository or group",
+        ));
+    }
     if let Some(old) = &old
         && [
             "provider",
@@ -65,7 +79,19 @@ pub(crate) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
         bugly::disconnect(c, &r.id)?;
     }
     match f["provider"].as_str() {
-        Some("linear" | "clickup" | "ones") => cloud::validate(f)?,
+        Some("cnb") => {
+            if !f["cnb_group"].as_str().is_some_and(|s| {
+                s.len() <= 400
+                    && s.split('/')
+                        .all(|v| compact_id(v) && !matches!(v, "." | ".."))
+            }) {
+                return Err(invalid("CNB requires a group or subgroup path"));
+            }
+            if f.get("cnb_backlinks").is_some_and(|v| !v.is_boolean()) {
+                return Err(invalid("cnb_backlinks must be a boolean"));
+            }
+        }
+        Some("linear" | "clickup" | "ones" | "teambition" | "asana") => cloud::validate(f)?,
         Some("zentao" | "pingcode") => trackers::validate(f)?,
         Some("tapd") => tapd::validate(f)?,
         Some("zoho") => {
@@ -112,6 +138,16 @@ pub(crate) fn removing(c: &Context<'_>, r: &Record) -> Result<()> {
             params![c.space, r.id],
         )
         .map_err(storage)?;
+        if r.fields["provider"] == "cnb" {
+            for statement in [
+                "DELETE FROM sf_cnb_notes WHERE space=? AND connector=?",
+                "DELETE FROM sf_vcs_events WHERE space=? AND connector=?",
+                "DELETE FROM sf_vcs_links WHERE space=? AND connector=?",
+            ] {
+                c.db.execute(statement, params![c.space, r.id])
+                    .map_err(storage)?;
+            }
+        }
         c.db.execute(
             "DELETE FROM sf_vendor_push WHERE space=? AND connector=?",
             params![c.space, r.id],
@@ -193,12 +229,31 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
         )?;
         return bugly::execute(c, &r, q, op);
     }
-    c.require_admin()?;
     let r = c.readable("connector", id)?;
+    if matches!(r.fields["provider"].as_str(), Some("teambition" | "asana"))
+        && matches!(
+            op,
+            "imports.binding" | "imports.prepare_push" | "imports.finish_push"
+        )
+    {
+        c.require_edit()?;
+    } else {
+        c.require_admin()?;
+    }
     let cleanup = op == "imports.binding" && q["clear_device_credentials"] == true;
     if !matches!(
         r.fields["provider"].as_str(),
-        Some("zoho" | "tapd" | "zentao" | "pingcode" | "linear" | "clickup" | "ones")
+        Some(
+            "zoho"
+                | "tapd"
+                | "zentao"
+                | "pingcode"
+                | "linear"
+                | "clickup"
+                | "ones"
+                | "teambition"
+                | "asana"
+        )
     ) || (r.fields["enabled"] == false
         && !cleanup
         && !matches!(

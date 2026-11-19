@@ -127,7 +127,10 @@ def verify(directory, start, stop, *, sdk=False):
             assert jira(issue, version=3)["fields"]["description"] == adf
             assert jira(issue, reader["token"])["fields"]["description"] == "Unicode 描述\nSecond line"
             assert set(jira(issue, params={"fields": "summary,labels"})["fields"]) == {"summary", "labels"}
+            assert native("organization.settings", space=project)["priority_levels"] == 4
             second = create("Second SDK task", priority={"id": "5"}, parent={"key": key})
+            assert native("organization.settings", space=project)["priority_levels"] == 5
+            assert jira("issue/" + second["key"])["fields"]["priority"]["name"] == "Lowest"
             assert jira("issue/" + second["key"])["fields"]["parent"]["key"] == key
             assert [row["key"] for row in search('project=QA AND (assignee=currentUser() OR summary~"Second") AND NOT statusCategory=done ORDER BY priority DESC')["issues"]] == [key, second["key"]]
             assert search('project IN ("QA", "OTHER") AND labels NOT IN ("hidden") AND description ~ 描述 AND updated >= -1M AND created >= -1y AND duedate <= "2027-01-31"')["total"] == 1
@@ -191,6 +194,8 @@ def verify(directory, start, stop, *, sdk=False):
             projection = release.run_cli(cli, root / "reader", "request", request={
                 "op": "jira.read", "space": org, "api_version": 2, "resource": issue})
             assert projection["body"]["fields"]["summary"] == "Changed from Jira"
+            jira("issue/" + second["key"], method="PUT", body={"fields":{"priority":None}}, expected=204)
+            assert jira("issue/" + second["key"])["fields"]["priority"] is None
             jira("issue/" + second["key"], method="DELETE", expected=204)
             jira("issue/" + second["key"], expected=404)
             native("access.revoke", id=reader["id"])

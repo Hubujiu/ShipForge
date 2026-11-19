@@ -144,6 +144,9 @@ fn serve(
                 if let Err(error) = scheduler.maintain_iterations() {
                     eprintln!("Iteration maintenance: {error}");
                 }
+                if let Err(error) = scheduler.maintain_run_queue() {
+                    eprintln!("Run queue maintenance: {error}");
+                }
                 std::thread::sleep(std::time::Duration::from_secs(30));
             }
         })
@@ -251,6 +254,36 @@ fn handle(
         return Err("method: use POST".into());
     }
     let path = request.url().to_owned();
+    if let Some(route) = path.strip_prefix("/v1/cnb/") {
+        let (space, id) = split_target(route)?;
+        let header = |name: &'static str| {
+            request
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv(name))
+                .map(|h| h.value.as_str().to_owned())
+                .unwrap_or_default()
+        };
+        let timestamp = header("X-ShipForge-Timestamp");
+        let signature = header("X-ShipForge-Signature");
+        let mut raw = Vec::new();
+        request
+            .as_reader()
+            .take(65537)
+            .read_to_end(&mut raw)
+            .map_err(|_| "invalid: unreadable CI event")?;
+        if raw.len() > 65536 {
+            return Err("too_large: CI event exceeds 64 KiB".into());
+        }
+        return shipforge_client::receive_cnb(
+            auth.data_directory()?,
+            space,
+            id,
+            &timestamp,
+            &signature,
+            &raw,
+        );
+    }
     if let Some(route) = path.strip_prefix("/v1/github/") {
         return github.handle(route, request, auth, store);
     }
@@ -349,6 +382,12 @@ fn dispatch(
         return auth::execute(auth, p, store, &body);
     }
     auth::authorize(p, &body)?;
+    if op.starts_with("cnb.internal.") {
+        return Err("forbidden: use the authenticated CNB integration".into());
+    }
+    if shipforge_client::hosted_integration(op) {
+        return shipforge_client::execute_integration(auth.data_directory()?, &p.actor, body);
+    }
     if op == "machine.register" && p.personal {
         let space = body["space"].as_str().unwrap_or("default").to_string();
         let record = store.execute(&p.actor, body)?;

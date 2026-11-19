@@ -80,7 +80,7 @@ impl Host {
                     .map(|items| ((*name).clone(), items))
             })
             .collect::<std::collections::BTreeMap<_, _>>();
-        self.call(client,json!({"op":"machine.register","title":self.cfg.name,"shared":self.cfg.shared,"capacity":self.cfg.capacity,"runtimes":enabled,"slash_commands":commands}))?;
+        self.call(client,json!({"op":"machine.register","title":self.cfg.name,"shared":self.cfg.shared,"capacity":self.cfg.capacity,"runtimes":enabled,"slash_commands":commands,"directories":self.cfg.approved_directories()}))?;
         Ok(())
     }
     fn spool(&self, request: &Value) -> Result<PathBuf> {
@@ -190,11 +190,22 @@ impl Host {
                 } else {
                     "failed"
                 };
-                json!({"status":status,"result":error,"artifacts":[]})
+                if status == "cancelled" {
+                    return json!({"status":status,"result":"cancelled","artifacts":[]});
+                }
+                let failure = shipforge_client::runtime_diagnostics::classify(&Value::Null, &error);
+                json!({"status":status,"result":failure["message"],"error":failure,"artifacts":[]})
             });
         if let Some(value) = progress.read() {
             payload["progress"] = value;
         }
+        crate::diagnostics::record(
+            &self.dir,
+            &context,
+            payload["status"].as_str().unwrap_or("failed"),
+            None,
+            payload["error"]["category"].as_str(),
+        );
         let mut request = payload.clone();
         request["op"] = json!("run.report");
         request["id"] = json!(id);
@@ -223,9 +234,11 @@ pub fn run(file: &Path, once: bool) -> Result<Value> {
     if stop_marker.exists() {
         fs::remove_file(&stop_marker).map_err(|e| e.to_string())?;
     }
-    let host = Host { cfg, dir, key };
+    let mut host = Host { cfg, dir, key };
+    crate::diagnostics::record(&host.dir, &Value::Null, "supervisor_started", None, None);
     let mut client = Client::from_env()?;
     host.register(&mut client)?;
+    let mut advertised = host.cfg.approved_directories();
     let mut jobs: Vec<thread::JoinHandle<Result<Value>>> = Vec::new();
     let mut results = Vec::new();
     let mut last_ping = Instant::now()
@@ -252,6 +265,23 @@ pub fn run(file: &Path, once: bool) -> Result<Value> {
             }
         }
         if last_ping.elapsed() >= Duration::from_secs(20) {
+            if let Ok(current) = Config::load(file)
+                && current.machine_id == host.cfg.machine_id
+                && current.space == host.cfg.space
+            {
+                host.cfg.profiles = current.profiles;
+                host.cfg.direct_profiles = current.direct_profiles;
+                host.cfg.allow_direct = current.allow_direct;
+                host.cfg.workspace = current.workspace;
+                let dirs = host.cfg.approved_directories();
+                if dirs != advertised {
+                    match host.register(&mut client) {
+                        Ok(()) => advertised = dirs,
+                        Err(error) if once => return Err(error),
+                        Err(error) => eprintln!("publish approved directories: {error}"),
+                    }
+                }
+            }
             if let Err(e) = host.call(&mut client, json!({"op":"machine.heartbeat"})) {
                 if once || e.contains("disabled") || e.contains("authentication") {
                     for job in jobs.drain(..) {
@@ -278,7 +308,10 @@ pub fn run(file: &Path, once: bool) -> Result<Value> {
             last_ping = Instant::now();
         }
         while jobs.len() < host.cfg.capacity as usize {
-            let claim = match host.call(&mut client, json!({"op":"run.claim"})) {
+            let claim = match host.call(
+                &mut client,
+                json!({"op":"run.claim","busy_directories":process::busy_directories(&host.cfg)}),
+            ) {
                 Ok(v) => v,
                 Err(e) if once => return Err(e),
                 Err(e) => {

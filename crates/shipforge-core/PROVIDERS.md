@@ -125,8 +125,11 @@ GitHub 使用 `X-GitHub-Delivery`，GitLab 使用 `X-Gitlab-Event-UUID`。在 CL
 | Linear | GraphQL 项目与 Issue、状态 ID、依赖读入、增量和新评论回写 | 个人 Key 或 OAuth PKCE。[接入、回执与回滚](../../docs/cloud-trackers.md) |
 | ClickUp | 工作区→Space→Folder/List、多个处理人、分页与毫秒增量、状态和新评论回写 | 个人令牌或 OAuth。[层级、映射及限制](../../docs/cloud-trackers.md) |
 | ONES | 区域租户的团队项目、按工作项类型分页比较，明确的工作流转换与评论 | 个人 Bearer Key 与团队权限。[作用域与流转](../../docs/cloud-trackers.md) |
-| 禅道、PingCode、Teambition 或兼容 Jira 的自建接口 | 文件字段映射导入，或 `connector.ingest` 按外部工单持续更新 | 事件订阅和载荷转换，各平台账号与回写 |
-| CNB、Gitee 及其他代码托管服务 | 由 relay 映射工单到 `connector.ingest`，或使用文件导入 | 提取平台工单并提供对象标识、投递标识和版本 |
-| 个人微信、QQ | 由 relay 映射文字消息到 `connector.ingest` | 来源鉴权、事件转换、机器人配置及回复 |
+| Asana | 按工作区发现项目、原生任务增量、接管旧中继任务、按批次回滚、标题描述和新评论发布 | 共用组织 PAT 与明确工作区。状态仅入站。[权限、回执与工作机](../../docs/asana-projects.md) |
+| Teambition | 组织应用读任务、成员授权发现项目、批次导入及持续同步、按成员身份写回字段与状态、单项确认删除 | 组织应用及个人授权。[项目权限、映射及撤销](../../docs/teambition-cnb.md) |
+| CNB | 按组发现并配对仓库，CI 签名接收提交、议题和合并请求，用受权 API 核实任务引用并发送回链 | 组织组令牌和每仓库独立签名密钥。[流水线及回链回执](../../docs/teambition-cnb.md) |
+| 禅道、PingCode 或兼容 Jira 的自建接口 | 文件字段映射导入，或 `connector.ingest` 按外部工单持续更新 | 事件订阅和载荷转换，各平台账号与回写 |
+| Gitee 及其他代码托管服务 | 由 relay 映射工单到 `connector.ingest`，或使用文件导入 | 提取平台工单并提供对象标识、投递标识和版本 |
+| 个人微信、QQ | 本机 iLink 扫码 / QQ 官方扫码或机器人凭据，外部私聊与群 @ 驱动 Agent，结果返回原会话 | 本人手机授权或机器人凭据、具备运行能力的 Agent、在线接收设备。[Windows 与本地验收](../../docs/personal-bots.md) |
 
 上述通用路径已按统一操作契约验证。十一个平台专用解析器使用本地代表性事件进行验收，覆盖预览、入库、重放、工单冲突和来源限制。[入站验收用例](tests/providers.rs)

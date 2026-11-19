@@ -51,6 +51,21 @@ fn command(program: &Path, dir: &Path) -> Command {
     c.creation_flags(0x0800_0000);
     c
 }
+pub(crate) fn start_bot(dir: Option<&Path>, space: &str, id: &str) -> Result<(), String> {
+    let dir = dir
+        .map(Path::to_owned)
+        .map(Ok)
+        .unwrap_or_else(shipforge_client::data_dir)?;
+    command(&binary()?, &dir)
+        .args(["bot-sync", "--binding", id, "--space", space, "--watch"])
+        .arg("--directory")
+        .arg(&dir)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
 fn output(command: &mut Command) -> Result<String, String> {
     let out = command.output().map_err(|e| e.to_string())?;
     if out.status.success() {
@@ -78,6 +93,33 @@ pub fn control(
     let config = Path::new(fields["config"].as_str().unwrap_or_default());
     if !config.is_absolute() {
         return Err("需要工作机配置文件的绝对路径。".into());
+    }
+    if let Some(op) = fields["local_operation"].as_str() {
+        let options: Value = serde_json::from_slice(&fs::read(config).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+        if options["space"].as_str().unwrap_or("default") != space {
+            return Err("所选配置属于另一个空间。".into());
+        }
+        let mut cmd = command(&program, &dir);
+        match op {
+            "diagnose" => {
+                cmd.arg("diagnose").arg("--config").arg(config);
+            }
+            "approve-directory" => {
+                cmd.arg("approve-directory")
+                    .arg("--config")
+                    .arg(config)
+                    .arg("--name")
+                    .arg(fields["profile"].as_str().unwrap_or(""))
+                    .arg("--directory")
+                    .arg(fields["workspace"].as_str().unwrap_or(""));
+                if fields["direct"] == true {
+                    cmd.arg("--direct");
+                }
+            }
+            _ => return Err("未知工作机操作".into()),
+        }
+        return serde_json::from_str(&output(&mut cmd)?).map_err(|e| e.to_string());
     }
     if stop {
         output(

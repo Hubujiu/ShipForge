@@ -25,7 +25,9 @@ pub(super) fn has_ownership(c: &Context<'_>, id: &str) -> Result<bool> {
 fn project_field(r: &Record) -> &'static str {
     match r.fields["provider"].as_str() {
         Some("tapd") => "tapd_workspace",
-        Some("zentao" | "pingcode" | "linear" | "clickup" | "ones") => "remote_scope",
+        Some("zentao" | "pingcode" | "linear" | "clickup" | "ones" | "teambition" | "asana") => {
+            "remote_scope"
+        }
         _ => "zoho_project",
     }
 }
@@ -39,7 +41,9 @@ fn bound(c: &Context<'_>, r: &Record) -> Result<(String, String)> {
             required(&r.fields, "scope_kind")?
         ),
         Some("pingcode") => format!("pingcode|{}", required(&r.fields, "enterprise_id")?),
-        Some("linear" | "clickup" | "ones") => cloud::namespace(&r.fields)?,
+        Some("linear" | "clickup" | "ones" | "teambition" | "asana") => {
+            cloud::namespace(&r.fields)?
+        }
         _ => required(&r.fields, "portal_id")?.to_owned(),
     };
     let project = required(&r.fields, project_field(r))?.to_owned();
@@ -89,8 +93,16 @@ pub(super) fn binding(c: &Context<'_>, r: &Record, verify_scope: bool) -> Result
         bound(c, r)?;
     }
     let mut binding = json!({"organization":c.org_id()?,"provider":r.fields["provider"],"portal_id":r.fields["portal_id"],"tapd_auth":r.fields["tapd_auth"],"company_id":r.fields["company_id"],"project":r.fields[project_field(r)],"revision":r.rev,"checkpoint":checkpoint(c,r)?,"since":since.map(|ms|ms.saturating_sub(1)),"modified_after":since.and_then(|ms|chrono::DateTime::from_timestamp_millis(ms.saturating_sub(1000))).map(|d|d.format("%Y-%m-%d %H:%M:%S").to_string()),"instance_url":r.fields["instance_url"],"scope_kind":r.fields["scope_kind"],"enterprise_id":r.fields["enterprise_id"],"pingcode_auth":r.fields["pingcode_auth"],"sync_paused":r.fields["sync_paused"]==true,"cloud_auth":r.fields["cloud_auth"],"ones_url":r.fields["ones_url"]});
-    if r.fields["provider"] == "linear" && signals::uses_project(&r.fields) {
+    if matches!(r.fields["provider"].as_str(), Some("linear" | "asana"))
+        && signals::uses_project(&r.fields)
+    {
         binding["signal_revision"] = json!(signals::latest(c, r)?);
+    }
+    if r.fields["provider"] == "teambition" {
+        binding["connector_created"] = json!(r.created_at);
+    }
+    if r.fields["provider"] == "asana" {
+        binding["vendor_write"] = json!(r.fields["vendor_write"] == true);
     }
     Ok(binding)
 }
@@ -114,7 +126,7 @@ fn mapping(c: &Context<'_>, r: &Record, external: &str) -> Result<Option<Mapping
             adopting: false,
         }));
     }
-    if r.fields["provider"] != "linear" {
+    if !matches!(r.fields["provider"].as_str(), Some("linear" | "asana")) {
         return Ok(None);
     }
     let Some(issue) = external.strip_prefix("workitem:") else {
@@ -122,7 +134,7 @@ fn mapping(c: &Context<'_>, r: &Record, external: &str) -> Result<Option<Mapping
     };
     let legacy:Option<(String,String,String)>=c.db.query_row(
         "SELECT o.task,o.base,(SELECT snapshot FROM event_log WHERE space=o.space AND kind='task' AND id=o.task AND action='create' ORDER BY seq LIMIT 1) FROM sf_connector_objects o WHERE o.space=? AND o.connector=? AND o.external=?",
-        params![c.space,r.id,format!("linear:{issue}")],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(storage)?;
+        params![c.space,r.id,format!("{}:{issue}",required(&r.fields,"provider")?)],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(storage)?;
     let Some((task, base, initial)) = legacy else {
         return Ok(None);
     };
@@ -168,10 +180,10 @@ pub(super) fn owned(
     if task.fields["external_id"] == external {
         return Ok(Some(task));
     }
-    if r.fields["provider"] == "linear"
+    if matches!(r.fields["provider"].as_str(), Some("linear" | "asana"))
         && let Some(issue) = external.strip_prefix("workitem:")
     {
-        let legacy = format!("linear:{issue}");
+        let legacy = format!("{}:{issue}", required(&r.fields, "provider")?);
         if task.fields["external_id"] == legacy {
             let original:bool=c.db.query_row("SELECT EXISTS(SELECT 1 FROM sf_connector_objects WHERE space=? AND connector=? AND external=? AND task=?)",params![c.space,r.id,legacy,id],|row|row.get(0)).map_err(storage)?;
             if original {
@@ -216,7 +228,7 @@ fn apply(c: &Context<'_>, r: &Record, batch: &str, row: &Value, write: bool) -> 
             true
         });
         if original.adopting {
-            patch.insert("external_provider".into(), json!("linear"));
+            patch.insert("external_provider".into(), r.fields["provider"].clone());
         }
         let action = if !conflicts.is_empty() {
             "conflict"
@@ -307,7 +319,7 @@ pub(super) fn stage(c: &Context<'_>, r: &Record, q: &Value) -> Result<Value> {
     }
     let rows = match r.fields["provider"].as_str() {
         Some("tapd") => tapd::normalize(c, r, q)?,
-        Some("linear" | "clickup" | "ones") => cloud::normalize(c, r, q)?,
+        Some("linear" | "clickup" | "ones" | "teambition" | "asana") => cloud::normalize(c, r, q)?,
         Some("zentao" | "pingcode") => trackers::normalize(c, r, q)?,
         _ => zoho::normalize(c, r, &q["issues"])?,
     };
@@ -423,7 +435,7 @@ pub(super) fn rollback(c: &Context<'_>, r: &Record, id: &str) -> Result<Value> {
             params![c.space, r.id, id],
         )
         .map_err(storage)?;
-        if r.fields["provider"] == "linear" {
+        if matches!(r.fields["provider"].as_str(), Some("linear" | "asana")) {
             released_existing =
                 c.db.execute(
                     "DELETE FROM sf_import_item WHERE space=? AND connector=? AND owner_batch=?",

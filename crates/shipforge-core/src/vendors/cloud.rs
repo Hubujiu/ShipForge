@@ -3,7 +3,10 @@ use chrono::{DateTime, Utc};
 use std::collections::BTreeSet;
 
 pub(super) fn supported(f: &Value) -> bool {
-    matches!(f["provider"].as_str(), Some("linear" | "clickup" | "ones"))
+    matches!(
+        f["provider"].as_str(),
+        Some("linear" | "clickup" | "ones" | "teambition" | "asana")
+    )
 }
 fn resource(v: &Value) -> Option<String> {
     v.as_str()
@@ -20,6 +23,28 @@ fn nested(v: &Value) -> Option<String> {
 }
 
 pub(super) fn validate(f: &Value) -> Result<()> {
+    if f["provider"] == "asana" {
+        for (key, older) in [
+            ("enterprise_id", "workspace_id"),
+            ("remote_scope", "project_id"),
+        ] {
+            if let Some(gid) = f[key].as_str().filter(|s| !s.is_empty())
+                && (!digits(gid) || f[older].as_str().is_some_and(|s| !s.is_empty() && s != gid))
+            {
+                return Err(invalid(
+                    "Asana workspace and project must use the same numeric GIDs as the existing binding",
+                ));
+            }
+        }
+    }
+    if f["provider"] == "teambition"
+        && (resource(&f["enterprise_id"]).is_none()
+            || f.get("vendor_delete").is_some_and(|v| !v.is_boolean()))
+    {
+        return Err(invalid(
+            "Teambition requires a stable enterprise ID and boolean deletion setting",
+        ));
+    }
     for key in ["remote_scope", "enterprise_id"] {
         if let Some(v) = f.get(key).filter(|v| !v.is_null() && **v != "")
             && (resource(v).is_none() || !v.is_string())
@@ -152,8 +177,40 @@ pub(super) fn normalize(c: &Context<'_>, r: &Record, q: &Value) -> Result<Vec<Va
         .ok_or_else(|| invalid("expected up to 5000 native tasks"))?;
     let mut converted = Vec::new();
     for native in rows {
-        let key = resource(&native["id"]).ok_or_else(|| invalid("missing native issue ID"))?;
-        let project = if provider == "clickup" {
+        if provider == "teambition"
+            && (native["visible"] != "members" || native["isArchived"] == true)
+        {
+            return Err(crate::forbidden(
+                "only project-visible active Teambition tasks can be imported",
+            ));
+        }
+        let key = resource(if provider == "asana" {
+            &native["gid"]
+        } else {
+            &native["id"]
+        })
+        .ok_or_else(|| invalid("missing native issue ID"))?;
+        let project = if provider == "asana" {
+            if !digits(&key)
+                || native["workspace"]["gid"] != r.fields["enterprise_id"]
+                || native["resource_type"] != "task"
+                || !native["completed"].is_boolean()
+            {
+                return Err(crate::forbidden(
+                    "Asana returned an incomplete or out-of-workspace task",
+                ));
+            }
+            native["memberships"]
+                .as_array()
+                .and_then(|ms| {
+                    ms.iter()
+                        .map(|m| &m["project"]["gid"])
+                        .find(|p| **p == r.fields["remote_scope"])
+                })
+                .ok_or_else(|| crate::forbidden("Asana task is outside the bound project"))?
+        } else if provider == "teambition" {
+            &native["projectId"]
+        } else if provider == "clickup" {
             &native["list"]
         } else {
             &native["project"]
@@ -166,6 +223,36 @@ pub(super) fn normalize(c: &Context<'_>, r: &Record, q: &Value) -> Result<Vec<Va
         let mut row = json!({"id":key,"project":{"id":r.fields["remote_scope"]}});
         let mut warnings = Vec::new();
         match provider {
+            "asana" => {
+                row["title"] = native["name"].clone();
+                row["description"] = native["notes"].clone();
+                row["whole_identifier"] = json!(key);
+                row["html_url"] = native["permalink_url"].clone();
+                row["updated_at"] = native["modified_at"].clone();
+                let (state, category) = if native["completed"] == true {
+                    ("completed", "done")
+                } else {
+                    ("open", "todo")
+                };
+                row["state"] = json!({"id":state,"name":state,"type":category});
+                row["type"] = json!({"id":"task"});
+                row["assignee"] = json!({"id":native["assignee"]["gid"]});
+                row["created_by"] = json!({"id":native["created_by"]["gid"]});
+            }
+            "teambition" => {
+                row["title"] = native["content"].clone();
+                row["description"] = native["note"].clone();
+                row["whole_identifier"] = native["uniqueId"]
+                    .as_str()
+                    .map_or_else(|| json!(key), |s| json!(s));
+                row["state"] = json!({"id":native["tfsId"],"name":native["source_status_name"],"type":if native["isDone"]==true{"done"}else{"todo"}});
+                row["type"] = json!({"id":native["sfcId"]});
+                row["updated_at"] = native["updated"].clone();
+                row["assignee"] = json!({"id":native["executorId"]});
+                row["created_by"] = json!({"id":native["creatorId"]});
+                row["priority"] = json!({"id":native["priority"],"name":match native["priority"].as_i64(){Some(2)=>"Urgent",Some(1)=>"High",_=>"None"}});
+                row["html_url"] = json!(format!("https://www.teambition.com/task/{key}"));
+            }
             "linear" => {
                 for (to, from) in [
                     ("title", "title"),

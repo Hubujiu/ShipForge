@@ -364,11 +364,7 @@ pub(crate) fn mentioned(c: &Context<'_>, old: Option<&Record>, comment: &Record)
             continue;
         }
         let room = crate::task_commands::conversation_for(c, &task, "agent", id)?;
-        crate::chat::execute(
-            c,
-            &json!({"id":room["id"],"body":comment.fields["body"]}),
-            "chat.send",
-        )?;
+        crate::chat::mention(c, &json!({"id":room["id"],"body":comment.fields["body"]}))?;
     }
     Ok(())
 }

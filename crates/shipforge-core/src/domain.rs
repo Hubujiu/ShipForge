@@ -132,6 +132,18 @@ fn write_inner(
         return Ok(as_value(r.clone()));
     }
     let mut patch = fields_object(q.get("fields"))?;
+    if kind == "task"
+        && from_source
+        && let Some(level) = patch.get_mut("priority")
+    {
+        if level
+            .as_str()
+            .is_some_and(|v| v.eq_ignore_ascii_case("lowest") || v == "最低")
+        {
+            *level = json!("lowest");
+        }
+        crate::organization::imported_priority(c, level.as_str().unwrap_or(""))?;
+    }
     if kind == "skill" {
         crate::skill_package::edit(old.as_ref(), &mut patch)?;
     }
@@ -529,7 +541,9 @@ fn validate(
             }
         }
         "tag" | "tag_group" => return crate::tags::validate(c, old, row),
-        "task" => validate_task(c, old, &row.id, f, historical)?,
+        "task" => {
+            validate_task(c, old, &row.id, f, historical)?;
+        }
         "agent" => {
             if old.is_none() && f["agent_type"].is_null() && !f["parent_id"].is_string() {
                 let space = c.get("space", c.space)?;
@@ -568,6 +582,7 @@ fn validate(
             validate_space(f)?;
         }
         "organization" => {
+            crate::organization::validate(f)?;
             if row.id != c.space || c.org_id()? != c.space {
                 return Err(invalid("organization updates belong in its root space"));
             }
@@ -799,7 +814,7 @@ fn validate(
     }
     if row.kind == "chat" {
         crate::chat::check_binding(c, old, row)?;
-        crate::chat::validate(old, row)?;
+        crate::chat::validate(c, old, row)?;
     }
     Ok(())
 }

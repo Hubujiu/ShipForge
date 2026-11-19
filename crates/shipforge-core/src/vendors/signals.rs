@@ -27,21 +27,34 @@ pub(super) fn latest(c: &Context<'_>, r: &Record) -> Result<i64> {
     .map_err(storage)
 }
 
-pub(crate) fn linear_relay(
+pub(crate) fn project_relay(
     c: &Context<'_>,
     r: &Record,
     p: &Value,
     delivery: &str,
     preview: bool,
 ) -> Result<Value> {
-    let project = p["data"]["projectId"]
-        .as_str()
-        .or_else(|| p["data"]["project"]["id"].as_str());
-    if p["organizationId"] != r.fields["enterprise_id"]
-        || project != r.fields["remote_scope"].as_str()
-    {
+    let project = required(&r.fields, "remote_scope")?;
+    let in_scope = if r.fields["provider"] == "asana" {
+        let task = if p.get("events").is_some() {
+            &p["task"]["data"]
+        } else {
+            &p["data"]
+        };
+        task["workspace"]["gid"] == r.fields["enterprise_id"]
+            && task["memberships"]
+                .as_array()
+                .is_some_and(|ms| ms.iter().any(|m| m["project"]["gid"] == project))
+    } else {
+        p["organizationId"] == r.fields["enterprise_id"]
+            && p["data"]["projectId"]
+                .as_str()
+                .or_else(|| p["data"]["project"]["id"].as_str())
+                == Some(project)
+    };
+    if !in_scope {
         return Err(crate::forbidden(
-            "Linear event is outside the bound organization or project",
+            "event is outside the bound organization or project",
         ));
     }
     let mut result = json!({"action":"sync_requested","project":project,"event_id":delivery});
@@ -64,7 +77,7 @@ pub(crate) fn linear_relay(
     let seq = if let Some((seq, old)) = existing {
         if old != digest {
             return Err(conflict(
-                "delivery ID was reused for a different Linear event",
+                "delivery ID was reused for a different tracker event",
             ));
         }
         seq

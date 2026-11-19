@@ -22,6 +22,28 @@ impl WorkingHours {
         if value.is_null() {
             return Ok(Self::Always);
         }
+        if let Some(preset) = value.get("preset") {
+            if preset != "off_peak"
+                || ["week", "start", "end", "utc_offset_minutes"]
+                    .iter()
+                    .any(|key| value.get(key).is_some())
+            {
+                return Err("invalid working hours preset".into());
+            }
+            let zone = value["timezone"]
+                .as_str()
+                .ok_or("weekly working hours require an IANA timezone")?
+                .parse::<Tz>()
+                .map_err(|_| "unknown IANA time zone")?;
+            let days = std::array::from_fn(|i| {
+                if i < 5 {
+                    vec![0..480, 1200..1440]
+                } else {
+                    std::iter::once(0..1440).collect()
+                }
+            });
+            return Ok(Self::Weekly { zone, days });
+        }
         let Some(week) = value.get("week") else {
             let hour = |name: &str| {
                 value[name]
@@ -110,6 +132,19 @@ impl WorkingHours {
             }
         }
     }
+
+    pub(super) fn next_start(&self, at: i64) -> Option<i64> {
+        if self.allows(at) {
+            return Some(at);
+        }
+        if matches!(self,Self::Weekly{days,..} if days.iter().all(Vec::is_empty)) {
+            return None;
+        }
+        let minute = at.div_euclid(60_000) * 60_000;
+        (1..=9 * 24 * 60)
+            .map(|n| minute + n * 60_000)
+            .find(|t| self.allows(*t))
+    }
 }
 
 fn minute(value: &Value, end: bool) -> Result<u32> {
@@ -133,8 +168,9 @@ pub(super) fn schema() -> Value {
             "end":{"type":"string","pattern":"^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$"}
         }
     });
-    json!({"oneOf":[
+    json!({"properties":{"triggers":{"type":"object","additionalProperties":false,"properties":{"assignment":{"type":"boolean"},"comment":{"type":"boolean"},"chat":{"type":"boolean"}}}},"oneOf":[
         {"type":"null"},
+        {"type":"object","required":["preset","timezone"],"properties":{"preset":{"const":"off_peak"},"timezone":{"type":"string","minLength":1}},"not":{"anyOf":[{"required":["week"]},{"required":["start"]},{"required":["end"]},{"required":["utc_offset_minutes"]}]}},
         {"type":"object","required":["start","end"],"not":{"required":["week"]},
          "properties":{"start":hour,"end":hour,"utc_offset_minutes":{"type":"integer","minimum":-840,"maximum":840}}},
         {"type":"object","required":["timezone","week"],
@@ -201,6 +237,21 @@ mod tests {
         assert!(!h.allows(at("2026-11-16T19:00:00Z")));
         let all = WorkingHours::parse(&json!({"start":0,"end":0})).unwrap();
         assert!(all.allows(at("2026-11-16T18:59:00Z")));
+    }
+
+    #[test]
+    fn default_off_peak_schedule_has_exclusive_ends_and_returns_the_next_opening() {
+        let hours =
+            WorkingHours::parse(&json!({"preset":"off_peak","timezone":"Asia/Shanghai"})).unwrap();
+        let morning = at("2026-11-16T00:00:00Z");
+        let evening = at("2026-11-16T12:00:00Z");
+        assert!(hours.allows(morning - 1));
+        assert!(!hours.allows(morning));
+        assert_eq!(hours.next_start(morning), Some(evening));
+        assert_eq!(
+            hours.next_start(at("2026-11-21T05:00:00Z")),
+            Some(at("2026-11-21T05:00:00Z"))
+        );
     }
 
     #[test]

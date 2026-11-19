@@ -28,6 +28,10 @@ const SETTINGS: &[(&str, &str)] = &[
     ("runtime", "Runtime 名称"),
     ("machine_id", "指定机器"),
     ("profile", "工作目录配置"),
+    ("profiles", "获准工作目录（依次择空闲）"),
+    ("chat_capacity_mode", "对话并发策略"),
+    ("run_timeout_minutes", "最大运行时长（分钟）"),
+    ("queue_timeout_hours", "排队超时（小时）"),
     ("directory_mode", "工作目录策略"),
     ("agent_type", "Agent 类型"),
     ("max_parallel", "任务并发"),
@@ -167,6 +171,9 @@ impl Workbench {
                         | "tools"
                         | "max_parallel"
                         | "chat_parallel"
+                        | "profiles"
+                        | "run_timeout_minutes"
+                        | "queue_timeout_hours"
                         | "timeout_seconds"
                 ) {
                     serde_json::from_str(text).map_err(|_| "请输入该设置对应的 JSON 值")?
@@ -425,6 +432,9 @@ impl Workbench {
             return panel;
         }
         panel = panel.child(self.personal_handler_buttons(&settings, cx));
+        if settings.kind == "agent" && settings.space == self.loc.space {
+            panel = panel.child(self.bot_toolbar(cx));
+        }
         if let Some(data) = info {
             panel = panel.child(
                 row()

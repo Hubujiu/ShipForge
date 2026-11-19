@@ -1,5 +1,7 @@
 # ShipForge 机器执行器
 
+使用 `approve-directory` 批准本机项目目录，`diagnose` 查看此监督进程管理的活动 PID 和最近事件。任务与对话可采用独立额度，运行设置支持错峰排班和多目录择空闲。[Windows 与 CLI 操作](../../docs/runtime-scheduling.md)
+
 `shipforge-worker.exe` 把空间中的任务交给本机安装的程序。它与桌面、CLI 共用工作区协议。单机模式使用当前用户的 ShipForge 数据目录，可用 `SHIPFORGE_DATA_DIR` 指定独立配置。团队模式读取该配置中保存的连接，也可同时设置 `SHIPFORGE_SERVER` 和 `SHIPFORGE_TOKEN`。持续领任务的进程可使用 `worker` 范围令牌，执行身份还需目标空间的编辑权限。运行、回复、产物及关联任务可以从客户端的执行历史中打开。
 
 ## 第一次运行
@@ -110,3 +112,7 @@ GitHub 连接器的字段为 `{"provider":"github","repository":"OWNER/REPO","en
 外部数据通过 `connector.ingest` 传入 `id`（连接器）、`external_id`、`event_id`、`source_version`、`title`、`description` 和 `closed`。修订号应使用可按字典序比较的同格式 UTC 时间或补零编号。系统按连接器和外部 ID 映射任务，逐字段合并独立变更。同一字段在两端同时修改时返回 `action: "conflict"`，可由管理员明确指定 `resolve: "source"` 或 `"local"`。命中空间分拣来源与类型要求的外部任务会进入分拣台。GitLab 等十一种专用输入由服务端和 CLI 的 `provider.ingest` 处理。[入站供应商对照](../shipforge-core/PROVIDERS.md)
 
 在已配置的 Runtime 对象中，`slash_commands` 可列出该程序实际支持的命令，例如 `["/plan", "/help"]`。工作机会随 `machine.register` 上报该列表。缺省表示机器尚未报告，空数组表示已报告且没有内置命令。工作区只向有权使用 Agent 或小队的成员显示适用条目。[对话指令](../../docs/conversation-commands.md)
+
+### Personal WeChat and QQ
+
+After binding an official account to an Agent, run `shipforge-worker bot-sync --space default --binding <id> --watch` from the same device profile. An optional `--directory` selects the data directory, and omitting `--watch` processes a single cycle. The desktop starts the watcher on successful binding. Each bound ID has one watcher per profile. The machine supervisor that executes Agent runs can operate independently. [Account setup, delivery states and provider limits](../../docs/personal-bots.md)

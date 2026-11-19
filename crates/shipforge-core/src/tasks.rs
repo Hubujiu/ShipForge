@@ -137,9 +137,15 @@ pub(crate) fn validate_task(
     }
     if !matches!(
         f["priority"].as_str(),
-        Some("none" | "low" | "medium" | "high" | "urgent")
+        Some("none" | "lowest" | "low" | "medium" | "high" | "urgent")
     ) {
         return Err(invalid("unknown task priority"));
+    }
+    if f["priority"] == "lowest"
+        && old.is_none_or(|r| r.fields["priority"] != "lowest")
+        && crate::organization::defaults(c)?.1 != 5
+    {
+        return Err(invalid("enable five priority levels to assign lowest"));
     }
     let in_triage = category == "triage"
         || old.map(|r| c.status_category(r)).transpose()?.as_deref() == Some("triage");

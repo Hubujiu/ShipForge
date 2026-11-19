@@ -55,9 +55,13 @@ pub(super) fn normalize(c: &Context<'_>, r: &Record, issues: &Value) -> Result<V
                 "major" | "high" => "high",
                 "medium" | "normal" => "medium",
                 "minor" | "low" => "low",
+                "lowest" | "最低" => "lowest",
                 _ => "none",
             });
-        if !matches!(priority, "urgent" | "high" | "medium" | "low" | "none") {
+        if !matches!(
+            priority,
+            "urgent" | "high" | "medium" | "low" | "lowest" | "none"
+        ) {
             return Err(invalid("unknown mapped priority"));
         }
         let name = optional_text(&data["assignee_name"], 256)?;

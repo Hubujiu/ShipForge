@@ -23,21 +23,38 @@ pub(super) fn open(
     pulse: &mut impl FnMut() -> Result<bool>,
     timeout: Duration,
 ) -> Result<WorkingDir> {
-    let scope = &run["fields"]["crew_workspace"];
+    let crew = run["fields"]["crew_workspace"].is_object();
+    let scope = if crew {
+        &run["fields"]["crew_workspace"]
+    } else {
+        &run["fields"]["isolated_workspace"]
+    };
     let token = scope["token"]
         .as_str()
         .filter(|s| s.len() == 32 && s.bytes().all(|b| b.is_ascii_hexdigit()))
         .ok_or("invalid crew workspace namespace")?;
     if run["space"] != cfg.space
         || run["fields"]["machine_id"] != cfg.machine_id
-        || !scope["crew"].is_string()
-        || !scope["task"].is_string()
-        || scope["task"] != run["fields"]["task_id"]
+        || if crew {
+            !scope["crew"].is_string()
+                || !scope["task"].is_string()
+                || scope["task"] != run["fields"]["task_id"]
+        } else {
+            match scope["kind"].as_str() {
+                Some("task") => scope["id"] != run["fields"]["task_id"],
+                Some("chat") => scope["id"] != run["fields"]["chat_id"],
+                _ => true,
+            }
+        }
     {
         return Err("crew workspace does not match this machine, space or task".into());
     }
     let state = checked_dir(state)?;
-    let root = state.join("crew-workspaces");
+    let root = state.join(if crew {
+        "crew-workspaces"
+    } else {
+        "execution-workspaces"
+    });
     fs::create_dir_all(&root).map_err(|e| e.to_string())?;
     let root = checked_dir(&root)?;
     if source.is_some_and(|p| root.starts_with(p)) {
@@ -101,10 +118,10 @@ pub(super) fn open(
     if path.parent() != Some(bucket.as_path()) {
         return Err("invalid local crew checkout".into());
     }
-    // Only initialization is serialized. Delegated jobs can run concurrently in the published checkout.
+    // Keep ownership of this checkout even when another local supervisor reconnects.
     Ok(WorkingDir {
         path,
-        _lock: None,
+        _lock: Some(lock),
         isolated: true,
     })
 }

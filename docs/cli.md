@@ -1,5 +1,9 @@
 # ShipForge 命令行与 JSON 协议
 
+`organization.settings` 读取当前空间所属组织的语言、优先级档数、修订号和成员数。`organization.configure` 使用 `expected_rev` 保存 `default_language` 或 `priority_levels`。`organization.depart` 使用 `action:"leave"` 或 `"dissolve"`，提交修订号及组织名称 `confirmation`，删除还须提交刚确认的 `members` 人数。[组织设置及数据保留](navigation.md)
+
+`directory.people` 按对象类别查本组织已加入空间的成员和机器。`search` 可指定 `search_scope:"organization"` 跨空间查找。`chat.start` 支持真人私聊、Agent、小队和带初始成员的群聊，`request_id` 使重复请求返回同一会话。[请求示例](navigation.md)
+
 | 平台 | 查找账号 | 授权与轮换凭据 | 发现项目或 List | 预览导入 |
 | --- | --- | --- | --- | --- |
 | Linear | `linear.accounts` | `linear.authorize`、`linear.credential` | `linear.projects` | `linear.preview` |
@@ -198,10 +202,30 @@ Slack 连接器管理员可用 `update` 设置布尔值 `fields.slack_assignment
 导入及外部同步会保留多人成员。GitLab Issue、Jira、Linear、Asana 连接器可设置 `fields.assignee_map`，以外部账号标识为键、空间成员 ID 为值。尚未映射的外部标识保存在 `fields.source_assignees` 并显示在详情中。同步中各方同时更改人员会返回 `conflict`，可用同一事件和 `resolve: "local"` 或 `"source"` 明确处理。[HiFox 任务说明](https://help.hifox.com/docs/space/tasks)
 
 
+## Teambition 和 CNB
+
+组织管理员用 `teambition.application` 验证和保存组织应用。成员用 `teambition.authorize` 取得授权地址，再用 `teambition.personal` 绑定本人的授权码或访问令牌。`teambition.projects` 列出本人参加的项目。`teambition.preview` 生成待确认的导入批次，提交后 `teambition.synchronize` 读取该项目的变化。`teambition.push` 以操作者的 Teambition 身份写回已关联任务。选择删除还须提供原对象 ID 及当前本地修订号。
+
+用 `cnb.credential` 验证组织的组令牌，`cnb.repositories` 列出授权仓库，`cnb.pair` 配对仓库或轮换流水线密钥。`cnb.ci` 返回仓库专用的配置片段，`cnb.activity` 查看最近事件和回链，`cnb.deliver` 核对并重试待处理的评论。服务在已验证签名的回调内使用 `cnb.internal.receipt`、`cnb.internal.record`、`cnb.internal.claim`、`cnb.internal.finish` 和 `cnb.internal.history` 管理去重及投递。日常操作使用前述公开命令。[接入步骤、权限和 JSON 示例](teambition-cnb.md)
+
+## Asana 工作区和项目
+
+`asana.accounts` 列出个人令牌可见的工作区，`asana.credential` 按组织绑定、轮换或清除指定工作区的共享令牌。`asana.projects` 发现项目，`asana.preview` 预览历史或增量，`asana.synchronize` 读取并提交项目变更。开启写回后，`asana.push` 可发布标题、描述和新评论。一次性发送本地及远端评论时提供 `intent:"comment"`、正文和稳定请求 UUID。也可提供已有本地评论的 ID。完成状态从 Asana 读入。[请求示例与工作机设置](asana-projects.md)
+
 ## 专项时间线与分拣投递
 
 `project.timeline` 通过 `basis` 查看任务开始日、截止日或计划区间。`triage.settings` 读取配置，`triage.configure` 设置责任与规则，`triage.submit` 投递任务，`triage.queue` 查询按进入时间排序的审核队列。`triage` 支持接受、拒绝、重复、搁置及恢复，`triage.batch` 原子执行多项接受、拒绝或搁置。`customer_request.convert` 将有权编辑的客户请求转成任务。`task.share` 返回任务编号及链接，`task.open` 按接收者的身份打开。[操作示例与权限](triage-planning.md)
 
+## Agent 排队与机器诊断
+
+运行调度使用 `run.trigger_now` 跳过预约等待，`run.diagnostics` 查询原因与时限，`machine.directories` 查询授权目录，`machine.diagnostics` 查看可见的活动运行。工作机本地使用 `approve-directory` 批准项目目录，使用 `diagnose` 查看进程号和轮换日志。[配置与完整请求](runtime-scheduling.md)
+
 ## 对话指令、审阅与文档引用
 
 使用 `chat.slash` 查当前运行环境的命令，`chat.slash.send` 发送。任务快捷指令由 `shortcut.catalog`、`shortcut.save`、`shortcut.organize`、`shortcut.run`、`shortcut.history` 和 `shortcut.delete` 管理。用 `task.review.state` 查看当前待审轮次，`task.review` 发送确认。单独的 `chat.complete` 将会话及绑定任务标为完成。用 `shipforge share-image <分享码或链接> <新文件.png>` 或 `chat.share.image` 保存消息快照。文档的 `document.share`、`document.open`、`document.preview` 和 `document.embeds` 均按当前查看者权限读取。[请求示例、Windows 入口与权限](conversation-commands.md)
+
+## 个人微信与 QQ 的外部 Agent 会话
+
+`bot.qr.start` 接收 `provider`（`wechat` 或 `qq`）、`agent`、可选 `dm` 与 `groups`，返回本机扫码 `id` 及二维码。`bot.qr.check` 查询状态，微信要求手机验证码时加 `verify_code`。`bot.qq.connect` 用有权限的 QQ `app_id`、`app_secret` 与 `agent` 绑定，可通过标准输入传递凭据。`bot.bindings` 列出自己的绑定，`bot.policy` 设置单聊与群 @ 范围，`bot.sync` 执行一轮收发，`bot.disconnect` 解除绑定。持续收发用 `shipforge-worker bot-sync --space default --binding <ID> --watch`。[Windows 与 CLI 示例](personal-bots.md)
+
+设备适配器在成功授权后用 `bot.attach` 登记用户、空间、Agent、平台账号和设备密钥。`bot.receive` 按上游消息 ID 幂等创建私有对话运行。`bot.claim` 领取该绑定的结果，`bot.ack` 携带对应的租约与送达结果。`bot.retry` 在用户确认后将未确认或失败的投递标为已送达、放弃或重发。`bot.expire` 在上游明确拒绝凭据时关闭绑定。`bot.detach` 用于设备不可用时从工作区中撤销绑定。用户凭据和微信会话回传凭证保存在建立绑定的设备。

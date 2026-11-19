@@ -7,6 +7,29 @@ use crate::{Context, Record, Result, conflict, invalid, required};
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
 
+pub(crate) fn webhook_priority<'a>(value: &'a Value, mapping: &'a Value) -> Option<&'a str> {
+    if value.is_null() {
+        return Some("none");
+    }
+    let id = value["id"].as_str();
+    let name = value["name"].as_str();
+    if let Some(mapped) = [id, name]
+        .into_iter()
+        .flatten()
+        .find_map(|k| mapping.get(k)?.as_str())
+    {
+        return Some(mapped);
+    }
+    let name = name?;
+    if name == "最低" {
+        return Some("lowest");
+    }
+    fields::PRIORITIES
+        .iter()
+        .find(|(_, label, _)| label.eq_ignore_ascii_case(name))
+        .map(|(_, _, level)| *level)
+}
+
 struct Site<'a, 'db> {
     org: &'a Context<'db>,
     spaces: Vec<Record>,

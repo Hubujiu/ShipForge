@@ -1,7 +1,7 @@
 use crate::appearance::{paint as rgb, surface as white};
 use crate::{
     app::{UiAction, Workbench},
-    catalog::{PRIORITIES, Page, Record, STATUSES, label_value, summary, value_text},
+    catalog::{Page, Record, STATUSES, label_value, summary, value_text},
     controls::*,
     forms::Mode,
     motion,
@@ -43,6 +43,9 @@ impl Render for DraggedTask {
 impl Workbench {
     pub fn page_body(&mut self, w: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = self.loc.page;
+        if p == Page::Members && self.loc.section == "people" {
+            return self.people_panel(cx).into_any_element();
+        }
         if p == Page::Inbox {
             return self.inbox_page(cx).into_any_element();
         }
@@ -96,6 +99,9 @@ impl Workbench {
             .child(text("/", 12., DIM))
             .child(headline(page_title.to_owned(), 14.))
             .child(div().flex_1());
+        if p == Page::Organizations {
+            header = header.child(self.org_controls(cx));
+        }
         if p == Page::Docs {
             header = header.child(
                 outlined(self.button(
@@ -122,6 +128,18 @@ impl Workbench {
             );
         }
         if p == Page::Machines && self.mode != "demo" {
+            for (diagnose, label) in [(false, "授权本机工作目录"), (true, "本机进程与日志")]
+            {
+                header = header.child(
+                    outlined(self.button(
+                        format!("machine-local-{diagnose}"),
+                        label,
+                        UiAction::Form(Mode::LocalDirectory { diagnose }),
+                        cx,
+                    ))
+                    .child(crate::locale::label(label)),
+                );
+            }
             if self.access_identity["scope"] == "write" && self.access_identity["personal"] == false
             {
                 header = header.child(
@@ -323,6 +341,7 @@ impl Workbench {
                 .child(self.record_page(cx))
                 .into_any_element(),
             Page::Connectors => root
+                .child(self.bot_toolbar(cx))
                 .child(
                     row().px(px(14.)).py(px(8.)).child(
                         outlined(self.button(
@@ -754,7 +773,8 @@ impl Workbench {
             .filter(|g| matches!(*g, "priority" | "type" | "assignee"))
             .unwrap_or("status");
         let mut groups: Vec<(String, String, u32)> = match group {
-            "priority" => PRIORITIES
+            "priority" => self
+                .priority_options()
                 .iter()
                 .map(|(a, b)| (a.to_string(), b.to_string(), VIOLET))
                 .collect(),
@@ -1110,7 +1130,7 @@ impl Workbench {
             .border_color(rgb(LINE))
             .rounded(px(8.))
             .child(headline("优先级分布", 14.));
-        for (key, label) in PRIORITIES {
+        for (key, label) in self.priority_options() {
             let count = tasks.iter().filter(|r| r.field("priority") == *key).count();
             priority = priority.child(
                 row()
@@ -1641,6 +1661,34 @@ impl Workbench {
                 MUTED,
             ))
             .child(headline(r.title.clone(), 22.));
+        if matches!(r.kind.as_str(), "task" | "chat") {
+            let key = if r.kind == "task" {
+                "task_id"
+            } else {
+                "chat_id"
+            };
+            for run in self.list("run").iter().filter(|v| {
+                v.field(key) == r.id
+                    && v.field("status") == "queued"
+                    && matches!(
+                        v.field("waiting_reason"),
+                        "outside_working_hours" | "scheduled_start"
+                    )
+            }) {
+                body = body.child(self.scheduled_banner(run, cx));
+            }
+        }
+        if r.kind == "member" && self.writable() && self.role != "guest" && self.actor != r.id {
+            body = body.child(
+                outlined(self.button(
+                    "direct-member",
+                    "与真人对话",
+                    UiAction::Direct(r.id.clone()),
+                    cx,
+                ))
+                .child(crate::locale::label("与真人对话")),
+            );
+        }
         let long = match r.kind.as_str() {
             "document" | "message" | "comment" => r.field("body"),
             "skill" | "agent" => r.field("instructions"),
@@ -2049,6 +2097,20 @@ impl Workbench {
                 body = self.related_runs(body, r, cx);
             }
             "machine" => {
+                for (op, label) in [
+                    ("machine.directories", "获准工作目录"),
+                    ("machine.diagnostics", "机器诊断"),
+                ] {
+                    actions = actions.child(
+                        outlined(self.button(
+                            op,
+                            label,
+                            UiAction::Inspect(json!({"op":op,"id":r.id}), label.into()),
+                            cx,
+                        ))
+                        .child(crate::locale::label(label)),
+                    );
+                }
                 if self.writable() {
                     let disabled = r.fields.get("disabled") == Some(&Value::Bool(true));
                     let (op, l) = if disabled {
@@ -2082,6 +2144,46 @@ impl Workbench {
                         "imports.commit",
                         "imports.history",
                         "imports.rollback",
+                    ]
+                } else if r.field("provider") == "asana" {
+                    &[
+                        "asana.accounts",
+                        "asana.credential",
+                        "asana.projects",
+                        "asana.preview",
+                        "imports.commit",
+                        "asana.synchronize",
+                        "imports.sync_control",
+                        "imports.history",
+                        "imports.rollback",
+                        "asana.push",
+                        "imports.push_history",
+                        "provider.preview",
+                        "provider.ingest",
+                    ]
+                } else if r.field("provider") == "teambition" {
+                    &[
+                        "teambition.application",
+                        "teambition.authorize",
+                        "teambition.personal",
+                        "teambition.projects",
+                        "teambition.preview",
+                        "imports.commit",
+                        "teambition.synchronize",
+                        "imports.sync_control",
+                        "imports.history",
+                        "imports.rollback",
+                        "teambition.push",
+                        "imports.push_history",
+                    ]
+                } else if r.field("provider") == "cnb" {
+                    &[
+                        "cnb.credential",
+                        "cnb.repositories",
+                        "cnb.pair",
+                        "cnb.ci",
+                        "cnb.activity",
+                        "cnb.deliver",
                     ]
                 } else if matches!(r.field("provider"), "linear" | "clickup" | "ones") {
                     match (r.field("provider"), r.field("cloud_auth")) {
@@ -2247,6 +2349,26 @@ impl Workbench {
                 body = body.child(actions).child(self.attributes(r));
             }
             "run" => {
+                actions = actions.child(
+                    outlined(self.button(
+                        "run-diagnostics",
+                        "运行诊断",
+                        UiAction::Inspect(
+                            json!({"op":"run.diagnostics","id":r.id}),
+                            "运行诊断".into(),
+                        ),
+                        cx,
+                    ))
+                    .child(crate::locale::label("运行诊断")),
+                );
+                if r.field("status") == "queued"
+                    && matches!(
+                        r.field("waiting_reason"),
+                        "outside_working_hours" | "scheduled_start"
+                    )
+                {
+                    body = body.child(self.scheduled_banner(r, cx));
+                }
                 if self.writable() {
                     let status = r.field("status");
                     if status == "waiting" {
@@ -2701,6 +2823,11 @@ fn field_label(k: &str) -> String {
         "members" => "成员",
         "parent_id" => "继承自",
         "working_hours" => "工作时段",
+        "waiting_reason" => "等待原因",
+        "queue_deadline" => "排队时限",
+        "run_deadline" => "执行时限",
+        "next_start_at" => "预计开始",
+        "profiles" => "获准工作目录",
         "directory_mode" => "工作目录策略",
         "capacity" => "容量",
         "last_seen" => "最近在线",

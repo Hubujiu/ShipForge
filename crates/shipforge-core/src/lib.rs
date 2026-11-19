@@ -3,6 +3,7 @@ mod access;
 mod actions;
 mod agents;
 mod attachments;
+mod bots;
 mod chat;
 mod conversation_tools;
 mod defaults;
@@ -16,6 +17,7 @@ mod invitations;
 mod iterations;
 mod jira;
 pub mod onboarding;
+mod organization;
 mod persistence;
 pub mod personal_tokens;
 pub mod preferences;
@@ -23,6 +25,7 @@ mod project_timeline;
 mod protocol;
 mod providers;
 mod query;
+pub mod runtime_diagnostics;
 mod saved_views;
 pub mod skill_package;
 mod spaces;
@@ -166,6 +169,7 @@ impl Store {
         identifier(space)?;
         let read = is_read_only(op);
         iterations::maintain_space(&mut self.db, space, chrono::Utc::now())?;
+        worker::maintain_queue(&mut self.db, Some(space), now())?;
         let tx = self
             .db
             .transaction_with_behavior(if read {
@@ -211,10 +215,13 @@ impl Store {
         let cache = !read
             && !worker::OPS.contains(&op)
             && op != "provider.ingest"
+            && !op.starts_with("cnb.internal.")
             && op != "jira.write"
+            && !matches!(op, "organization.depart" | "organization.configure")
             && !op.starts_with("imports.")
             && !op.starts_with("bugly.")
             && !op.starts_with("im.")
+            && !op.starts_with("bot.")
             && !matches!(op, "inbox.open" | "followers.change")
             && !op.starts_with("invitation.");
         let key = if cache {
@@ -257,10 +264,14 @@ impl Store {
             }
         }
         let mut result = match op {
+            "organization.settings" | "organization.configure" | "organization.depart" => {
+                organization::execute(&c, &request, op)
+            }
             op if op.starts_with("space.") && op != "space.list" => {
                 spaces::execute(&c, &request, op)
             }
             "jira.read" | "jira.write" => jira::execute(&c, &request, read),
+            op if op.starts_with("cnb.internal.") => vcs::cnb_command(&c, &request, op),
             op if op.starts_with("imports.") || op.starts_with("bugly.") => {
                 vendors::execute(&c, &request, op)
             }
@@ -272,6 +283,7 @@ impl Store {
             {
                 triage::execute(&c, op, &request)
             }
+            op if bots::handles(op) => bots::execute(&c, op, &request),
             op if conversation_tools::handles(op) => conversation_tools::execute(&c, op, &request),
             "project.timeline" => project_timeline::timeline(&c, &request),
             "task.type.preview" => task_fields::preview_switch(&c, &request),
@@ -310,10 +322,10 @@ impl Store {
             }
             op if op.starts_with("chat.") => chat::execute(&c, &request, op),
             "create" | "update" | "delete" => write_request(&c, &request),
-            "list" | "get" | "search" | "events" | "space.list" | "organization.list"
-            | "view.run" | "dashboard" | "task.relations" | "project.progress"
-            | "iteration.preview" | "iteration.timeline" | "document.history" | "export"
-            | "import.preview" => query::execute(&c, &request, op),
+            "list" | "get" | "search" | "directory.people" | "events" | "space.list"
+            | "organization.list" | "view.run" | "dashboard" | "task.relations"
+            | "project.progress" | "iteration.preview" | "iteration.timeline"
+            | "document.history" | "export" | "import.preview" => query::execute(&c, &request, op),
             "iteration.close" | "triage" | "follow" | "notification.act" | "document.restore"
             | "artifact.save" | "import" => actions::execute(&c, &request, op),
             _ => worker::dispatch(&c, &request).ok_or_else(|| invalid("unknown operation"))?,

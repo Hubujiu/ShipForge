@@ -270,7 +270,15 @@ pub(crate) fn content_context(c: &Context<'_>, run: &Record) -> Result<Value> {
             .as_str()
             .or(row.fields["creator"].as_str());
         private |= row.fields["visibility"] == "private" || row.fields["inherited"] == true;
-        let value = json!({"id":row.id,"author":source,"author_kind":row.fields["author_kind"].as_str().unwrap_or("human"),"body":row.fields["body"].as_str().unwrap_or(&row.title),"attachments":row.fields["attachments"]});
+        let mut value = json!({"id":row.id,"author":source,"author_kind":row.fields["author_kind"].as_str().unwrap_or("human"),"body":row.fields["body"].as_str().unwrap_or(&row.title),"attachments":row.fields["attachments"]});
+        if row.fields["external_author"].is_string()
+            && room.fields["external_provider"] == row.fields["external_provider"]
+        {
+            value["author"] = row.fields["external_author"].clone();
+            value["author_kind"] = json!("external");
+            value["external_provider"] = row.fields["external_provider"].clone();
+            value["external_scene"] = row.fields["external_scene"].clone();
+        }
         if Some(row.id.as_str()) == anchor {
             current = Some(value);
         } else {
@@ -331,7 +339,13 @@ pub(super) fn bind(c: &Context<'_>, room: &Record, q: &Value) -> Result<Value> {
     }
     Ok(as_value(attach(c, room, &target)?))
 }
-fn queue(c: &Context<'_>, room: &Record, body: &str, convert: bool) -> Result<(Record, Record)> {
+fn queue(
+    c: &Context<'_>,
+    room: &Record,
+    body: &str,
+    convert: bool,
+    origin: &str,
+) -> Result<(Record, Record)> {
     c.require_edit()?;
     let (kind, id) = handler(c, room)?;
     if body.trim().is_empty() || body.len() > 262_144 {
@@ -346,7 +360,7 @@ fn queue(c: &Context<'_>, room: &Record, body: &str, convert: bool) -> Result<(R
         || ordered(c, room)?
             .iter()
             .any(|m| m.fields["visibility"] == "private" || m.fields["inherited"] == true);
-    let mut fields = json!({"instruction":body,"chat_id":room.id,"chat_message":message.id,"chat_order":creation_seq(c,"message",&message.id)?,"task_id":bound(room),"visibility":if private{json!("private")}else{room.fields["visibility"].clone()},"chat_conversion":convert});
+    let mut fields = json!({"instruction":body,"origin_kind":origin,"chat_id":room.id,"chat_message":message.id,"chat_order":creation_seq(c,"message",&message.id)?,"task_id":bound(room),"visibility":if private{json!("private")}else{room.fields["visibility"].clone()},"chat_conversion":convert});
     if let Some(task) = bound(room) {
         fields["task"] = worker::task_context(c, &c.readable("task", task)?)?;
     }
@@ -360,8 +374,8 @@ fn queue(c: &Context<'_>, room: &Record, body: &str, convert: bool) -> Result<(R
     )?;
     Ok((message, run))
 }
-pub(super) fn send(c: &Context<'_>, room: &Record, q: &Value) -> Result<Value> {
-    let (message, run) = queue(c, room, required(q, "body")?, false)?;
+pub(super) fn send(c: &Context<'_>, room: &Record, q: &Value, origin: &str) -> Result<Value> {
+    let (message, run) = queue(c, room, required(q, "body")?, false, origin)?;
     Ok(json!({"id":room.id,"message":message.id,"run":run.id}))
 }
 pub(super) fn convert(c: &Context<'_>, room: &Record, q: &Value) -> Result<Value> {
@@ -374,7 +388,7 @@ pub(super) fn convert(c: &Context<'_>, room: &Record, q: &Value) -> Result<Value
         return Ok(json!({"id":room.id,"run":run}));
     }
     let instruction = "根据此对话的上下文拟定一个可跟踪的任务。请在运行结果的 task_draft 对象中返回 title 和 description 两个字符串，或在 result 正文中返回同样结构的 JSON；系统会创建任务并绑定本会话。";
-    let (message, run) = queue(c, room, instruction, true)?;
+    let (message, run) = queue(c, room, instruction, true, "chat")?;
     c.db.execute(
         "INSERT INTO chat_conversion(space,chat,run) VALUES(?,?,?)",
         params![c.space, room.id, run.id],

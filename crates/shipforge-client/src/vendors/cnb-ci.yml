@@ -1,0 +1,31 @@
+# Set SHIPFORGE_CNB_SIGNING_KEY in a protected CNB secret import for this repository.
+$:
+  issue.open: &shipforge_notifications
+    - docker:
+        image: python:3.12-alpine
+      stages:
+        - name: Notify ShipForge
+          script: |
+            python - <<'PY'
+            import hashlib, hmac, json, os, time, urllib.request
+            env = os.environ
+            fields = {"repository":"CNB_REPO_SLUG","event":"CNB_EVENT","sha":"CNB_COMMIT",
+                      "issue":"CNB_ISSUE_IID","pull":"CNB_PULL_REQUEST_IID",
+                      "comment_id":"CNB_COMMENT_ID","build":"CNB_BUILD_ID"}
+            body = json.dumps({key:env.get(name, "") for key,name in fields.items()}, separators=(",",":")).encode()
+            timestamp = str(int(time.time()))
+            key = env["SHIPFORGE_CNB_SIGNING_KEY"].encode()
+            tag = hmac.new(key, timestamp.encode()+b"."+body, hashlib.sha256).hexdigest()
+            headers = {"Content-Type":"application/json","X-ShipForge-Timestamp":timestamp,"X-ShipForge-Signature":tag}
+            request = urllib.request.Request(__SHIPFORGE_ENDPOINT__, data=body, headers=headers)
+            with urllib.request.urlopen(request, timeout=30) as response:
+                print("ShipForge", response.status)
+            PY
+  issue.update: *shipforge_notifications
+  issue.reopen: *shipforge_notifications
+  issue.close: *shipforge_notifications
+  issue.comment: *shipforge_notifications
+"**":
+  push: *shipforge_notifications
+  pull_request.target: *shipforge_notifications
+  pull_request.merged: *shipforge_notifications

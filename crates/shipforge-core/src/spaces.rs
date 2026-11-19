@@ -130,6 +130,9 @@ pub(crate) fn listing(c: &Context<'_>, mut space: Record, metadata_role: &str) -
     let role = dest.role().ok();
     let joined = role.is_some();
     if joined {
+        let (language, levels) = crate::organization::defaults(&dest)?;
+        space.fields["priority_levels"] = json!(levels);
+        space.fields["default_language"] = json!(language);
         space.fields["navigation"] = json!(module_states(&dest, &space)?);
     }
     space.fields["joined"] = json!(joined);

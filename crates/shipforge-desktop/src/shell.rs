@@ -147,7 +147,7 @@ impl Workbench {
                 "rail-members",
                 "成员",
                 "users",
-                UiAction::Go(Page::Members),
+                UiAction::People,
                 current == Page::Members,
             ))
             .child(item(
@@ -357,8 +357,8 @@ impl Workbench {
                         d.child(
                             primary(self.button(
                                 "quick-add",
-                                "新建任务",
-                                UiAction::Create("task".into()),
+                                "快捷新建",
+                                UiAction::Form(Mode::QuickCreate),
                                 cx,
                             ))
                             .size(px(24.))
@@ -388,9 +388,17 @@ impl Workbench {
                     .gap(px(8.))
                     .border_t_1()
                     .border_color(rgb(LINE))
-                    .child(mark(if self.error.is_some() { ERROR } else { GREEN }))
+                    .child(mark(if self.offline {
+                        DIM
+                    } else if self.error.is_some() {
+                        ERROR
+                    } else {
+                        GREEN
+                    }))
                     .child(text(
-                        if self.mode == "team" {
+                        if self.offline {
+                            "团队服务离线"
+                        } else if self.mode == "team" {
                             "团队服务"
                         } else if self.mode == "demo" {
                             "内存演示"
@@ -601,7 +609,13 @@ impl Workbench {
                 }
             }
         }
-        if e.spec.key == "path" {
+        if e.spec.key == "path"
+            || e.spec.key == "workspace"
+                && matches!(
+                    mode,
+                    Mode::Machine { stop: false } | Mode::LocalDirectory { diagnose: false }
+                )
+        {
             let save = match mode {
                 Mode::Download(_, file) => {
                     Some(file["filename"].as_str().unwrap_or("attachment").to_owned())
@@ -631,6 +645,7 @@ impl Workbench {
         let trigger_ids = f.triggers.iter().map(|t| t.id).collect::<Vec<_>>();
         let open_pick = f.open_pick;
         let error = f.error.clone();
+        let search_term = f.entries.first().map(|e| e.raw(cx)).unwrap_or_default();
         let results = f.search_results.clone();
         let preview = f.preview.clone();
         let viewport = w.viewport_size();
@@ -639,10 +654,24 @@ impl Workbench {
         let width = if mode.automation() { 860. } else { 620. };
         let width = f32::min(width, (max_w - 40.).max(340.));
         let mut body = col().w_full().gap(px(12.)).px(px(21.)).py(px(14.));
+        if let Mode::OrgDepart(_, action) = &mode {
+            body = body.child(text(
+                if *action == "dissolve" {
+                    "删除后将清除组织、空间和其中的数据，此操作无法撤销。"
+                } else {
+                    "离开后，你将失去此组织和所属空间的访问权限。"
+                },
+                13.,
+                ERROR,
+            ));
+        }
         if let Mode::Identity(f) = &mode
             && let Some(instructions) = f.instructions()
         {
             body = body.child(text(instructions, 14., INK));
+        }
+        if let Mode::Bot(f) = &mode {
+            body = body.child(self.bot_content(f, cx));
         }
         if let Mode::Output { content, .. } = &mode {
             body = body.child(text(content.clone(), 13., INK)).child(
@@ -868,40 +897,26 @@ impl Workbench {
         if let Mode::ChatRow(room) = &mode {
             body = body.child(self.chat_row_actions(room, cx));
         }
-        if matches!(mode, Mode::Search) {
-            body = body.child(
-                row()
-                    .flex_wrap()
-                    .gap(px(5.))
-                    .child(
-                        outlined(self.button(
-                            "command-find",
-                            "在当前视图查找",
-                            UiAction::Personal(crate::personal::Action::Find),
-                            cx,
-                        ))
-                        .child(crate::locale::label("在当前视图查找")),
-                    )
-                    .when(self.writable(), |bar| {
-                        bar.child(
-                            outlined(self.button(
-                                "command-move",
-                                "将任务移动到空间",
-                                UiAction::Personal(crate::personal::Action::Move),
-                                cx,
-                            ))
-                            .child(crate::locale::label("将任务移动到空间")),
-                        )
-                    }),
-            );
+        if matches!(mode, Mode::Search | Mode::QuickCreate) {
+            body = body.child(self.navigation_commands(
+                &search_term,
+                matches!(mode, Mode::QuickCreate),
+                cx,
+            ));
         }
         if matches!(mode, Mode::Search | Mode::BindChat(_)) {
-            for (i, r) in results
+            let mut ordered: Vec<_> = results
                 .iter()
                 .filter(|r| !matches!(mode, Mode::BindChat(_)) || r.kind == "task")
                 .take(150)
-                .enumerate()
-            {
+                .collect();
+            ordered.sort_by(|a, b| a.kind.cmp(&b.kind));
+            let mut group = "";
+            for (i, r) in ordered.into_iter().enumerate() {
+                if group != r.kind && matches!(mode, Mode::Search) {
+                    group = &r.kind;
+                    body = body.child(headline(crate::forms::noun(group), 12.));
+                }
                 let action = if let Mode::BindChat(room) = &mode {
                     UiAction::Chat(crate::app::chat_actions::Action::Bind {
                         room: room.clone(),
@@ -923,11 +938,27 @@ impl Workbench {
                         ))
                         .child(text(r.title.clone(), 13., INK))
                         .child(div().flex_1())
-                        .child(text(crate::forms::noun(&r.kind), 11., DIM)),
+                        .child(text(
+                            format!("{} · {}", self.name("space", &r.space), r.code()),
+                            11.,
+                            DIM,
+                        )),
                 );
             }
             if results.is_empty() {
-                body = body.child(text("输入关键词，在当前空间中查找对象。", 12., MUTED));
+                body = body.child(text(
+                    if search_term.trim().is_empty() {
+                        if matches!(mode, Mode::BindChat(_)) {
+                            "输入任务标题或编号"
+                        } else {
+                            "输入关键词，在已加入的空间中查找"
+                        }
+                    } else {
+                        "没有匹配的对象"
+                    },
+                    12.,
+                    MUTED,
+                ));
             }
         }
         if let Some(p) = &preview {

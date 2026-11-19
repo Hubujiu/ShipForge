@@ -303,6 +303,14 @@ impl Context<'_> {
             self.readable("view", required(q, "id")?)?;
             return Ok(());
         }
+        if op == "chat.start" {
+            self.require_edit()?;
+            self.readable("chat", required(result, "id")?)?;
+            if let Some(mode @ ("agent" | "crew")) = q["mode"].as_str() {
+                crate::agents::usable(self, mode, required(q, "target")?, None)?;
+            }
+            return Ok(());
+        }
         if op == "view.save_as" {
             self.readable("view", required(q, "id")?)?;
             self.readable("view", required(result, "id")?)?;

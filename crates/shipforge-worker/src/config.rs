@@ -20,7 +20,7 @@ pub struct Runtime {
     pub timeout_seconds: u64,
 }
 fn default_timeout() -> u64 {
-    3600
+    180 * 60
 }
 fn default_count() -> u64 {
     1
@@ -50,6 +50,8 @@ pub struct Config {
     pub workspace: Option<PathBuf>,
     #[serde(default)]
     pub profiles: BTreeMap<String, PathBuf>,
+    #[serde(default)]
+    pub direct_profiles: std::collections::BTreeSet<String>,
     pub runtimes: BTreeMap<String, Runtime>,
     #[serde(default)]
     pub skill_roots: BTreeMap<String, Vec<PathBuf>>,
@@ -60,6 +62,22 @@ fn abs(path: &Path) -> Result<PathBuf> {
     std::path::absolute(path).map_err(|e| e.to_string())
 }
 impl Config {
+    pub(crate) fn permits_direct(&self, id: &str) -> bool {
+        self.allow_direct || self.direct_profiles.contains(id)
+    }
+    pub(crate) fn profile_paths(&self) -> impl Iterator<Item = (&str, &PathBuf)> {
+        self.workspace
+            .iter()
+            .map(|p| ("@workspace", p))
+            .chain(self.profiles.iter().map(|(id, p)| (id.as_str(), p)))
+    }
+    pub(crate) fn approved_directories(&self) -> Vec<serde_json::Value> {
+        self.profile_paths().map(|(id,path)|{
+            let resolved=path.canonicalize().unwrap_or_else(|_|path.clone());
+            let available=resolved.is_dir();
+            serde_json::json!({"id":id,"identity":directory_identity(&resolved),"available":available,"direct":available&&self.permits_direct(id),"git":available&&resolved.join(".git").exists()})
+        }).collect()
+    }
     pub fn load(file: &Path) -> Result<Self> {
         let config: Self = serde_json::from_slice(
             &fs::read(file).map_err(|e| format!("read {}: {e}", file.display()))?,
@@ -84,7 +102,7 @@ impl Config {
         {
             if runtime.program.as_os_str().is_empty()
                 || runtime.timeout_seconds == 0
-                || runtime.timeout_seconds > 7 * 86400
+                || runtime.timeout_seconds > 30 * 86400
             {
                 return Err("invalid runtime program or timeout".into());
             }
@@ -97,6 +115,17 @@ impl Config {
                     "ShipForge credentials cannot be inherited by external runtimes".into(),
                 );
             }
+        }
+        if config.profiles.contains_key("@workspace")
+            || config.profiles.len() + usize::from(config.workspace.is_some()) > 128
+            || config.profiles.keys().any(|id| {
+                id.trim().is_empty()
+                    || id.len() > 160
+                    || id.contains(['/', '\\'])
+                    || id.chars().any(char::is_control)
+            })
+        {
+            return Err("use distinct logical names for approved profiles; @workspace names the default directory".into());
         }
         if config
             .workspace
@@ -160,6 +189,7 @@ impl Config {
             allow_direct: false,
             workspace: workspace.as_deref().map(abs).transpose()?,
             profiles: BTreeMap::new(),
+            direct_profiles: Default::default(),
             runtimes,
             approved_tools: BTreeMap::new(),
             skill_roots: BTreeMap::new(),
@@ -195,6 +225,12 @@ pub fn state_dir(config: &Path) -> Result<PathBuf> {
     let dir = file.with_file_name(format!("{name}.state"));
     fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     Ok(dir)
+}
+pub(crate) fn directory_identity(path: &Path) -> String {
+    let value = path.to_string_lossy();
+    #[cfg(windows)]
+    let value = value.to_lowercase();
+    hex_digest(value.as_bytes())
 }
 pub fn credential(dir: &Path) -> Result<String> {
     let path = dir.join("machine.key");

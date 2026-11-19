@@ -22,6 +22,7 @@ pub enum Request {
         stop: bool,
     },
     Read {
+        people: (&'static str, String),
         handler: Option<(String, String)>,
         chat: Option<String>,
         generation: u64,
@@ -58,6 +59,7 @@ pub enum Event {
     Rows {
         generation: u64,
         space: String,
+        access: Option<Result<String, String>>,
         data: Rows,
         errors: BTreeMap<String, String>,
     },
@@ -116,16 +118,30 @@ impl Backend {
                             let _ = events.send(Event::Reply { ticket, result });
                         }
                         Request::Read {
+                            people,
                             handler,
                             chat,
                             generation,
                             space,
-                            kinds,
+                            mut kinds,
                         } => {
                             let mut data = Rows::new();
                             let mut errors = BTreeMap::new();
+                            let access = client.as_ref().is_ok_and(|c| c.mode()=="team").then(|| {
+                                execute(&mut client,json!({"op":"whoami","space":space})).and_then(|reply|
+                                    reply["role"].as_str().map(str::to_owned).ok_or_else(||"invalid: missing space role".into()))
+                            });
+                            if matches!(&access,Some(Err(e)) if !e.starts_with("offline:")) {
+                                kinds.retain(|kind| kind=="space");
+                            }
                             for kind in kinds {
-                                let command = if kind == "catalog" {
+                                let command = if kind=="people_directory" {
+                                    let mut q=json!({"op":"directory.people","space":space,"query":people.1,"limit":5000});
+                                    if !people.0.is_empty(){q["kind"]=json!(people.0);}
+                                    q
+                                } else if kind=="organization_settings" {
+                                    json!({"op":"organization.settings","space":space})
+                                } else if kind == "catalog" {
                                     json!({"op":"catalog.list","space":space})
                                 } else if kind=="message" && let Some(id)=chat.as_ref(){
                                     json!({"op":"chat.history","space":space,"id":id})
@@ -151,7 +167,9 @@ impl Backend {
                                     json!({"op":"list","kind":kind,"space":space})
                                 };
                                 let result = execute(&mut client, command).and_then(|value| {
-                                    let value = if kind=="agent_settings" && let Some((_,id))=&handler{
+                                    let value = if kind=="organization_settings" {
+                                        json!([{"kind":kind,"id":value["id"],"space":space,"title":value["name"],"rev":value["rev"],"fields":value}])
+                                    }else if kind=="agent_settings" && let Some((_,id))=&handler{
                                         json!([{"kind":"agent_settings","id":id,"space":space,"fields":value}])
                                     }else if kind=="agent_history"{
                                         json!(value.as_array().into_iter().flatten().enumerate().map(|(i,v)|json!({"kind":"agent_history","id":i.to_string(),"space":space,"title":v["title"],"fields":v})).collect::<Vec<_>>())
@@ -178,7 +196,8 @@ impl Backend {
                             }
                             if let Ok(c) = &mut client
                                 && c.mode()=="team"
-                                && errors.values().any(|e|e.starts_with("unauthorized:"))
+                                && (errors.values().any(|e|e.starts_with("unauthorized:"))
+                                    || matches!(&access,Some(Err(e)) if e.starts_with("unauthorized:")))
                                 && std::env::var_os("SHIPFORGE_SERVER").is_none()
                                 && let Ok((mode,session))=report(&mut client)
                                 && session["needs_login"]==true
@@ -199,6 +218,7 @@ impl Backend {
                                 .send(Event::Rows {
                                     generation,
                                     space,
+                                    access,
                                     data,
                                     errors,
                                 })
@@ -206,6 +226,10 @@ impl Backend {
                             {
                                 break;
                             }
+                        }
+                        Request::Call {ticket, command} if !demo && matches!(command["op"].as_str(),Some("bot.qr.check"|"bot.sync"))=>{
+                            let directory=dir.clone();let results=events.clone();
+                            std::thread::spawn(move||{let result=Client::from_dir(directory.as_deref()).and_then(|mut c|c.execute(command));let _=results.send(Event::Reply{ticket,result});});
                         }
                         Request::Call {
                             ticket,

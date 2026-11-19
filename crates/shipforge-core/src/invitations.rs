@@ -138,7 +138,7 @@ fn issue(c: &Context<'_>, q: &Value) -> Result<Value> {
         Some(&id),
         title,
         json!({"channel":channel,"email":address,"role":role,"spaces":spaces,
-        "creator":c.actor,"state":"active","expires_at":expires}),
+        "creator":c.actor,"state":"active","expires_at":expires,"language":crate::organization::defaults(c)?.0}),
     )?;
     c.db.execute(
         "INSERT INTO invitation_keys VALUES(?,?,?)",

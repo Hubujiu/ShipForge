@@ -1,5 +1,721 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ShipForge workspace request",
+  "type": "object",
+  "required": [
+    "op"
+  ],
+  "properties": {
+    "op": {
+      "type": "string",
+      "enum": [
+        "inbox.settings",
+        "inbox.query",
+        "inbox.feed",
+        "inbox.locate",
+        "followers.list",
+        "agent.directory",
+        "agent.settings",
+        "agent.history",
+        "imports.binding",
+        "cnb.internal.history",
+        "cnb.internal.receipt",
+        "imports.history",
+        "imports.push_history",
+        "bugly.outbox",
+        "bugly.binding",
+        "space.deactivate.preview",
+        "space.navigation",
+        "jira.read",
+        "invitation.list",
+        "chat.info",
+        "chat.sidebar",
+        "chat.history",
+        "chat.invitations",
+        "chat.share.read",
+        "onboarding.catalog",
+        "onboarding.get",
+        "preferences.get",
+        "schema",
+        "whoami",
+        "list",
+        "get",
+        "search",
+        "directory.people",
+        "organization.settings",
+        "space.list",
+        "organization.list",
+        "events",
+        "view.run",
+        "task.type.preview",
+        "task_type.bindings.preview",
+        "comment.thread",
+        "comment.reactions",
+        "view.catalog",
+        "view.preview",
+        "view.share",
+        "view.open",
+        "dashboard",
+        "iteration.preview",
+        "iteration.timeline",
+        "iteration.settings",
+        "iteration.history",
+        "task.relations",
+        "project.progress",
+        "project.timeline",
+        "triage.settings",
+        "triage.queue",
+        "task.share",
+        "task.open",
+        "document.history",
+        "export",
+        "import.preview",
+        "provider.preview",
+        "im.outbox",
+        "im.threads",
+        "attachment.download",
+        "inbox.configure",
+        "inbox.bulk",
+        "inbox.open",
+        "followers.change",
+        "agent.archive",
+        "agent.restore",
+        "agent.variant",
+        "agent.override",
+        "agent.access",
+        "agent.organize",
+        "crew.exclusive",
+        "imports.stage",
+        "imports.commit",
+        "cnb.internal.record",
+        "cnb.internal.claim",
+        "cnb.internal.finish",
+        "imports.prepare_push",
+        "imports.sync_control",
+        "imports.finish_push",
+        "imports.rollback",
+        "bugly.rotate",
+        "bugly.revoke",
+        "bugly.claim",
+        "bugly.settle",
+        "space.join",
+        "space.leave",
+        "space.deactivate",
+        "space.restore",
+        "space.pin",
+        "tag.apply",
+        "tag.merge",
+        "jira.write",
+        "invitation.issue",
+        "invitation.copy",
+        "invitation.revoke",
+        "invitation.accept",
+        "chat.manage",
+        "chat.start",
+        "organization.configure",
+        "organization.depart",
+        "chat.organize",
+        "chat.fork",
+        "chat.bind_task",
+        "chat.convert",
+        "chat.send",
+        "chat.preferences",
+        "chat.share.create",
+        "chat.share.revoke",
+        "onboarding.display",
+        "onboarding.setup",
+        "preferences.update",
+        "comment.resolve",
+        "comment.react",
+        "comment.reopen",
+        "view.organize",
+        "view.save_as",
+        "task.move",
+        "task.assign",
+        "task.conversation",
+        "task.command",
+        "create",
+        "update",
+        "delete",
+        "iteration.close",
+        "iteration.configure",
+        "iteration.start",
+        "triage",
+        "triage.submit",
+        "triage.configure",
+        "triage.batch",
+        "customer_request.convert",
+        "follow",
+        "notification.act",
+        "document.restore",
+        "artifact.save",
+        "import",
+        "provider.ingest",
+        "im.bind",
+        "im.reply",
+        "im.unbind",
+        "im.claim",
+        "im.ack",
+        "im.retry",
+        "attachment.upload",
+        "agent.resolve",
+        "catalog.list",
+        "catalog.install",
+        "catalog.detail",
+        "catalog.publish",
+        "catalog.update",
+        "catalog.uninstall",
+        "catalog.instantiate",
+        "skill.import",
+        "skill.bind",
+        "skill.sources",
+        "skill.discover",
+        "skill.machine_import",
+        "skill.jobs",
+        "skill.finish",
+        "tool.authorize",
+        "machine.register",
+        "machine.heartbeat",
+        "machine.disable",
+        "machine.enable",
+        "run.enqueue",
+        "run.trigger_now",
+        "run.diagnostics",
+        "machine.directories",
+        "machine.diagnostics",
+        "run.claim",
+        "run.heartbeat",
+        "run.report",
+        "run.cancel",
+        "run.retry",
+        "run.reply",
+        "run.tool",
+        "run.discussion",
+        "automation.fire",
+        "automation.tick",
+        "connector.ingest",
+        "connector.export",
+        "bot.bindings",
+        "bot.attach",
+        "bot.policy",
+        "bot.detach",
+        "bot.expire",
+        "bot.receive",
+        "bot.claim",
+        "bot.ack",
+        "bot.retry",
+        "document.share",
+        "document.open",
+        "document.preview",
+        "document.embeds",
+        "chat.slash",
+        "shortcut.catalog",
+        "shortcut.history",
+        "task.review.state",
+        "chat.share.image",
+        "chat.slash.send",
+        "shortcut.save",
+        "shortcut.delete",
+        "shortcut.organize",
+        "shortcut.run",
+        "task.review",
+        "chat.complete",
+        "access.whoami",
+        "access.issue",
+        "access.list",
+        "access.revoke",
+        "access.personal.issue",
+        "access.personal.list",
+        "access.personal.revoke",
+        "profiles.list",
+        "profiles.use",
+        "profiles.forget",
+        "profiles.remember",
+        "sync.status",
+        "sync.pending",
+        "sync.enqueue",
+        "sync.flush",
+        "sync.resolve",
+        "zoho.projects",
+        "zoho.preview",
+        "bugly.deliver",
+        "zoho.credential",
+        "bugly.credentials",
+        "tapd.projects",
+        "tapd.preview",
+        "tapd.credential",
+        "zentao.credential",
+        "zentao.projects",
+        "zentao.preview",
+        "pingcode.credential",
+        "pingcode.projects",
+        "pingcode.preview",
+        "imports.push",
+        "imports.synchronize",
+        "linear.credential",
+        "linear.accounts",
+        "linear.projects",
+        "linear.preview",
+        "linear.authorize",
+        "clickup.credential",
+        "clickup.accounts",
+        "clickup.projects",
+        "clickup.preview",
+        "clickup.authorize",
+        "ones.credential",
+        "ones.accounts",
+        "ones.projects",
+        "ones.preview",
+        "bot.qr.start",
+        "bot.qr.check",
+        "bot.qq.connect",
+        "bot.sync",
+        "bot.disconnect",
+        "asana.accounts",
+        "asana.credential",
+        "asana.projects",
+        "asana.preview",
+        "asana.synchronize",
+        "asana.push",
+        "teambition.application",
+        "teambition.authorize",
+        "teambition.personal",
+        "teambition.projects",
+        "teambition.preview",
+        "teambition.synchronize",
+        "teambition.push",
+        "cnb.credential",
+        "cnb.repositories",
+        "cnb.pair",
+        "cnb.ci",
+        "cnb.activity",
+        "cnb.deliver",
+        "profiles.login.start",
+        "profiles.login.finish",
+        "profiles.close.start",
+        "profiles.close.finish",
+        "profiles.verification",
+        "profiles.logout",
+        "access.account.profile",
+        "access.account.update",
+        "access.account.impact",
+        "access.account.verify",
+        "access.account.close",
+        "access.account.logout"
+      ]
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "space",
+        "organization",
+        "member",
+        "task",
+        "customer_request",
+        "task_type",
+        "status",
+        "field",
+        "tag",
+        "tag_group",
+        "relation",
+        "relation_type",
+        "view",
+        "iteration",
+        "project",
+        "comment",
+        "notification",
+        "chat",
+        "message",
+        "document",
+        "artifact",
+        "agent",
+        "crew",
+        "skill",
+        "machine",
+        "run",
+        "automation",
+        "connector",
+        "tool",
+        "settings",
+        "invitation",
+        "note"
+      ]
+    },
+    "space": {
+      "type": "string",
+      "default": "default"
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "fields": {
+      "type": "object"
+    },
+    "expected_rev": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "request_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 160
+    },
+    "filter": {
+      "type": "object"
+    },
+    "query": {
+      "type": "string"
+    },
+    "limit": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5000
+    },
+    "offset": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "as_of": {
+      "type": "string",
+      "format": "date"
+    },
+    "after": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "target": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "provider": {
+      "type": "string"
+    },
+    "payload": {
+      "type": "object"
+    },
+    "event_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256
+    },
+    "filename": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 255
+    },
+    "media_type": {
+      "type": "string"
+    },
+    "attachment_id": {
+      "type": "string"
+    },
+    "content_base64": {
+      "type": "string",
+      "contentEncoding": "base64",
+      "maxLength": 5592408
+    },
+    "search_scope": {
+      "enum": [
+        "space",
+        "organization"
+      ],
+      "default": "space"
+    },
+    "sidebar_visible": {
+      "type": "boolean"
+    },
+    "sidebar_expanded": {
+      "type": "boolean"
+    },
+    "work_type": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "task_types": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "requirement",
+          "bug",
+          "task",
+          "story"
+        ]
+      }
+    },
+    "machine_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "tool_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "call_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "handler_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "task_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "chat_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "external_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "source_version": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "lease": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096
+    },
+    "machine_key": {
+      "type": "string",
+      "minLength": 32,
+      "maxLength": 256,
+      "writeOnly": true
+    },
+    "handler_kind": {
+      "enum": [
+        "agent",
+        "crew"
+      ]
+    },
+    "capacity": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 64
+    },
+    "runtimes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 128
+    },
+    "batch": {
+      "type": "string"
+    },
+    "issues": {
+      "type": "array",
+      "maxItems": 5000
+    },
+    "binding_rev": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "preferences": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "theme": {
+          "enum": [
+            "system",
+            "light",
+            "dark",
+            "magic-blue",
+            "classic-dark"
+          ]
+        },
+        "frame_color": {
+          "enum": [
+            "none",
+            "color-1",
+            "color-2",
+            "color-3",
+            "color-4",
+            "color-5",
+            "color-6",
+            "color-7",
+            "color-8",
+            "color-9",
+            "color-10",
+            "color-11",
+            "color-12"
+          ]
+        },
+        "language": {
+          "enum": [
+            "zh-Hans",
+            "en"
+          ]
+        },
+        "send_with": {
+          "enum": [
+            "enter",
+            "shift-enter"
+          ]
+        },
+        "open_after_assignment": {
+          "type": "boolean"
+        },
+        "open_after_command": {
+          "type": "boolean"
+        },
+        "shortcuts": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "command_menu": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "move_task": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "find_in_view": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "assignees": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "executor": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "id"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "agent",
+                "crew"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "source_assignees": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "confirm_remove": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "expected_type_rev": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "impact_token": {
+      "type": "string",
+      "minLength": 1
+    },
+    "with_total": {
+      "type": "boolean"
+    },
+    "field_bindings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "field"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "field": {
+            "type": "string",
+            "minLength": 1
+          },
+          "required": {
+            "type": "boolean",
+            "default": false
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          }
+        }
+      }
+    },
+    "scope": {
+      "enum": [
+        "read",
+        "write",
+        "worker",
+        "hook"
+      ]
+    },
+    "actor": {
+      "type": "string"
+    },
+    "allow_cached": {
+      "type": "boolean"
+    },
+    "queue_if_offline": {
+      "type": "boolean"
+    }
+  },
   "allOf": [
     {
       "if": {
@@ -76,6 +792,11 @@
         }
       },
       "then": {
+        "required": [
+          "id",
+          "provider",
+          "payload"
+        ],
         "properties": {
           "provider": {
             "enum": [
@@ -94,12 +815,7 @@
               "dingtalk"
             ]
           }
-        },
-        "required": [
-          "id",
-          "provider",
-          "payload"
-        ]
+        }
       }
     },
     {
@@ -111,6 +827,21 @@
         }
       },
       "then": {
+        "required": [
+          "kind",
+          "filename",
+          "content_base64"
+        ],
+        "properties": {
+          "kind": {
+            "enum": [
+              "document",
+              "artifact",
+              "message",
+              "task"
+            ]
+          }
+        },
         "if": {
           "properties": {
             "kind": {
@@ -122,21 +853,6 @@
             }
           }
         },
-        "properties": {
-          "kind": {
-            "enum": [
-              "document",
-              "artifact",
-              "message",
-              "task"
-            ]
-          }
-        },
-        "required": [
-          "kind",
-          "filename",
-          "content_base64"
-        ],
         "then": {
           "required": [
             "id"
@@ -153,6 +869,11 @@
         }
       },
       "then": {
+        "required": [
+          "kind",
+          "id",
+          "attachment_id"
+        ],
         "properties": {
           "kind": {
             "enum": [
@@ -162,12 +883,114 @@
               "task"
             ]
           }
-        },
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "directory.people"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "agent",
+              "crew",
+              "member",
+              "machine"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "organization.configure"
+          }
+        }
+      },
+      "then": {
         "required": [
-          "kind",
-          "id",
-          "attachment_id"
-        ]
+          "expected_rev"
+        ],
+        "anyOf": [
+          {
+            "required": [
+              "default_language"
+            ]
+          },
+          {
+            "required": [
+              "priority_levels"
+            ]
+          }
+        ],
+        "properties": {
+          "default_language": {
+            "enum": [
+              "zh-CN",
+              "en"
+            ]
+          },
+          "priority_levels": {
+            "enum": [
+              4,
+              5
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "organization.depart"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "expected_rev",
+          "action",
+          "confirmation"
+        ],
+        "properties": {
+          "action": {
+            "enum": [
+              "leave",
+              "dissolve"
+            ]
+          },
+          "confirmation": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "if": {
+          "properties": {
+            "action": {
+              "const": "dissolve"
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "members"
+          ],
+          "properties": {
+            "members": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
       }
     },
     {
@@ -179,24 +1002,24 @@
         }
       },
       "then": {
-        "properties": {
-          "organization_name": {
-            "maxLength": 100,
-            "minLength": 1,
-            "type": "string"
-          },
-          "organization_slug": {
-            "maxLength": 63,
-            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
-            "type": "string"
-          }
-        },
         "required": [
           "organization_name",
           "organization_slug",
           "work_type",
           "task_types"
-        ]
+        ],
+        "properties": {
+          "organization_name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "organization_slug": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$",
+            "maxLength": 63
+          }
+        }
       }
     },
     {
@@ -220,6 +1043,194 @@
             ]
           }
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "run.trigger_now",
+              "run.diagnostics",
+              "machine.directories",
+              "machine.diagnostics"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "required": [
+          "kind"
+        ],
+        "properties": {
+          "op": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          },
+          "kind": {
+            "const": "agent"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "properties": {
+              "run_timeout_minutes": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 15,
+                "maximum": 43200
+              },
+              "queue_timeout_hours": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 1,
+                "maximum": 168
+              },
+              "chat_capacity_mode": {
+                "enum": [
+                  "independent",
+                  "shared",
+                  null
+                ]
+              },
+              "profiles": {
+                "type": [
+                  "array",
+                  "null"
+                ],
+                "maxItems": 16,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "run.enqueue"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "scheduled_at": {
+            "type": [
+              "integer",
+              "string",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "run.claim"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "busy_directories": {
+            "type": "array",
+            "maxItems": 128,
+            "items": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "machine.register"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "directories": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "maxItems": 128,
+            "items": {
+              "type": "object",
+              "required": [
+                "id",
+                "identity"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 160
+                },
+                "identity": {
+                  "type": "string",
+                  "pattern": "^[A-Fa-f0-9]{64}$"
+                },
+                "git": {
+                  "type": "boolean"
+                },
+                "available": {
+                  "type": "boolean"
+                },
+                "direct": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "run.report"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "error": {
+            "type": [
+              "object",
+              "string",
+              "null"
+            ],
+            "description": "Recognized provider code, HTTP status or sanitized worker classification"
+          }
+        }
       }
     },
     {
@@ -397,11 +1408,14 @@
       },
       "then": {
         "properties": {
-          "audience": {
-            "enum": [
-              "space",
-              "organization"
-            ]
+          "sources": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
           },
           "category": {
             "enum": [
@@ -413,18 +1427,15 @@
               "other"
             ]
           },
-          "expected_version": {
-            "minimum": 0,
-            "type": "integer"
+          "audience": {
+            "enum": [
+              "space",
+              "organization"
+            ]
           },
-          "sources": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 16,
-            "minItems": 1,
-            "type": "array",
-            "uniqueItems": true
+          "expected_version": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }
@@ -462,7 +1473,15 @@
         ],
         "properties": {
           "files": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 96,
             "items": {
+              "type": "object",
+              "required": [
+                "path",
+                "text"
+              ],
               "properties": {
                 "path": {
                   "type": "string"
@@ -470,88 +1489,142 @@
                 "text": {
                   "type": "string"
                 }
-              },
-              "required": [
-                "path",
-                "text"
-              ],
-              "type": "object"
-            },
-            "maxItems": 96,
-            "minItems": 1,
-            "type": "array"
+              }
+            }
           },
           "packages": {
-            "maxItems": 16,
+            "type": "array",
             "minItems": 1,
-            "type": "array"
+            "maxItems": 16
           },
           "path": {
             "type": "string"
           },
           "url": {
-            "format": "uri",
-            "type": "string"
+            "type": "string",
+            "format": "uri"
           }
         }
       }
     },
     {
       "if": {
+        "required": [
+          "kind"
+        ],
         "properties": {
-          "kind": {
-            "const": "agent"
-          },
           "op": {
             "enum": [
               "create",
               "update"
             ]
+          },
+          "kind": {
+            "const": "agent"
           }
-        },
-        "required": [
-          "kind"
-        ]
+        }
       },
       "then": {
         "properties": {
           "fields": {
             "properties": {
               "working_hours": {
+                "properties": {
+                  "triggers": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "assignment": {
+                        "type": "boolean"
+                      },
+                      "comment": {
+                        "type": "boolean"
+                      },
+                      "chat": {
+                        "type": "boolean"
+                      }
+                    }
+                  }
+                },
                 "oneOf": [
                   {
                     "type": "null"
                   },
                   {
+                    "type": "object",
+                    "required": [
+                      "preset",
+                      "timezone"
+                    ],
+                    "properties": {
+                      "preset": {
+                        "const": "off_peak"
+                      },
+                      "timezone": {
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "not": {
+                      "anyOf": [
+                        {
+                          "required": [
+                            "week"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "start"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "end"
+                          ]
+                        },
+                        {
+                          "required": [
+                            "utc_offset_minutes"
+                          ]
+                        }
+                      ]
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": [
+                      "start",
+                      "end"
+                    ],
                     "not": {
                       "required": [
                         "week"
                       ]
                     },
                     "properties": {
-                      "end": {
-                        "maximum": 23,
-                        "minimum": 0,
-                        "type": "integer"
-                      },
                       "start": {
-                        "maximum": 23,
+                        "type": "integer",
                         "minimum": 0,
-                        "type": "integer"
+                        "maximum": 23
+                      },
+                      "end": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23
                       },
                       "utc_offset_minutes": {
-                        "maximum": 840,
+                        "type": "integer",
                         "minimum": -840,
-                        "type": "integer"
+                        "maximum": 840
                       }
-                    },
-                    "required": [
-                      "start",
-                      "end"
-                    ],
-                    "type": "object"
+                    }
                   },
                   {
+                    "type": "object",
+                    "required": [
+                      "timezone",
+                      "week"
+                    ],
                     "not": {
                       "anyOf": [
                         {
@@ -573,43 +1646,38 @@
                     },
                     "properties": {
                       "timezone": {
-                        "description": "IANA time zone",
+                        "type": "string",
                         "minLength": 1,
-                        "type": "string"
+                        "description": "IANA time zone"
                       },
                       "week": {
+                        "type": "object",
+                        "propertyNames": {
+                          "pattern": "^[1-7]$"
+                        },
                         "additionalProperties": {
+                          "type": "array",
+                          "maxItems": 2,
                           "items": {
-                            "properties": {
-                              "end": {
-                                "pattern": "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$",
-                                "type": "string"
-                              },
-                              "start": {
-                                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
-                                "type": "string"
-                              }
-                            },
+                            "type": "object",
                             "required": [
                               "start",
                               "end"
                             ],
-                            "type": "object"
-                          },
-                          "maxItems": 2,
-                          "type": "array"
-                        },
-                        "propertyNames": {
-                          "pattern": "^[1-7]$"
-                        },
-                        "type": "object"
+                            "properties": {
+                              "start": {
+                                "type": "string",
+                                "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                              },
+                              "end": {
+                                "type": "string",
+                                "pattern": "^(([01][0-9]|2[0-3]):[0-5][0-9]|24:00)$"
+                              }
+                            }
+                          }
+                        }
                       }
-                    },
-                    "required": [
-                      "timezone",
-                      "week"
-                    ],
-                    "type": "object"
+                    }
                   }
                 ]
               }
@@ -844,10 +1912,6 @@
       },
       "then": {
         "properties": {
-          "artifacts": {
-            "maxItems": 100,
-            "type": "array"
-          },
           "status": {
             "enum": [
               "done",
@@ -855,6 +1919,10 @@
               "cancelled",
               "waiting"
             ]
+          },
+          "artifacts": {
+            "type": "array",
+            "maxItems": 100
           }
         }
       }
@@ -1010,14 +2078,14 @@
     {
       "if": {
         "properties": {
-          "kind": {
-            "const": "crew"
-          },
           "op": {
             "enum": [
               "create",
               "update"
             ]
+          },
+          "kind": {
+            "const": "crew"
           }
         },
         "required": [
@@ -1029,8 +2097,8 @@
           "fields": {
             "properties": {
               "share_task_directory": {
-                "default": false,
-                "type": "boolean"
+                "type": "boolean",
+                "default": false
               }
             }
           }
@@ -1144,24 +2212,24 @@
       "then": {
         "properties": {
           "usage": {
-            "properties": {
-              "input_tokens": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "output_tokens": {
-                "minimum": 0,
-                "type": "integer"
-              },
-              "total_tokens": {
-                "minimum": 0,
-                "type": "integer"
-              }
-            },
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "properties": {
+              "input_tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "output_tokens": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "total_tokens": {
+                "type": "integer",
+                "minimum": 0
+              }
+            }
           }
         }
       }
@@ -1194,6 +2262,11 @@
         }
       },
       "then": {
+        "required": [
+          "space",
+          "api_version",
+          "resource"
+        ],
         "properties": {
           "api_version": {
             "enum": [
@@ -1201,22 +2274,17 @@
               3
             ]
           },
-          "base_url": {
-            "type": "string"
+          "resource": {
+            "type": "string",
+            "minLength": 1
           },
           "params": {
             "type": "object"
           },
-          "resource": {
-            "minLength": 1,
+          "base_url": {
             "type": "string"
           }
-        },
-        "required": [
-          "space",
-          "api_version",
-          "resource"
-        ]
+        }
       }
     },
     {
@@ -1228,6 +2296,9 @@
         }
       },
       "then": {
+        "required": [
+          "method"
+        ],
         "properties": {
           "method": {
             "enum": [
@@ -1236,10 +2307,7 @@
               "DELETE"
             ]
           }
-        },
-        "required": [
-          "method"
-        ]
+        }
       }
     },
     {
@@ -1251,14 +2319,37 @@
         }
       },
       "then": {
-        "else": {
-          "properties": {
-            "role": {
-              "enum": [
-                "member",
-                "guest"
-              ]
+        "required": [
+          "channel",
+          "role"
+        ],
+        "properties": {
+          "channel": {
+            "enum": [
+              "email",
+              "link"
+            ]
+          },
+          "role": {
+            "enum": [
+              "member",
+              "guest",
+              "admin"
+            ]
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "spaces": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
             }
+          },
+          "expires_at": {
+            "type": "integer"
           }
         },
         "if": {
@@ -1268,43 +2359,20 @@
             }
           }
         },
-        "properties": {
-          "channel": {
-            "enum": [
-              "email",
-              "link"
-            ]
-          },
-          "email": {
-            "format": "email",
-            "type": "string"
-          },
-          "expires_at": {
-            "type": "integer"
-          },
-          "role": {
-            "enum": [
-              "member",
-              "guest",
-              "admin"
-            ]
-          },
-          "spaces": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array",
-            "uniqueItems": true
-          }
-        },
-        "required": [
-          "channel",
-          "role"
-        ],
         "then": {
           "required": [
             "email"
           ]
+        },
+        "else": {
+          "properties": {
+            "role": {
+              "enum": [
+                "member",
+                "guest"
+              ]
+            }
+          }
         }
       }
     },
@@ -1334,15 +2402,15 @@
         }
       },
       "then": {
-        "properties": {
-          "link": {
-            "pattern": "^shipforge://invite/",
-            "type": "string"
-          }
-        },
         "required": [
           "link"
-        ]
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "pattern": "^shipforge://invite/"
+          }
+        }
       }
     },
     {
@@ -1354,34 +2422,15 @@
         }
       },
       "then": {
+        "required": [
+          "fields"
+        ],
         "properties": {
           "fields": {
-            "additionalProperties": false,
+            "type": "object",
             "minProperties": 1,
+            "additionalProperties": false,
             "properties": {
-              "anchor_date": {
-                "format": "date",
-                "type": "string"
-              },
-              "auto_join_active": {
-                "type": "boolean"
-              },
-              "auto_join_completed": {
-                "type": "boolean"
-              },
-              "auto_join_in_progress": {
-                "type": "boolean"
-              },
-              "cooldown_days": {
-                "maximum": 56,
-                "minimum": 0,
-                "type": "integer"
-              },
-              "future_count": {
-                "maximum": 26,
-                "minimum": 0,
-                "type": "integer"
-              },
               "mode": {
                 "enum": [
                   "manual",
@@ -1390,21 +2439,40 @@
                 ]
               },
               "timezone": {
-                "minLength": 1,
-                "type": "string"
+                "type": "string",
+                "minLength": 1
+              },
+              "anchor_date": {
+                "type": "string",
+                "format": "date"
               },
               "weeks": {
-                "maximum": 8,
+                "type": "integer",
                 "minimum": 1,
-                "type": "integer"
+                "maximum": 8
+              },
+              "cooldown_days": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 56
+              },
+              "future_count": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 26
+              },
+              "auto_join_active": {
+                "type": "boolean"
+              },
+              "auto_join_in_progress": {
+                "type": "boolean"
+              },
+              "auto_join_completed": {
+                "type": "boolean"
               }
-            },
-            "type": "object"
+            }
           }
-        },
-        "required": [
-          "fields"
-        ]
+        }
       }
     },
     {
@@ -1432,9 +2500,62 @@
       "then": {
         "properties": {
           "owner": {
-            "minLength": 1,
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "chat.start"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "mode"
+        ],
+        "properties": {
+          "mode": {
+            "enum": [
+              "member",
+              "agent",
+              "crew",
+              "group"
+            ]
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "agents": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "if": {
+          "properties": {
+            "mode": {
+              "const": "group"
+            }
+          }
+        },
+        "then": {
+          "required": [
+            "title"
+          ]
+        },
+        "else": {
+          "required": [
+            "target"
+          ]
         }
       }
     },
@@ -1468,13 +2589,9 @@
         }
       },
       "then": {
-        "if": {
-          "properties": {
-            "action": {
-              "const": "undo"
-            }
-          }
-        },
+        "required": [
+          "action"
+        ],
         "properties": {
           "action": {
             "enum": [
@@ -1485,9 +2602,13 @@
             ]
           }
         },
-        "required": [
-          "action"
-        ],
+        "if": {
+          "properties": {
+            "action": {
+              "const": "undo"
+            }
+          }
+        },
         "then": {
           "required": [
             "undo_token"
@@ -1504,15 +2625,15 @@
         }
       },
       "then": {
-        "properties": {
-          "message": {
-            "minLength": 1,
-            "type": "string"
-          }
-        },
         "required": [
           "message"
-        ]
+        ],
+        "properties": {
+          "message": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     {
@@ -1524,15 +2645,15 @@
         }
       },
       "then": {
-        "properties": {
-          "task": {
-            "minLength": 1,
-            "type": "string"
-          }
-        },
         "required": [
           "task"
-        ]
+        ],
+        "properties": {
+          "task": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     {
@@ -1544,15 +2665,15 @@
         }
       },
       "then": {
-        "properties": {
-          "body": {
-            "minLength": 1,
-            "type": "string"
-          }
-        },
         "required": [
           "body"
-        ]
+        ],
+        "properties": {
+          "body": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     {
@@ -1566,21 +2687,21 @@
       "then": {
         "properties": {
           "task_draft": {
+            "type": [
+              "object",
+              "null"
+            ],
             "properties": {
-              "description": {
+              "title": {
                 "type": "string"
               },
-              "title": {
+              "description": {
                 "type": "string"
               }
             },
             "required": [
               "title",
               "description"
-            ],
-            "type": [
-              "object",
-              "null"
             ]
           }
         }
@@ -1613,19 +2734,9 @@
         }
       },
       "then": {
-        "if": {
-          "properties": {
-            "action": {
-              "enum": [
-                "add",
-                "remove",
-                "invite",
-                "revoke",
-                "transfer"
-              ]
-            }
-          }
-        },
+        "required": [
+          "action"
+        ],
         "properties": {
           "action": {
             "enum": [
@@ -1648,19 +2759,29 @@
             ]
           }
         },
-        "required": [
-          "action"
-        ],
-        "then": {
+        "if": {
           "properties": {
-            "target": {
-              "minLength": 1,
-              "type": "string"
+            "action": {
+              "enum": [
+                "add",
+                "remove",
+                "invite",
+                "revoke",
+                "transfer"
+              ]
             }
-          },
+          }
+        },
+        "then": {
           "required": [
             "target"
-          ]
+          ],
+          "properties": {
+            "target": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       }
     },
@@ -1686,10 +2807,10 @@
           }
         ],
         "properties": {
-          "ignore_all": {
+          "muted": {
             "type": "boolean"
           },
-          "muted": {
+          "ignore_all": {
             "type": "boolean"
           }
         }
@@ -1704,28 +2825,28 @@
         }
       },
       "then": {
+        "required": [
+          "id",
+          "message_ids"
+        ],
         "properties": {
-          "message_ids": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "maxItems": 100,
-            "minItems": 1,
-            "type": "array",
-            "uniqueItems": true
-          },
           "scope": {
             "enum": [
               "organization",
               "link"
             ]
+          },
+          "message_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
-        },
-        "required": [
-          "id",
-          "message_ids"
-        ]
+        }
       }
     },
     {
@@ -1740,15 +2861,15 @@
         }
       },
       "then": {
-        "properties": {
-          "share": {
-            "pattern": "^[0-9a-f]{64}$",
-            "type": "string"
-          }
-        },
         "required": [
           "share"
-        ]
+        ],
+        "properties": {
+          "share": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        }
       }
     },
     {
@@ -1767,33 +2888,33 @@
     },
     {
       "if": {
+        "required": [
+          "kind"
+        ],
         "properties": {
-          "kind": {
-            "const": "connector"
-          },
           "op": {
             "enum": [
               "create",
               "update"
             ]
+          },
+          "kind": {
+            "const": "connector"
           }
-        },
-        "required": [
-          "kind"
-        ]
+        }
       },
       "then": {
         "properties": {
           "fields": {
             "properties": {
-              "assignee_map": {
-                "additionalProperties": {
-                  "type": "string"
-                },
-                "type": "object"
-              },
               "slack_assignment": {
                 "type": "boolean"
+              },
+              "assignee_map": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
               }
             }
           }
@@ -1929,9 +3050,9 @@
             ]
           },
           "retry_after": {
-            "maximum": 86400,
+            "type": "integer",
             "minimum": 1,
-            "type": "integer"
+            "maximum": 86400
           }
         }
       }
@@ -1965,9 +3086,6 @@
       },
       "then": {
         "properties": {
-          "available_only": {
-            "type": "boolean"
-          },
           "state": {
             "enum": [
               "pending",
@@ -1977,6 +3095,9 @@
               "sent",
               "cancelled"
             ]
+          },
+          "available_only": {
+            "type": "boolean"
           }
         }
       }
@@ -2004,6 +3125,11 @@
         }
       },
       "then": {
+        "required": [
+          "space",
+          "module",
+          "pinned"
+        ],
         "properties": {
           "module": {
             "enum": [
@@ -2017,12 +3143,7 @@
           "pinned": {
             "type": "boolean"
           }
-        },
-        "required": [
-          "space",
-          "module",
-          "pinned"
-        ]
+        }
       }
     },
     {
@@ -2054,6 +3175,18 @@
         }
       },
       "then": {
+        "properties": {
+          "preview_token": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "unfinished": {
+            "enum": [
+              "cancel",
+              "move"
+            ]
+          }
+        },
         "if": {
           "properties": {
             "unfinished": {
@@ -2064,18 +3197,6 @@
             "unfinished"
           ]
         },
-        "properties": {
-          "preview_token": {
-            "pattern": "^[0-9a-f]{64}$",
-            "type": "string"
-          },
-          "unfinished": {
-            "enum": [
-              "cancel",
-              "move"
-            ]
-          }
-        },
         "then": {
           "required": [
             "target"
@@ -2085,6 +3206,9 @@
     },
     {
       "if": {
+        "required": [
+          "kind"
+        ],
         "properties": {
           "kind": {
             "const": "customer_request"
@@ -2095,36 +3219,36 @@
               "update"
             ]
           }
-        },
-        "required": [
-          "kind"
-        ]
+        }
       },
       "then": {
         "properties": {
           "fields": {
+            "type": "object",
             "properties": {
-              "contact": {
-                "type": "string"
-              },
-              "description": {
-                "type": "string"
-              },
               "status": {
                 "enum": [
                   "open",
                   "in_progress",
                   "resolved"
                 ]
+              },
+              "contact": {
+                "type": "string"
+              },
+              "description": {
+                "type": "string"
               }
-            },
-            "type": "object"
+            }
           }
         }
       }
     },
     {
       "if": {
+        "required": [
+          "kind"
+        ],
         "properties": {
           "kind": {
             "const": "space"
@@ -2135,26 +3259,23 @@
               "update"
             ]
           }
-        },
-        "required": [
-          "kind"
-        ]
+        }
       },
       "then": {
         "properties": {
           "fields": {
+            "type": "object",
             "properties": {
-              "customer_requests_enabled": {
+              "triage_enabled": {
                 "type": "boolean"
               },
               "iterations_enabled": {
                 "type": "boolean"
               },
-              "triage_enabled": {
+              "customer_requests_enabled": {
                 "type": "boolean"
               }
-            },
-            "type": "object"
+            }
           }
         }
       }
@@ -2168,65 +3289,65 @@
         }
       },
       "then": {
+        "required": [
+          "id",
+          "target"
+        ],
         "properties": {
           "target": {
             "type": "string"
           }
-        },
-        "required": [
-          "id",
-          "target"
-        ]
+        }
       }
     },
     {
       "if": {
+        "required": [
+          "kind"
+        ],
         "properties": {
-          "kind": {
-            "enum": [
-              "tag",
-              "tag_group"
-            ]
-          },
           "op": {
             "enum": [
               "create",
               "update"
             ]
+          },
+          "kind": {
+            "enum": [
+              "tag",
+              "tag_group"
+            ]
           }
-        },
-        "required": [
-          "kind"
-        ]
+        }
       },
       "then": {
         "properties": {
           "fields": {
+            "type": "object",
             "properties": {
+              "scope": {
+                "enum": [
+                  "organization",
+                  "space"
+                ]
+              },
               "archived": {
                 "type": "boolean"
               },
               "color": {
-                "pattern": "^$|^#[0-9a-fA-F]{6}$",
                 "type": [
                   "null",
                   "string"
-                ]
+                ],
+                "pattern": "^$|^#[0-9a-fA-F]{6}$"
               },
               "group": {
                 "type": [
                   "string",
                   "null"
                 ]
-              },
-              "scope": {
-                "enum": [
-                  "organization",
-                  "space"
-                ]
               }
-            },
-            "type": "object"
+            }
           }
         }
       }
@@ -2240,19 +3361,20 @@
         }
       },
       "then": {
-        "else": {
-          "required": [
-            "labels"
-          ]
-        },
-        "if": {
-          "properties": {
-            "action": {
-              "const": "clear_group"
-            }
-          }
-        },
+        "required": [
+          "tasks",
+          "action"
+        ],
         "properties": {
+          "tasks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1000,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
           "action": {
             "enum": [
               "add",
@@ -2262,28 +3384,27 @@
             ]
           },
           "labels": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "tasks": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 1000,
-            "minItems": 1,
             "type": "array",
-            "uniqueItems": true
+            "items": {
+              "type": "string"
+            }
           }
         },
-        "required": [
-          "tasks",
-          "action"
-        ],
+        "if": {
+          "properties": {
+            "action": {
+              "const": "clear_group"
+            }
+          }
+        },
         "then": {
           "required": [
             "group"
+          ]
+        },
+        "else": {
+          "required": [
+            "labels"
           ]
         }
       }
@@ -2297,6 +3418,9 @@
         }
       },
       "then": {
+        "required": [
+          "id"
+        ],
         "anyOf": [
           {
             "required": [
@@ -2309,11 +3433,6 @@
             ]
           }
         ],
-        "dependentRequired": {
-          "mode": [
-            "assignees"
-          ]
-        },
         "properties": {
           "mode": {
             "enum": [
@@ -2322,22 +3441,24 @@
             ]
           }
         },
-        "required": [
-          "id"
-        ]
+        "dependentRequired": {
+          "mode": [
+            "assignees"
+          ]
+        }
       }
     },
     {
       "if": {
         "properties": {
-          "kind": {
-            "const": "task"
-          },
           "op": {
             "enum": [
               "create",
               "update"
             ]
+          },
+          "kind": {
+            "const": "task"
           }
         },
         "required": [
@@ -2349,11 +3470,11 @@
           "fields": {
             "properties": {
               "assignees": {
-                "items": {
-                  "minLength": 1,
-                  "type": "string"
-                },
                 "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "uniqueItems": true
               },
               "executor": {
@@ -2362,24 +3483,24 @@
                     "type": "null"
                   },
                   {
-                    "additionalProperties": false,
+                    "type": "object",
+                    "required": [
+                      "kind",
+                      "id"
+                    ],
                     "properties": {
-                      "id": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
                       "kind": {
                         "enum": [
                           "agent",
                           "crew"
                         ]
+                      },
+                      "id": {
+                        "type": "string",
+                        "minLength": 1
                       }
                     },
-                    "required": [
-                      "kind",
-                      "id"
-                    ],
-                    "type": "object"
+                    "additionalProperties": false
                   }
                 ]
               }
@@ -2397,21 +3518,21 @@
         }
       },
       "then": {
+        "required": [
+          "id",
+          "target"
+        ],
         "properties": {
+          "target": {
+            "type": "string"
+          },
           "custom": {
             "type": "object"
           },
           "status": {
             "type": "string"
-          },
-          "target": {
-            "type": "string"
           }
-        },
-        "required": [
-          "id",
-          "target"
-        ]
+        }
       }
     },
     {
@@ -2431,48 +3552,48 @@
     },
     {
       "if": {
+        "required": [
+          "kind"
+        ],
         "properties": {
-          "kind": {
-            "const": "task_type"
-          },
           "op": {
             "enum": [
               "create",
               "update"
             ]
+          },
+          "kind": {
+            "const": "task_type"
           }
-        },
-        "required": [
-          "kind"
-        ]
+        }
       },
       "then": {
         "properties": {
           "fields": {
             "properties": {
               "field_bindings": {
+                "type": "array",
                 "items": {
-                  "additionalProperties": false,
-                  "properties": {
-                    "enabled": {
-                      "default": true,
-                      "type": "boolean"
-                    },
-                    "field": {
-                      "minLength": 1,
-                      "type": "string"
-                    },
-                    "required": {
-                      "default": false,
-                      "type": "boolean"
-                    }
-                  },
+                  "type": "object",
                   "required": [
                     "field"
                   ],
-                  "type": "object"
-                },
-                "type": "array"
+                  "additionalProperties": false,
+                  "properties": {
+                    "field": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "required": {
+                      "type": "boolean",
+                      "default": false
+                    },
+                    "enabled": {
+                      "type": "boolean",
+                      "default": true
+                    }
+                  }
+                }
               }
             }
           }
@@ -2507,6 +3628,27 @@
         }
       },
       "then": {
+        "required": [
+          "action"
+        ],
+        "properties": {
+          "action": {
+            "enum": [
+              "comment",
+              "reply",
+              "resolve",
+              "reopen"
+            ]
+          },
+          "comment_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "allOf": [
           {
             "if": {
@@ -2544,27 +3686,6 @@
               ]
             }
           }
-        ],
-        "properties": {
-          "action": {
-            "enum": [
-              "comment",
-              "reply",
-              "resolve",
-              "reopen"
-            ]
-          },
-          "body": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "comment_id": {
-            "minLength": 1,
-            "type": "string"
-          }
-        },
-        "required": [
-          "action"
         ]
       }
     },
@@ -2591,15 +3712,15 @@
         }
       },
       "then": {
-        "properties": {
-          "link": {
-            "pattern": "^shipforge://view/",
-            "type": "string"
-          }
-        },
         "required": [
           "link"
-        ]
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "pattern": "^shipforge://view/"
+          }
+        }
       }
     },
     {
@@ -2611,21 +3732,21 @@
         }
       },
       "then": {
+        "required": [
+          "id",
+          "title"
+        ],
         "properties": {
-          "changes": {
-            "type": "object"
-          },
           "visibility": {
             "enum": [
               "private",
               "space"
             ]
+          },
+          "changes": {
+            "type": "object"
           }
-        },
-        "required": [
-          "id",
-          "title"
-        ]
+        }
       }
     },
     {
@@ -2637,6 +3758,9 @@
         }
       },
       "then": {
+        "required": [
+          "id"
+        ],
         "anyOf": [
           {
             "required": [
@@ -2661,19 +3785,16 @@
           ]
         },
         "properties": {
-          "after_view": {
-            "type": "string"
+          "pinned": {
+            "type": "boolean"
           },
           "before": {
             "type": "string"
           },
-          "pinned": {
-            "type": "boolean"
+          "after_view": {
+            "type": "string"
           }
-        },
-        "required": [
-          "id"
-        ]
+        }
       }
     },
     {
@@ -2705,21 +3826,21 @@
         }
       },
       "then": {
-        "properties": {
-          "emoji": {
-            "maxLength": 32,
-            "minLength": 1,
-            "type": "string"
-          },
-          "enabled": {
-            "type": "boolean"
-          }
-        },
         "required": [
           "id",
           "emoji",
           "enabled"
-        ]
+        ],
+        "properties": {
+          "emoji": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 32
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        }
       }
     },
     {
@@ -2764,22 +3885,22 @@
         }
       },
       "then": {
+        "required": [
+          "target",
+          "enabled"
+        ],
         "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
           "target_kind": {
             "enum": [
               "member",
               "agent",
               "invitation"
             ]
+          },
+          "enabled": {
+            "type": "boolean"
           }
-        },
-        "required": [
-          "target",
-          "enabled"
-        ]
+        }
       }
     },
     {
@@ -2824,13 +3945,6 @@
               "email"
             ]
           },
-          "enabled": {
-            "type": "boolean"
-          },
-          "expected_rev": {
-            "minimum": 0,
-            "type": "integer"
-          },
           "landing": {
             "enum": [
               "important",
@@ -2840,6 +3954,13 @@
           },
           "reset": {
             "const": true
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expected_rev": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }
@@ -2857,18 +3978,6 @@
       },
       "then": {
         "properties": {
-          "exclude_spaces": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
-          "include_spaces": {
-            "items": {
-              "type": "string"
-            },
-            "type": "array"
-          },
           "section": {
             "enum": [
               "all",
@@ -2878,14 +3987,26 @@
               "cleared"
             ]
           },
-          "statuses": {
+          "include_spaces": {
+            "type": "array",
             "items": {
               "type": "string"
-            },
-            "type": "array"
+            }
+          },
+          "exclude_spaces": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           },
           "unread": {
             "type": "boolean"
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       }
@@ -2899,6 +4020,9 @@
         }
       },
       "then": {
+        "required": [
+          "action"
+        ],
         "properties": {
           "action": {
             "enum": [
@@ -2906,10 +4030,457 @@
               "clear"
             ]
           }
-        },
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.attach"
+          }
+        }
+      },
+      "then": {
         "required": [
-          "action"
-        ]
+          "id",
+          "provider",
+          "account",
+          "agent",
+          "device_key"
+        ],
+        "properties": {
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "provider": {
+            "enum": [
+              "qq",
+              "wechat"
+            ]
+          },
+          "device_key": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 256
+          },
+          "scene": {
+            "enum": [
+              "direct",
+              "group"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "sent",
+              "retry",
+              "uncertain",
+              "failed"
+            ]
+          },
+          "decision": {
+            "enum": [
+              "resend",
+              "confirm",
+              "discard"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.policy"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "provider": {
+            "enum": [
+              "qq",
+              "wechat"
+            ]
+          },
+          "device_key": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 256
+          },
+          "scene": {
+            "enum": [
+              "direct",
+              "group"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "sent",
+              "retry",
+              "uncertain",
+              "failed"
+            ]
+          },
+          "decision": {
+            "enum": [
+              "resend",
+              "confirm",
+              "discard"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.detach"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "provider": {
+            "enum": [
+              "qq",
+              "wechat"
+            ]
+          },
+          "device_key": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 256
+          },
+          "scene": {
+            "enum": [
+              "direct",
+              "group"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "sent",
+              "retry",
+              "uncertain",
+              "failed"
+            ]
+          },
+          "decision": {
+            "enum": [
+              "resend",
+              "confirm",
+              "discard"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.expire"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "device_key"
+        ],
+        "properties": {
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "provider": {
+            "enum": [
+              "qq",
+              "wechat"
+            ]
+          },
+          "device_key": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 256
+          },
+          "scene": {
+            "enum": [
+              "direct",
+              "group"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "sent",
+              "retry",
+              "uncertain",
+              "failed"
+            ]
+          },
+          "decision": {
+            "enum": [
+              "resend",
+              "confirm",
+              "discard"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.receive"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "device_key",
+          "scene",
+          "peer",
+          "sender",
+          "remote",
+          "body"
+        ],
+        "properties": {
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "provider": {
+            "enum": [
+              "qq",
+              "wechat"
+            ]
+          },
+          "device_key": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 256
+          },
+          "scene": {
+            "enum": [
+              "direct",
+              "group"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "sent",
+              "retry",
+              "uncertain",
+              "failed"
+            ]
+          },
+          "decision": {
+            "enum": [
+              "resend",
+              "confirm",
+              "discard"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.claim"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "device_key"
+        ],
+        "properties": {
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "provider": {
+            "enum": [
+              "qq",
+              "wechat"
+            ]
+          },
+          "device_key": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 256
+          },
+          "scene": {
+            "enum": [
+              "direct",
+              "group"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "sent",
+              "retry",
+              "uncertain",
+              "failed"
+            ]
+          },
+          "decision": {
+            "enum": [
+              "resend",
+              "confirm",
+              "discard"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.ack"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "device_key",
+          "delivery",
+          "lease",
+          "outcome"
+        ],
+        "properties": {
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "provider": {
+            "enum": [
+              "qq",
+              "wechat"
+            ]
+          },
+          "device_key": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 256
+          },
+          "scene": {
+            "enum": [
+              "direct",
+              "group"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "sent",
+              "retry",
+              "uncertain",
+              "failed"
+            ]
+          },
+          "decision": {
+            "enum": [
+              "resend",
+              "confirm",
+              "discard"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.retry"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "delivery",
+          "decision"
+        ],
+        "properties": {
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "provider": {
+            "enum": [
+              "qq",
+              "wechat"
+            ]
+          },
+          "device_key": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 256
+          },
+          "scene": {
+            "enum": [
+              "direct",
+              "group"
+            ]
+          },
+          "outcome": {
+            "enum": [
+              "sent",
+              "retry",
+              "uncertain",
+              "failed"
+            ]
+          },
+          "decision": {
+            "enum": [
+              "resend",
+              "confirm",
+              "discard"
+            ]
+          }
+        }
       }
     },
     {
@@ -2947,8 +4518,8 @@
       "then": {
         "properties": {
           "link": {
-            "minLength": 1,
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -2995,8 +4566,8 @@
       "then": {
         "properties": {
           "task": {
-            "minLength": 1,
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -3017,8 +4588,8 @@
       "then": {
         "properties": {
           "task": {
-            "minLength": 1,
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -3039,16 +4610,16 @@
       },
       "then": {
         "properties": {
-          "order": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": "array",
-            "uniqueItems": true
-          },
           "pinned": {
             "type": "boolean"
+          },
+          "order": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
           }
         },
         "required": [
@@ -3068,9 +4639,14 @@
       },
       "then": {
         "properties": {
-          "handler_id": {
+          "title": {
+            "type": "string",
             "minLength": 1,
-            "type": "string"
+            "maxLength": 100
+          },
+          "prompt": {
+            "type": "string",
+            "maxLength": 65536
           },
           "handler_kind": {
             "enum": [
@@ -3078,14 +4654,9 @@
               "crew"
             ]
           },
-          "prompt": {
-            "maxLength": 65536,
-            "type": "string"
-          },
-          "title": {
-            "maxLength": 100,
-            "minLength": 1,
-            "type": "string"
+          "handler_id": {
+            "type": "string",
+            "minLength": 1
           },
           "visibility": {
             "enum": [
@@ -3109,8 +4680,8 @@
       "then": {
         "properties": {
           "body": {
-            "minLength": 1,
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -3132,12 +4703,12 @@
       "then": {
         "properties": {
           "body": {
-            "minLength": 1,
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           },
           "run": {
-            "minLength": 1,
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -3158,8 +4729,8 @@
       "then": {
         "properties": {
           "share": {
-            "minLength": 1,
-            "type": "string"
+            "type": "string",
+            "minLength": 1
           }
         },
         "required": [
@@ -3216,19 +4787,19 @@
       "then": {
         "properties": {
           "slash_commands": {
-            "additionalProperties": {
-              "items": {
-                "maxLength": 101,
-                "type": "string"
-              },
-              "maxItems": 200,
-              "type": "array"
-            },
-            "maxProperties": 64,
             "type": [
               "object",
               "null"
-            ]
+            ],
+            "maxProperties": 64,
+            "additionalProperties": {
+              "type": "array",
+              "maxItems": 200,
+              "items": {
+                "type": "string",
+                "maxLength": 101
+              }
+            }
           }
         }
       }
@@ -3259,82 +4830,83 @@
     },
     {
       "if": {
+        "required": [
+          "kind"
+        ],
         "properties": {
-          "kind": {
-            "enum": [
-              "task",
-              "project"
-            ]
-          },
           "op": {
             "enum": [
               "create",
               "update"
             ]
+          },
+          "kind": {
+            "enum": [
+              "task",
+              "project"
+            ]
           }
-        },
-        "required": [
-          "kind"
-        ]
+        }
       },
       "then": {
         "properties": {
           "fields": {
+            "type": "object",
             "properties": {
-              "due_date": {
-                "format": "date",
+              "start_date": {
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "format": "date"
               },
-              "planned_end": {
-                "format": "date",
+              "due_date": {
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "format": "date"
               },
               "planned_start": {
-                "format": "date",
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "format": "date"
               },
-              "start_date": {
-                "format": "date",
+              "planned_end": {
                 "type": [
                   "string",
                   "null"
-                ]
+                ],
+                "format": "date"
               }
-            },
-            "type": "object"
+            }
           }
         }
       }
     },
     {
       "if": {
+        "required": [
+          "kind"
+        ],
         "properties": {
-          "kind": {
-            "const": "project"
-          },
           "op": {
             "enum": [
               "create",
               "update"
             ]
+          },
+          "kind": {
+            "const": "project"
           }
-        },
-        "required": [
-          "kind"
-        ]
+        }
       },
       "then": {
         "properties": {
           "fields": {
+            "type": "object",
             "properties": {
               "owner": {
                 "type": [
@@ -3348,10 +4920,14 @@
                   "agent"
                 ]
               },
-              "primary_space": {
-                "type": [
-                  "string",
-                  "null"
+              "status": {
+                "enum": [
+                  "draft",
+                  "planned",
+                  "active",
+                  "paused",
+                  "done",
+                  "cancelled"
                 ]
               },
               "priority": {
@@ -3364,25 +4940,20 @@
                 ]
               },
               "spaces": {
-                "items": {
-                  "minLength": 1,
-                  "type": "string"
-                },
                 "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
                 "uniqueItems": true
               },
-              "status": {
-                "enum": [
-                  "draft",
-                  "planned",
-                  "active",
-                  "paused",
-                  "done",
-                  "cancelled"
+              "primary_space": {
+                "type": [
+                  "string",
+                  "null"
                 ]
               }
-            },
-            "type": "object"
+            }
           }
         }
       }
@@ -3396,17 +4967,17 @@
         }
       },
       "then": {
-        "properties": {
-          "custom": {
-            "type": "object"
-          },
-          "type": {
-            "type": "string"
-          }
-        },
         "required": [
           "id"
-        ]
+        ],
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "custom": {
+            "type": "object"
+          }
+        }
       }
     },
     {
@@ -3418,11 +4989,10 @@
         }
       },
       "then": {
+        "required": [
+          "id"
+        ],
         "properties": {
-          "as_of": {
-            "format": "date",
-            "type": "string"
-          },
           "basis": {
             "enum": [
               "schedule",
@@ -3430,11 +5000,12 @@
               "start",
               "due"
             ]
+          },
+          "as_of": {
+            "type": "string",
+            "format": "date"
           }
-        },
-        "required": [
-          "id"
-        ]
+        }
       }
     },
     {
@@ -3447,11 +5018,58 @@
       },
       "then": {
         "properties": {
-          "confirm": {
+          "enabled": {
             "type": "boolean"
           },
+          "priority_required": {
+            "type": "boolean"
+          },
+          "types": {
+            "oneOf": [
+              {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uniqueItems": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sources": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "uniqueItems": true,
+            "items": {
+              "enum": [
+                "guest",
+                "external"
+              ]
+            }
+          },
           "duty": {
+            "type": "object",
             "additionalProperties": false,
+            "required": [
+              "mode"
+            ],
+            "properties": {
+              "mode": {
+                "enum": [
+                  "none",
+                  "notify",
+                  "assign"
+                ]
+              },
+              "member": {
+                "type": "string"
+              }
+            },
             "if": {
               "properties": {
                 "mode": {
@@ -3462,62 +5080,40 @@
                 }
               }
             },
-            "properties": {
-              "member": {
-                "type": "string"
-              },
-              "mode": {
-                "enum": [
-                  "none",
-                  "notify",
-                  "assign"
-                ]
-              }
-            },
-            "required": [
-              "mode"
-            ],
             "then": {
               "required": [
                 "member"
               ]
-            },
-            "type": "object"
-          },
-          "enabled": {
-            "type": "boolean"
-          },
-          "priority_required": {
-            "type": "boolean"
+            }
           },
           "rules": {
+            "type": "array",
+            "maxItems": 50,
             "items": {
+              "type": "object",
               "additionalProperties": false,
+              "required": [
+                "id",
+                "when",
+                "set"
+              ],
               "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "title": {
+                  "type": "string"
+                },
                 "enabled": {
                   "type": "boolean"
                 },
-                "id": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "set": {
+                "when": {
+                  "type": "object",
                   "additionalProperties": false,
-                  "minProperties": 1,
                   "properties": {
-                    "assignee": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "labels": {
-                      "items": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
-                      "type": "array",
-                      "uniqueItems": true
+                    "status": {
+                      "type": "string"
                     },
                     "priority": {
                       "enum": [
@@ -3528,32 +5124,36 @@
                         "urgent"
                       ]
                     },
-                    "project": {
-                      "type": [
-                        "string",
-                        "null"
-                      ]
-                    },
-                    "space": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "string"
-                    }
-                  },
-                  "type": "object"
-                },
-                "title": {
-                  "type": "string"
-                },
-                "when": {
-                  "additionalProperties": false,
-                  "properties": {
                     "assignee": {
                       "type": "string"
                     },
-                    "contains": {
+                    "creator": {
                       "type": "string"
+                    },
+                    "project": {
+                      "type": "string"
+                    },
+                    "labels": {
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "uniqueItems": true
+                    },
+                    "type": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "due_before": {
+                      "type": "string",
+                      "format": "date"
+                    },
+                    "due_after": {
+                      "type": "string",
+                      "format": "date"
                     },
                     "created_after": {
                       "type": "integer"
@@ -3561,24 +5161,41 @@
                     "created_before": {
                       "type": "integer"
                     },
-                    "creator": {
+                    "contains": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "set": {
+                  "type": "object",
+                  "minProperties": 1,
+                  "additionalProperties": false,
+                  "properties": {
+                    "space": {
                       "type": "string"
                     },
-                    "due_after": {
-                      "format": "date",
+                    "status": {
                       "type": "string"
                     },
-                    "due_before": {
-                      "format": "date",
-                      "type": "string"
+                    "assignee": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "labels": {
-                      "items": {
-                        "minLength": 1,
-                        "type": "string"
-                      },
                       "type": "array",
+                      "items": {
+                        "type": "string",
+                        "minLength": 1
+                      },
                       "uniqueItems": true
+                    },
+                    "project": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
                     },
                     "priority": {
                       "enum": [
@@ -3588,60 +5205,14 @@
                         "high",
                         "urgent"
                       ]
-                    },
-                    "project": {
-                      "type": "string"
-                    },
-                    "source": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "string"
-                    },
-                    "type": {
-                      "type": "string"
                     }
-                  },
-                  "type": "object"
+                  }
                 }
-              },
-              "required": [
-                "id",
-                "when",
-                "set"
-              ],
-              "type": "object"
-            },
-            "maxItems": 50,
-            "type": "array"
-          },
-          "sources": {
-            "items": {
-              "enum": [
-                "guest",
-                "external"
-              ]
-            },
-            "type": [
-              "array",
-              "null"
-            ],
-            "uniqueItems": true
-          },
-          "types": {
-            "oneOf": [
-              {
-                "items": {
-                  "minLength": 1,
-                  "type": "string"
-                },
-                "type": "array",
-                "uniqueItems": true
-              },
-              {
-                "type": "null"
               }
-            ]
+            }
+          },
+          "confirm": {
+            "type": "boolean"
           }
         }
       }
@@ -3656,14 +5227,14 @@
       },
       "then": {
         "properties": {
-          "include_deferred": {
-            "type": "boolean"
-          },
           "order": {
             "enum": [
               "oldest",
               "newest"
             ]
+          },
+          "include_deferred": {
+            "type": "boolean"
           }
         }
       }
@@ -3677,11 +5248,11 @@
         }
       },
       "then": {
+        "required": [
+          "title"
+        ],
         "properties": {
-          "custom": {
-            "type": "object"
-          },
-          "description": {
+          "type": {
             "type": "string"
           },
           "priority": {
@@ -3693,13 +5264,13 @@
               "urgent"
             ]
           },
-          "type": {
+          "custom": {
+            "type": "object"
+          },
+          "description": {
             "type": "string"
           }
-        },
-        "required": [
-          "title"
-        ]
+        }
       }
     },
     {
@@ -3725,15 +5296,15 @@
         }
       },
       "then": {
-        "properties": {
-          "link": {
-            "pattern": "^shipforge://task/",
-            "type": "string"
-          }
-        },
         "required": [
           "link"
-        ]
+        ],
+        "properties": {
+          "link": {
+            "type": "string",
+            "pattern": "^shipforge://task/"
+          }
+        }
       }
     },
     {
@@ -3745,18 +5316,11 @@
         }
       },
       "then": {
+        "required": [
+          "id",
+          "decision"
+        ],
         "properties": {
-          "assignees": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": "array",
-            "uniqueItems": true
-          },
-          "comment": {
-            "type": "string"
-          },
           "decision": {
             "enum": [
               "accept",
@@ -3766,23 +5330,23 @@
               "restore"
             ]
           },
-          "due_date": {
-            "format": "date",
+          "until": {
+            "type": "integer"
+          },
+          "target": {
             "type": "string"
           },
-          "executor": {
-            "type": [
-              "object",
-              "null"
-            ]
+          "target_space": {
+            "type": "string"
           },
-          "labels": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": "array",
-            "uniqueItems": true
+          "reason": {
+            "type": "string"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "subscribe": {
+            "type": "boolean"
           },
           "priority": {
             "enum": [
@@ -3793,54 +5357,61 @@
               "urgent"
             ]
           },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "executor": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
           "project": {
             "type": [
               "string",
               "null"
             ]
           },
-          "reason": {
-            "type": "string"
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
           },
           "start_date": {
-            "format": "date",
-            "type": "string"
+            "type": "string",
+            "format": "date"
           },
-          "subscribe": {
-            "type": "boolean"
-          },
-          "target": {
-            "type": "string"
-          },
-          "target_space": {
-            "type": "string"
-          },
-          "until": {
-            "type": "integer"
+          "due_date": {
+            "type": "string",
+            "format": "date"
           }
-        },
-        "required": [
-          "id",
-          "decision"
-        ]
+        }
       }
     },
     {
       "if": {
+        "required": [
+          "decision"
+        ],
         "properties": {
-          "decision": {
-            "const": "defer"
-          },
           "op": {
             "enum": [
               "triage",
               "triage.batch"
             ]
+          },
+          "decision": {
+            "const": "defer"
           }
-        },
-        "required": [
-          "decision"
-        ]
+        }
       },
       "then": {
         "required": [
@@ -3850,17 +5421,17 @@
     },
     {
       "if": {
-        "properties": {
-          "decision": {
-            "const": "duplicate"
-          },
-          "op": {
-            "const": "triage"
-          }
-        },
         "required": [
           "decision"
-        ]
+        ],
+        "properties": {
+          "op": {
+            "const": "triage"
+          },
+          "decision": {
+            "const": "duplicate"
+          }
+        }
       },
       "then": {
         "required": [
@@ -3877,18 +5448,11 @@
         }
       },
       "then": {
+        "required": [
+          "tasks",
+          "decision"
+        ],
         "properties": {
-          "assignees": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": "array",
-            "uniqueItems": true
-          },
-          "comment": {
-            "type": "string"
-          },
           "decision": {
             "enum": [
               "accept",
@@ -3896,23 +5460,23 @@
               "defer"
             ]
           },
-          "due_date": {
-            "format": "date",
+          "until": {
+            "type": "integer"
+          },
+          "target": {
             "type": "string"
           },
-          "executor": {
-            "type": [
-              "object",
-              "null"
-            ]
+          "target_space": {
+            "type": "string"
           },
-          "labels": {
-            "items": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "type": "array",
-            "uniqueItems": true
+          "reason": {
+            "type": "string"
+          },
+          "comment": {
+            "type": "string"
+          },
+          "subscribe": {
+            "type": "boolean"
           },
           "priority": {
             "enum": [
@@ -3923,52 +5487,59 @@
               "urgent"
             ]
           },
+          "assignees": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "uniqueItems": true
+          },
+          "executor": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
           "project": {
             "type": [
               "string",
               "null"
             ]
           },
-          "reason": {
-            "type": "string"
-          },
-          "revisions": {
-            "additionalProperties": {
-              "minimum": 1,
-              "type": "integer"
-            },
-            "type": "object"
-          },
-          "start_date": {
-            "format": "date",
-            "type": "string"
-          },
-          "subscribe": {
-            "type": "boolean"
-          },
-          "target": {
-            "type": "string"
-          },
-          "target_space": {
-            "type": "string"
-          },
-          "tasks": {
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 500,
-            "minItems": 1,
+          "labels": {
             "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
             "uniqueItems": true
           },
-          "until": {
-            "type": "integer"
+          "start_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date"
+          },
+          "tasks": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "uniqueItems": true,
+            "items": {
+              "type": "string"
+            }
+          },
+          "revisions": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
-        },
-        "required": [
-          "tasks",
-          "decision"
-        ]
+        }
       }
     },
     {
@@ -3980,16 +5551,16 @@
         }
       },
       "then": {
-        "properties": {
-          "target": {
-            "minLength": 1,
-            "type": "string"
-          }
-        },
         "required": [
           "id",
           "target"
-        ]
+        ],
+        "properties": {
+          "target": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
       }
     },
     {
@@ -3999,6 +5570,40 @@
             "enum": [
               "task.conversation",
               "task.command"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "asana.accounts",
+              "asana.credential",
+              "asana.projects",
+              "asana.preview",
+              "asana.synchronize",
+              "asana.push",
+              "teambition.application",
+              "teambition.authorize",
+              "teambition.personal",
+              "teambition.projects",
+              "teambition.preview",
+              "teambition.synchronize",
+              "teambition.push",
+              "cnb.credential",
+              "cnb.repositories",
+              "cnb.pair",
+              "cnb.ci",
+              "cnb.activity",
+              "cnb.deliver"
             ]
           }
         }
@@ -4033,23 +5638,23 @@
         }
       },
       "then": {
+        "required": [
+          "id"
+        ],
         "properties": {
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
           "import_mode": {
             "enum": [
               "history",
               "changes",
               "refresh"
             ]
-          },
-          "page_size": {
-            "maximum": 100,
-            "minimum": 1,
-            "type": "integer"
           }
-        },
-        "required": [
-          "id"
-        ]
+        }
       }
     },
     {
@@ -4414,26 +6019,7 @@
         }
       },
       "then": {
-        "not": {
-          "anyOf": [
-            {
-              "required": [
-                "actor"
-              ]
-            },
-            {
-              "required": [
-                "scope"
-              ]
-            }
-          ]
-        },
         "properties": {
-          "label": {
-            "maxLength": 100,
-            "minLength": 1,
-            "type": "string"
-          },
           "lifetime": {
             "enum": [
               "30d",
@@ -4447,6 +6033,188 @@
               "personal",
               "machine_setup"
             ]
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          }
+        },
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "actor"
+              ]
+            },
+            {
+              "required": [
+                "scope"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.qr.start"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "provider",
+          "agent"
+        ],
+        "properties": {
+          "provider": {
+            "enum": [
+              "wechat",
+              "qq"
+            ]
+          },
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "verify_code": {
+            "type": "string",
+            "pattern": "^[0-9]{4,12}$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.qr.check"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "provider": {
+            "enum": [
+              "wechat",
+              "qq"
+            ]
+          },
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "verify_code": {
+            "type": "string",
+            "pattern": "^[0-9]{4,12}$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.qq.connect"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "agent",
+          "app_id",
+          "app_secret"
+        ],
+        "properties": {
+          "provider": {
+            "enum": [
+              "wechat",
+              "qq"
+            ]
+          },
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "verify_code": {
+            "type": "string",
+            "pattern": "^[0-9]{4,12}$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.sync"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "provider": {
+            "enum": [
+              "wechat",
+              "qq"
+            ]
+          },
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "verify_code": {
+            "type": "string",
+            "pattern": "^[0-9]{4,12}$"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "bot.disconnect"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ],
+        "properties": {
+          "provider": {
+            "enum": [
+              "wechat",
+              "qq"
+            ]
+          },
+          "dm": {
+            "type": "boolean"
+          },
+          "groups": {
+            "type": "boolean"
+          },
+          "verify_code": {
+            "type": "string",
+            "pattern": "^[0-9]{4,12}$"
           }
         }
       }
@@ -4561,667 +6329,5 @@
         ]
       }
     }
-  ],
-  "properties": {
-    "actor": {
-      "type": "string"
-    },
-    "after": {
-      "minimum": 0,
-      "type": "integer"
-    },
-    "allow_cached": {
-      "type": "boolean"
-    },
-    "as_of": {
-      "format": "date",
-      "type": "string"
-    },
-    "assignees": {
-      "items": {
-        "minLength": 1,
-        "type": "string"
-      },
-      "type": "array",
-      "uniqueItems": true
-    },
-    "attachment_id": {
-      "type": "string"
-    },
-    "batch": {
-      "type": "string"
-    },
-    "binding_rev": {
-      "minimum": 1,
-      "type": "integer"
-    },
-    "call_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "capacity": {
-      "maximum": 64,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "chat_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "confirm_remove": {
-      "items": {
-        "minLength": 1,
-        "type": "string"
-      },
-      "type": "array",
-      "uniqueItems": true
-    },
-    "content_base64": {
-      "contentEncoding": "base64",
-      "maxLength": 5592408,
-      "type": "string"
-    },
-    "event_id": {
-      "maxLength": 256,
-      "minLength": 1,
-      "type": "string"
-    },
-    "executor": {
-      "oneOf": [
-        {
-          "type": "null"
-        },
-        {
-          "additionalProperties": false,
-          "properties": {
-            "id": {
-              "minLength": 1,
-              "type": "string"
-            },
-            "kind": {
-              "enum": [
-                "agent",
-                "crew"
-              ]
-            }
-          },
-          "required": [
-            "kind",
-            "id"
-          ],
-          "type": "object"
-        }
-      ]
-    },
-    "expected_rev": {
-      "minimum": 0,
-      "type": "integer"
-    },
-    "expected_type_rev": {
-      "minimum": 1,
-      "type": "integer"
-    },
-    "external_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "field_bindings": {
-      "items": {
-        "additionalProperties": false,
-        "properties": {
-          "enabled": {
-            "default": true,
-            "type": "boolean"
-          },
-          "field": {
-            "minLength": 1,
-            "type": "string"
-          },
-          "required": {
-            "default": false,
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "field"
-        ],
-        "type": "object"
-      },
-      "type": "array"
-    },
-    "fields": {
-      "type": "object"
-    },
-    "filename": {
-      "maxLength": 255,
-      "minLength": 1,
-      "type": "string"
-    },
-    "filter": {
-      "type": "object"
-    },
-    "handler_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "handler_kind": {
-      "enum": [
-        "agent",
-        "crew"
-      ]
-    },
-    "id": {
-      "minLength": 1,
-      "type": "string"
-    },
-    "impact_token": {
-      "minLength": 1,
-      "type": "string"
-    },
-    "issues": {
-      "maxItems": 5000,
-      "type": "array"
-    },
-    "kind": {
-      "enum": [
-        "space",
-        "organization",
-        "member",
-        "task",
-        "customer_request",
-        "task_type",
-        "status",
-        "field",
-        "tag",
-        "tag_group",
-        "relation",
-        "relation_type",
-        "view",
-        "iteration",
-        "project",
-        "comment",
-        "notification",
-        "chat",
-        "message",
-        "document",
-        "artifact",
-        "agent",
-        "crew",
-        "skill",
-        "machine",
-        "run",
-        "automation",
-        "connector",
-        "tool",
-        "settings",
-        "invitation",
-        "note"
-      ],
-      "type": "string"
-    },
-    "lease": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "limit": {
-      "maximum": 5000,
-      "minimum": 1,
-      "type": "integer"
-    },
-    "machine_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "machine_key": {
-      "maxLength": 256,
-      "minLength": 32,
-      "type": "string",
-      "writeOnly": true
-    },
-    "media_type": {
-      "type": "string"
-    },
-    "offset": {
-      "minimum": 0,
-      "type": "integer"
-    },
-    "op": {
-      "enum": [
-        "inbox.settings",
-        "inbox.query",
-        "inbox.feed",
-        "inbox.locate",
-        "followers.list",
-        "agent.directory",
-        "agent.settings",
-        "agent.history",
-        "imports.binding",
-        "imports.history",
-        "imports.push_history",
-        "bugly.outbox",
-        "bugly.binding",
-        "space.deactivate.preview",
-        "space.navigation",
-        "jira.read",
-        "invitation.list",
-        "chat.info",
-        "chat.sidebar",
-        "chat.history",
-        "chat.invitations",
-        "chat.share.read",
-        "onboarding.catalog",
-        "onboarding.get",
-        "preferences.get",
-        "schema",
-        "whoami",
-        "list",
-        "get",
-        "search",
-        "space.list",
-        "organization.list",
-        "events",
-        "view.run",
-        "task.type.preview",
-        "task_type.bindings.preview",
-        "comment.thread",
-        "comment.reactions",
-        "view.catalog",
-        "view.preview",
-        "view.share",
-        "view.open",
-        "dashboard",
-        "iteration.preview",
-        "iteration.timeline",
-        "iteration.settings",
-        "iteration.history",
-        "task.relations",
-        "project.progress",
-        "project.timeline",
-        "triage.settings",
-        "triage.queue",
-        "task.share",
-        "task.open",
-        "document.history",
-        "export",
-        "import.preview",
-        "provider.preview",
-        "im.outbox",
-        "im.threads",
-        "attachment.download",
-        "inbox.configure",
-        "inbox.bulk",
-        "inbox.open",
-        "followers.change",
-        "agent.archive",
-        "agent.restore",
-        "agent.variant",
-        "agent.override",
-        "agent.access",
-        "agent.organize",
-        "crew.exclusive",
-        "imports.stage",
-        "imports.commit",
-        "imports.prepare_push",
-        "imports.sync_control",
-        "imports.finish_push",
-        "imports.rollback",
-        "bugly.rotate",
-        "bugly.revoke",
-        "bugly.claim",
-        "bugly.settle",
-        "space.join",
-        "space.leave",
-        "space.deactivate",
-        "space.restore",
-        "space.pin",
-        "tag.apply",
-        "tag.merge",
-        "jira.write",
-        "invitation.issue",
-        "invitation.copy",
-        "invitation.revoke",
-        "invitation.accept",
-        "chat.manage",
-        "chat.organize",
-        "chat.fork",
-        "chat.bind_task",
-        "chat.convert",
-        "chat.send",
-        "chat.preferences",
-        "chat.share.create",
-        "chat.share.revoke",
-        "onboarding.display",
-        "onboarding.setup",
-        "preferences.update",
-        "comment.resolve",
-        "comment.react",
-        "comment.reopen",
-        "view.organize",
-        "view.save_as",
-        "task.move",
-        "task.assign",
-        "task.conversation",
-        "task.command",
-        "create",
-        "update",
-        "delete",
-        "iteration.close",
-        "iteration.configure",
-        "iteration.start",
-        "triage",
-        "triage.submit",
-        "triage.configure",
-        "triage.batch",
-        "customer_request.convert",
-        "follow",
-        "notification.act",
-        "document.restore",
-        "artifact.save",
-        "import",
-        "provider.ingest",
-        "im.bind",
-        "im.reply",
-        "im.unbind",
-        "im.claim",
-        "im.ack",
-        "im.retry",
-        "attachment.upload",
-        "agent.resolve",
-        "catalog.list",
-        "catalog.install",
-        "catalog.detail",
-        "catalog.publish",
-        "catalog.update",
-        "catalog.uninstall",
-        "catalog.instantiate",
-        "skill.import",
-        "skill.bind",
-        "skill.sources",
-        "skill.discover",
-        "skill.machine_import",
-        "skill.jobs",
-        "skill.finish",
-        "tool.authorize",
-        "machine.register",
-        "machine.heartbeat",
-        "machine.disable",
-        "machine.enable",
-        "run.enqueue",
-        "run.claim",
-        "run.heartbeat",
-        "run.report",
-        "run.cancel",
-        "run.retry",
-        "run.reply",
-        "run.tool",
-        "run.discussion",
-        "automation.fire",
-        "automation.tick",
-        "connector.ingest",
-        "connector.export",
-        "document.share",
-        "document.open",
-        "document.preview",
-        "document.embeds",
-        "chat.slash",
-        "shortcut.catalog",
-        "shortcut.history",
-        "task.review.state",
-        "chat.share.image",
-        "chat.slash.send",
-        "shortcut.save",
-        "shortcut.delete",
-        "shortcut.organize",
-        "shortcut.run",
-        "task.review",
-        "chat.complete",
-        "access.whoami",
-        "access.issue",
-        "access.list",
-        "access.revoke",
-        "access.personal.issue",
-        "access.personal.list",
-        "access.personal.revoke",
-        "profiles.list",
-        "profiles.use",
-        "profiles.forget",
-        "profiles.remember",
-        "sync.status",
-        "sync.pending",
-        "sync.enqueue",
-        "sync.flush",
-        "sync.resolve",
-        "zoho.projects",
-        "zoho.preview",
-        "bugly.deliver",
-        "zoho.credential",
-        "bugly.credentials",
-        "tapd.projects",
-        "tapd.preview",
-        "tapd.credential",
-        "zentao.credential",
-        "zentao.projects",
-        "zentao.preview",
-        "pingcode.credential",
-        "pingcode.projects",
-        "pingcode.preview",
-        "imports.push",
-        "imports.synchronize",
-        "linear.credential",
-        "linear.accounts",
-        "linear.projects",
-        "linear.preview",
-        "linear.authorize",
-        "clickup.credential",
-        "clickup.accounts",
-        "clickup.projects",
-        "clickup.preview",
-        "clickup.authorize",
-        "ones.credential",
-        "ones.accounts",
-        "ones.projects",
-        "ones.preview",
-        "profiles.login.start",
-        "profiles.login.finish",
-        "profiles.close.start",
-        "profiles.close.finish",
-        "profiles.verification",
-        "profiles.logout",
-        "access.account.profile",
-        "access.account.update",
-        "access.account.impact",
-        "access.account.verify",
-        "access.account.close",
-        "access.account.logout"
-      ],
-      "type": "string"
-    },
-    "payload": {
-      "type": "object"
-    },
-    "preferences": {
-      "additionalProperties": false,
-      "minProperties": 1,
-      "properties": {
-        "frame_color": {
-          "enum": [
-            "none",
-            "color-1",
-            "color-2",
-            "color-3",
-            "color-4",
-            "color-5",
-            "color-6",
-            "color-7",
-            "color-8",
-            "color-9",
-            "color-10",
-            "color-11",
-            "color-12"
-          ]
-        },
-        "language": {
-          "enum": [
-            "zh-Hans",
-            "en"
-          ]
-        },
-        "open_after_assignment": {
-          "type": "boolean"
-        },
-        "open_after_command": {
-          "type": "boolean"
-        },
-        "send_with": {
-          "enum": [
-            "enter",
-            "shift-enter"
-          ]
-        },
-        "shortcuts": {
-          "additionalProperties": false,
-          "minProperties": 1,
-          "properties": {
-            "command_menu": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "find_in_view": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "move_task": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          },
-          "type": "object"
-        },
-        "theme": {
-          "enum": [
-            "system",
-            "light",
-            "dark",
-            "magic-blue",
-            "classic-dark"
-          ]
-        }
-      },
-      "type": "object"
-    },
-    "provider": {
-      "type": "string"
-    },
-    "query": {
-      "type": "string"
-    },
-    "queue_if_offline": {
-      "type": "boolean"
-    },
-    "request_id": {
-      "maxLength": 160,
-      "minLength": 1,
-      "type": "string"
-    },
-    "runtimes": {
-      "items": {
-        "type": "string"
-      },
-      "maxItems": 128,
-      "type": "array"
-    },
-    "scope": {
-      "enum": [
-        "read",
-        "write",
-        "worker",
-        "hook"
-      ]
-    },
-    "sidebar_expanded": {
-      "type": "boolean"
-    },
-    "sidebar_visible": {
-      "type": "boolean"
-    },
-    "source_assignees": {
-      "items": {
-        "minLength": 1,
-        "type": "string"
-      },
-      "type": "array",
-      "uniqueItems": true
-    },
-    "source_version": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "space": {
-      "default": "default",
-      "type": "string"
-    },
-    "target": {
-      "type": [
-        "string",
-        "null"
-      ]
-    },
-    "task_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "task_types": {
-      "items": {
-        "enum": [
-          "requirement",
-          "bug",
-          "task",
-          "story"
-        ]
-      },
-      "minItems": 1,
-      "type": "array",
-      "uniqueItems": true
-    },
-    "title": {
-      "minLength": 1,
-      "type": "string"
-    },
-    "tool_id": {
-      "maxLength": 4096,
-      "minLength": 1,
-      "type": "string"
-    },
-    "version": {
-      "minimum": 1,
-      "type": "integer"
-    },
-    "with_total": {
-      "type": "boolean"
-    },
-    "work_type": {
-      "maxLength": 80,
-      "minLength": 1,
-      "type": "string"
-    }
-  },
-  "required": [
-    "op"
-  ],
-  "title": "ShipForge workspace request",
-  "type": "object"
+  ]
 }

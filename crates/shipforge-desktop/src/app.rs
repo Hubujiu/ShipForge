@@ -19,12 +19,18 @@ pub(crate) mod identity_ui;
 pub(crate) mod inbox_ui;
 #[path = "market_ui.rs"]
 pub(crate) mod market_ui;
+#[path = "navigation.rs"]
+pub(crate) mod navigation;
 #[path = "onboarding.rs"]
 pub(crate) mod onboarding;
 #[path = "personal.rs"]
 pub(crate) mod personal;
+#[path = "personal_bots_ui.rs"]
+pub(crate) mod personal_bots_ui;
 #[path = "review_ui.rs"]
 pub(crate) mod review_ui;
+#[path = "runtime_ui.rs"]
+pub(crate) mod runtime_ui;
 #[path = "space_ui.rs"]
 pub(crate) mod space_ui;
 #[path = "workspace_ui.rs"]
@@ -66,6 +72,7 @@ impl Default for Location {
 #[derive(Clone)]
 pub enum UiAction {
     LibraryDetails(String),
+    Bot(personal_bots_ui::Action),
     IdentityProfile,
     IdentityClose,
     Inbox(inbox_ui::Action),
@@ -109,6 +116,10 @@ pub enum UiAction {
     Delete(Record),
     Inspect(Value, String),
     OpenSearch(Record),
+    Jump(Page),
+    People,
+    SetPeople(&'static str),
+    Direct(String),
     Connect,
     Disconnect,
     Versions(Record),
@@ -131,6 +142,7 @@ pub enum UiAction {
 }
 enum After {
     Library(market_ui::Reply),
+    Bot(personal_bots_ui::Reply),
     Identity(identity_ui::Reply),
     Inbox(inbox_ui::Reply),
     DirectoryOpen,
@@ -156,6 +168,7 @@ enum After {
     Saved(String),
     Notice(String),
     Search(String),
+    SearchTarget { space: String, revision: u64 },
     View(String),
     Who,
     Versions(Record),
@@ -177,6 +190,10 @@ struct Pending {
     write: bool,
 }
 pub struct Workbench {
+    pub offline: bool,
+    pub people_query: String,
+    pub people_kind: &'static str,
+    resume_detail: Option<(String, String, String, u64)>,
     pub inbox: inbox_ui::State,
     pub identity_link: Option<String>,
     pub agent_query: String,
@@ -224,6 +241,7 @@ pub struct Workbench {
     generation: u64,
     sequence: u64,
     pending: HashMap<u64, Pending>,
+    bot_poll_at: Instant,
     poll_at: Instant,
     search_at: Instant,
 }
@@ -239,6 +257,10 @@ impl Workbench {
         let root_focus = cx.focus_handle();
         root_focus.focus(window, cx);
         let app = Self {
+            offline: false,
+            people_query: String::new(),
+            people_kind: "",
+            resume_detail: None,
             agent_query: String::new(),
             library: market_ui::State::default(),
             agent_every_space: false,
@@ -286,6 +308,7 @@ impl Workbench {
             generation: 0,
             sequence: 0,
             pending: HashMap::new(),
+            bot_poll_at: Instant::now(),
             poll_at: Instant::now() + Duration::from_secs(4),
             search_at: Instant::now(),
         };
@@ -363,7 +386,11 @@ impl Workbench {
         self.pos + 1 < self.history.len()
     }
     pub fn writable(&self) -> bool {
-        !matches!(self.role.as_str(), "viewer" | "read") && !self.current_archived()
+        matches!(
+            self.role.as_str(),
+            "admin" | "owner" | "member" | "editor" | "guest"
+        ) && self.access_identity["scope"] != "read"
+            && !self.current_archived()
     }
     pub fn notify_text(&mut self, s: impl Into<String>) {
         self.inbox.banner = None;
@@ -408,6 +435,9 @@ impl Workbench {
             self.loading = true;
         }
         let mut kinds = vec![self.loc.page.info().kind, "space", "member", "chat_sidebar"];
+        if self.loc.page == Page::Organizations {
+            kinds.push("organization_settings");
+        }
         if self.loc.page.is_tasks() || self.loc.view.is_some() {
             kinds.extend([
                 "view",
@@ -423,12 +453,14 @@ impl Workbench {
             ]);
         }
         match self.loc.page {
+            Page::Members if self.loc.section == "people" => kinds.push("people_directory"),
             Page::Members if matches!(self.role.as_str(), "admin" | "owner") => {
                 kinds.push("member_invitation")
             }
             Page::Iterations => kinds.extend(["task", "iteration_settings"]),
             Page::Dashboard | Page::Projects | Page::Views => kinds.push("task"),
             Page::Assistant | Page::Chats => kinds.extend(["agent", "chat", "chat_invitation"]),
+            Page::Connectors => kinds.push("agent"),
             Page::Market => kinds.extend(["skill", "agent"]),
             Page::Skills => kinds.extend(["machine", "agent"]),
             Page::Inbox => kinds.push("task"),
@@ -446,6 +478,10 @@ impl Workbench {
             _ => {}
         }
         if let Some(item) = &self.loc.selected {
+            kinds.push(&item.kind);
+            if item.kind == "task" && item.field("external_provider") == "asana" {
+                kinds.push("connector");
+            }
             match item.kind.as_str() {
                 "task" => kinds.extend([
                     "chat",
@@ -523,11 +559,11 @@ impl Workbench {
         kinds.sort_unstable();
         kinds.dedup();
         let _ = self.backend.sender.send(Request::Read {
+            people: (self.people_kind, self.people_query.clone()),
             handler: self
                 .loc
                 .selected
                 .as_ref()
-                .filter(|r| matches!(r.kind.as_str(), "agent" | "crew"))
                 .map(|r| (r.kind.clone(), r.id.clone())),
             chat: self
                 .loc
@@ -613,6 +649,7 @@ impl Workbench {
         );
     }
     fn tick(&mut self, w: &mut Window, cx: &mut Context<Self>) {
+        self.bot_tick();
         self.slash_tick(cx);
         self.view_preview(cx);
         crate::appearance::apply(&self.personal.options, w, cx, false);
@@ -623,6 +660,10 @@ impl Workbench {
                 Event::Ready(result) => match result {
                     Ok((mode, session)) => {
                         self.restore_session(&session);
+                        self.offline = false;
+                        self.people_query.clear();
+                        self.people_kind = "";
+                        self.resume_detail = None;
                         self.guide = onboarding::Guide::default();
                         self.review = review_ui::State::default();
                         self.communication = Default::default();
@@ -650,6 +691,7 @@ impl Workbench {
                 Event::Rows {
                     generation,
                     space,
+                    access,
                     data,
                     errors,
                 } => {
@@ -658,6 +700,9 @@ impl Workbench {
                     }
                     self.loading = false;
                     self.reading = false;
+                    if let Some(access) = access {
+                        self.observe_space_access(access, &data);
+                    }
                     self.errors = errors;
                     for k in self.errors.keys() {
                         self.rows.remove(k);
@@ -680,10 +725,14 @@ impl Workbench {
                             self.view_tasks.clear();
                         }
                     }
-                    if let Some(old) = &self.loc.selected
-                        && let Some(rows) = self.rows.get(&old.kind)
+                    self.reconcile_selected();
+                    if let Some(form) = &self.form
+                        && matches!(form.mode, Mode::Search | Mode::BindChat(_))
                     {
-                        self.loc.selected = rows.iter().find(|r| r.id == old.id).cloned();
+                        let query = form.last_search.clone();
+                        if !query.trim().is_empty() && self.current_search(&query, cx) {
+                            self.search(query);
+                        }
                     }
                     if self.smoke {
                         let ok = self.errors.is_empty() && !self.list("space").is_empty();
@@ -777,7 +826,14 @@ impl Workbench {
                                 After::Who => {
                                     self.role.clear();
                                 }
-                                After::Search(ref query) if !self.current_search(query, cx) => {}
+                                After::Search(ref query) => {
+                                    if self.current_search(query, cx)
+                                        && let Some(form) = &mut self.form
+                                    {
+                                        form.search_results.clear();
+                                        form.error = error;
+                                    }
+                                }
                                 After::View(_) => {
                                     self.view_tasks.clear();
                                     self.error = Some(error);
@@ -852,6 +908,8 @@ impl Workbench {
             .is_some_and(|f| matches!(f.mode, Mode::BindChat(_)))
         {
             request["kind"] = json!("task");
+        } else {
+            request["search_scope"] = json!("organization");
         }
         self.send(request, After::Search(q), false);
     }
@@ -863,6 +921,7 @@ impl Workbench {
         }
         match after {
             After::Library(reply) => self.library_reply(reply, value, w, cx),
+            After::Bot(reply) => self.bot_reply(reply, value, w, cx),
             After::Identity(reply) => self.identity_reply(reply, value, w, cx),
             After::Inbox(reply) => self.inbox_reply(reply, value, w, cx),
             After::DirectoryOpen => {
@@ -1022,6 +1081,14 @@ impl Workbench {
                     && let Some(f) = &mut self.form
                 {
                     f.search_results = serde_json::from_value(value).unwrap_or_default();
+                    f.error.clear();
+                }
+            }
+            After::SearchTarget { space, revision } => {
+                if revision == self.revision
+                    && let Ok(record) = serde_json::from_value(value)
+                {
+                    self.open_search_target(space, record, w, cx);
                 }
             }
             After::Drafts => {
@@ -1332,6 +1399,19 @@ impl Workbench {
         self.error = None;
         let mut value = Map::new();
         match &mode {
+            Mode::OrgDefaults(r) => {
+                value.insert(
+                    "default_language".into(),
+                    json!(r.field("default_language")),
+                );
+                value.insert(
+                    "priority_levels".into(),
+                    json!(r.fields["priority_levels"].to_string()),
+                );
+            }
+            Mode::PeopleFilter => {
+                value.insert("query".into(), json!(self.people_query));
+            }
             Mode::Library(market_ui::LibraryForm::Search) => {
                 value.insert("query".into(), json!(self.library.query));
                 value.insert("category".into(), json!(self.library.category));
@@ -1363,6 +1443,14 @@ impl Workbench {
                     });
                 }
             }
+            Mode::Bot(f) => {
+                value = f.prefill();
+                if matches!(f, personal_bots_ui::BotForm::Start(_))
+                    && let Some(row) = self.loc.selected.as_ref().filter(|row| row.kind == "agent")
+                {
+                    value.insert("agent".into(), json!(row.id));
+                }
+            }
             Mode::Identity(f) => value = f.prefill(),
             Mode::Conversation(f) => value = f.prefill(),
             Mode::Review(f) => value = f.prefill(),
@@ -1392,7 +1480,7 @@ impl Workbench {
                 }
             }
             Mode::Filter => value = self.loc.filter.clone(),
-            Mode::Machine { .. } => {
+            Mode::Machine { .. } | Mode::LocalDirectory { .. } => {
                 if let Ok(path) =
                     crate::machine::default_config(self.directory.as_deref(), &self.loc.space)
                 {
@@ -1432,7 +1520,11 @@ impl Workbench {
         let show_estimate = self
             .find("space", &self.loc.space)
             .is_some_and(|r| r.fields.get("estimates_enabled") == Some(&Value::Bool(true)));
+        let asana_comment = matches!(&mode,Mode::Comment(task) if self.find("connector",task.field("connector")).is_some_and(|c|c.fields["enabled"]!=false && c.fields["vendor_write"]==true));
         let mut form = Form::new(mode, &value, w, cx);
+        if !asana_comment {
+            form.entries.retain(|e| e.spec.key != "publish_asana");
+        }
         if is_task {
             self.configure_assignees(&mut form, &value);
             self.task_field_editors(&mut form, w, cx);
@@ -1474,6 +1566,7 @@ impl Workbench {
             return;
         }
         match action {
+            Bot(action)=>self.bot_action(action,w,cx),
             IdentityProfile => self.send(
                 json!({"op":"access.account.profile"}),
                 After::Identity(identity_ui::Reply::Profile),
@@ -1509,21 +1602,14 @@ impl Workbench {
                 self.history[self.pos] = self.loc.clone();
             }
             Go(p) => self.navigate_space_page(p),
+            Jump(p) => {self.close_form(w,cx); self.navigate_space_page(p);}
+            People => {self.navigate(Page::Members);self.loc.section="people".into();self.read(true);}
+            SetPeople(kind) => {self.people_kind=kind;self.read(false);}
+            Direct(target) => self.send(json!({"op":"chat.start","space":self.loc.space,"mode":"member","target":target,"request_id":uuid::Uuid::new_v4().to_string()}),After::OpenChat,true),
             Open(r) => self.open(r, false),
             OpenSearch(r) => {
-                if r.kind == "comment" {
-                    self.work_action(
-                        workspace_ui::Action::Locate {
-                            task: r.field("task").into(),
-                            comment: r.id,
-                        },
-                        w,
-                        cx,
-                    );
-                    return;
-                }
-                self.close_form(w, cx);
-                self.open(r, true);
+                let scope= if r.space.is_empty() || (r.kind=="project" && !self.joined_space(&r.space)) { self.loc.space.clone() } else {r.space.clone()};
+                self.send(json!({"op":"get","space":scope,"kind":r.kind,"id":r.id,"allow_cached":false}),After::SearchTarget{space:scope,revision:self.revision},false);
             }
 
             Back => self.history(false),
@@ -1637,6 +1723,7 @@ impl Workbench {
                 }
             }
             Choose(i, v) => {
+                if let Some(f)=self.form.as_mut(){runtime_ui::reset_profiles(f,i,&v,cx);}
                 let type_changed = self.form.as_ref().is_some_and(|f| {
                     (matches!(&f.mode,Mode::Edit(r) if r.kind=="task")
                         || matches!(&f.mode,Mode::Create(k) if k=="task"))
@@ -1877,17 +1964,26 @@ cx);
             })
             .detach();
         } else {
+            let directory = matches!(
+                self.form.as_ref().map(|f| &f.mode),
+                Some(
+                    Mode::Library(market_ui::LibraryForm::Directory)
+                        | Mode::Machine { stop: false }
+                        | Mode::LocalDirectory { diagnose: false }
+                )
+            );
             let result = cx.prompt_for_paths(PathPromptOptions {
-                files: !matches!(
-                    self.form.as_ref().map(|f| &f.mode),
-                    Some(Mode::Library(market_ui::LibraryForm::Directory))
-                ),
-                directories: matches!(
-                    self.form.as_ref().map(|f| &f.mode),
-                    Some(Mode::Library(market_ui::LibraryForm::Directory))
-                ),
+                files: !directory,
+                directories: directory,
                 multiple: false,
-                prompt: Some("选择文件".into()),
+                prompt: Some(
+                    crate::locale::label(if directory {
+                        "选择工作目录"
+                    } else {
+                        "选择文件"
+                    })
+                    .into(),
+                ),
             });
             cx.spawn_in(w, async move |_, cx| {
                 if let Ok(Ok(Some(paths))) = result.await
@@ -1922,6 +2018,18 @@ cx);
                 .to_string()
         };
         match mode {
+            Mode::QuickCreate => self.close_form(w,cx),
+            Mode::OrgDefaults(r) => self.send(json!({"op":"organization.configure","space":self.loc.space,"expected_rev":r.rev,"default_language":val("default_language"),"priority_levels":val("priority_levels").parse::<u64>().map_err(|_|"请选择优先级档数")?}),After::Notice("已保存组织默认设置".into()),true),
+            Mode::OrgDepart(r,action) => self.send(json!({"op":"organization.depart","space":self.loc.space,"action":action,"confirmation":val("confirmation"),"members":r.fields["members"],"expected_rev":r.rev}),After::Notice("组织成员关系已更新".into()),true),
+            Mode::PeopleFilter => {self.people_query=val("query");self.close_form(w,cx);self.read(false);}
+            Mode::StartChat(kind) => {
+                let mut command=Value::Object(values);
+                command["op"]=json!("chat.start");
+                command["mode"]=json!(kind);
+                command["space"]=json!(self.loc.space);
+                command["request_id"]=json!(f.request_id.to_string());
+                self.send(command,After::OpenChat,true);
+            }
             Mode::BindChat(_) => {
                 self.search(val("query"));
             }
@@ -1985,6 +2093,7 @@ cx);
                 self.close_form(w, cx);
                 self.guide_action(onboarding::Action::Start("connect_machine"), w, cx);
             }
+            Mode::Bot(f)=>self.bot_submit(f,Value::Object(values),w,cx)?,
             Mode::Identity(f) => self.identity_submit(f, Value::Object(values))?,
             Mode::Directory(f) => self.directory_submit(f, values, w, cx)?,
             Mode::Library(f) => self.library_submit(f, values, w, cx)?,
@@ -2138,6 +2247,10 @@ cx);
                 if body.is_empty() {
                     return Err("请输入内容。".into());
                 }
+                if matches!(mode,Mode::Comment(_)) && values.get("publish_asana")==Some(&Value::Bool(true)) {
+                    self.send(json!({"op":"asana.push","space":r.space,"id":r.field("connector"),"task_id":r.id,"intent":"comment","body":body,"request_id":f.request_id.to_string()}),After::Saved("comment".into()),true);
+                    return Ok(());
+                }
                 if matches!(mode, Mode::Message(_)) && chat_actions::agent_room(r) {
                     let op = if body.starts_with('/') {
                         "chat.slash.send"
@@ -2158,6 +2271,7 @@ cx);
                 };
                 let mut fields = values;
                 fields.insert(key.into(), json!(r.id));
+                fields.remove("publish_asana");
                 fields.insert("body".into(), json!(body));
 
                 self.send(
@@ -2329,6 +2443,13 @@ cx);
                     })
                     .map_err(|e| e.to_string())?;
             }
+            Mode::LocalDirectory{diagnose}=>{
+                let heading=if diagnose{"本机进程与日志"}else{"获准工作目录"};
+                let ticket=self.register(After::Output(heading.into()),false);
+                let mut fields=Value::Object(values);
+                fields["local_operation"]=json!(if diagnose{"diagnose"}else{"approve-directory"});
+                self.backend.sender.send(Request::Machine{ticket,space:self.loc.space.clone(),fields,stop:false}).map_err(|e|e.to_string())?;
+            }
 
             Mode::Workflow { op, record } => {
                 let mut q = Value::Object(values);
@@ -2373,7 +2494,7 @@ cx);
                     q["expected_rev"] = json!(record.rev);
                 }
 
-                let inspect = matches!(
+                let inspect = op.starts_with("teambition.") || op.starts_with("cnb.") || op.starts_with("asana.") || matches!(
                     op,
                     "tool.authorize"
                         | "connector.export"
@@ -2485,7 +2606,14 @@ cx);
                 .collect::<Vec<_>>()
         };
         match source {
+            "$approved_directories" => self.runtime_directory_choices(),
             "$machine_skills" => self.library.sources.clone(),
+            "$other_people" => self
+                .list("member")
+                .iter()
+                .filter(|r| r.id != self.actor && r.field("actor") != self.actor)
+                .map(|r| (r.id.clone(), format!("{} · {}", r.title, r.id)))
+                .collect(),
             "$library_runtimes" => self
                 .list("machine")
                 .iter()
@@ -2620,7 +2748,8 @@ cx);
                 overlay_options(&mut v, from("status"));
                 v
             }
-            "$priorities" => crate::catalog::PRIORITIES
+            "$priorities" => self
+                .priority_options()
                 .iter()
                 .map(|(v, l)| (v.to_string(), l.to_string()))
                 .collect(),
@@ -2792,6 +2921,12 @@ mod cloud_tracker_ui_test;
 #[cfg(all(test, windows))]
 #[path = "conversation_ui_test.rs"]
 mod conversation_ui_test;
+#[cfg(all(test, target_os = "windows"))]
+#[path = "enterprise_integration_ui_test.rs"]
+mod enterprise_integration_ui_test;
+#[cfg(all(test, windows))]
+#[path = "live_navigation_test.rs"]
+mod live_navigation_test;
 #[cfg(all(test, windows))]
 #[path = "market_ui_test.rs"]
 mod market_ui_test;
@@ -2799,8 +2934,14 @@ mod market_ui_test;
 #[path = "onboarding_ui.rs"]
 pub(crate) mod onboarding_ui;
 #[cfg(all(test, windows))]
+#[path = "personal_bots_ui_test.rs"]
+mod personal_bots_ui_test;
+#[cfg(all(test, windows))]
 #[path = "review_ui_test.rs"]
 mod review_ui_test;
+#[cfg(all(windows, test))]
+#[path = "runtime_ui_test.rs"]
+mod runtime_ui_test;
 #[cfg(all(test, windows))]
 #[path = "space_ui_test.rs"]
 mod space_ui_test;

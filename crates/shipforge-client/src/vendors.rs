@@ -23,6 +23,68 @@ pub(crate) const CLOUD_OPERATIONS: &[&str] = &[
 ];
 
 type Result<T> = std::result::Result<T, String>;
+mod cnb;
+pub use cnb::receive_cnb;
+pub(crate) const HOSTED: &[&str] = &[
+    "asana.accounts",
+    "asana.credential",
+    "asana.projects",
+    "asana.preview",
+    "asana.synchronize",
+    "asana.push",
+    "teambition.application",
+    "teambition.authorize",
+    "teambition.personal",
+    "teambition.projects",
+    "teambition.preview",
+    "teambition.synchronize",
+    "teambition.push",
+    "cnb.credential",
+    "cnb.repositories",
+    "cnb.pair",
+    "cnb.ci",
+    "cnb.activity",
+    "cnb.deliver",
+];
+pub(super) fn hosted(client: &mut Client, op: &str, q: &Value) -> Result<Value> {
+    if op.starts_with("cnb.") {
+        cnb::execute(client, op, q)
+    } else if op.starts_with("asana.") {
+        trackers::asana::execute(client, op, q)
+    } else {
+        trackers::teambition::execute(client, op, q)
+    }
+}
+fn administrator(client: &mut Client, space: &str) -> Result<()> {
+    let who = client.execute(json!({"op":"whoami","space":space,"allow_cached":false}))?;
+    if !matches!(who["role"].as_str(), Some("owner" | "admin")) {
+        return Err("forbidden: an administrator of this organization or space is required".into());
+    }
+    Ok(())
+}
+fn org_location(
+    client: &Client,
+    b: &Value,
+    provider: &str,
+    account: &str,
+) -> Result<Option<std::path::PathBuf>> {
+    vault::location(
+        client,
+        &json!({"actor":"organization"}),
+        b,
+        provider,
+        account,
+    )
+}
+fn suffix(secret: &str) -> String {
+    let mut letters = secret.chars().rev().take(4).collect::<Vec<_>>();
+    letters.reverse();
+    if secret.chars().count() > 4 {
+        letters.into_iter().collect()
+    } else {
+        String::new()
+    }
+}
 
 fn origin(official: &str) -> Result<String> {
     let Ok(test) = std::env::var("SHIPFORGE_VENDOR_LOOPBACK") else {

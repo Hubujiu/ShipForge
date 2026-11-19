@@ -94,9 +94,13 @@ pub(super) fn normalize(c: &Context<'_>, r: &Record, q: &Value) -> Result<Vec<Va
                 "high" | "高" => "high",
                 "medium" | "中" => "medium",
                 "low" | "低" => "low",
+                "lowest" | "最低" => "lowest",
                 _ => "none",
             });
-        if !matches!(priority, "urgent" | "high" | "medium" | "low" | "none") {
+        if !matches!(
+            priority,
+            "urgent" | "high" | "medium" | "low" | "lowest" | "none"
+        ) {
             return Err(invalid("invalid mapped TAPD priority"));
         }
         let mut members = Vec::new();
