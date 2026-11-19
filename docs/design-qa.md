@@ -85,4 +85,4 @@ final result: passed
 
 ### 专项时间线和分拣
 
-Windows 隐藏 D3D 窗口使用独立临时资料，打开分拣模块与待分拣任务，读取原生无障碍树中的接受、标记重复、拒绝、搁置和分享控件。通过原生表单提交搁置并检查数据库队列，再打开「显示稍后处理」找回任务。在专项详情验证日期模式和已排期条目，再用工作区限定的任务链接打开正确的详情。此次运行验证 ShipForge 本机窗口及核心数据，跨成员授权另由合成角色回归覆盖。真实 HiFox 组织仅用于只读参考。[Windows 回归](../crates/shipforge-desktop/src/review_ui_test.rs) · [多身份回归](../crates/shipforge-core/tests/review_planning.rs) · [操作说明](triage-planning.md)
+Windows 隐藏 D3D 窗口使用独立临时资料，打开分拣模块与待分拣任务，读取原生无障碍树中的接受、标记重复、拒绝、搁置和分享控件。通过原生表单提交搁置并检查数据库队列，再打开「显示稍后处理」找回任务。在专项详情验证日期模式和已排期条目，再用工作区限定的任务链接打开正确的详情。此次运行验证 ShipForge 本机窗口及核心数据，跨成员授权另由合成角色回归覆盖。真实 HiFox 组织仅用于只读参考。[Windows 回归](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/review_ui_test.rs) · [多身份回归](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/review_planning.rs) · [操作说明](triage-planning.md)

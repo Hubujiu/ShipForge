@@ -67,6 +67,6 @@
 {"op":"task.open","link":"shipforge://task/在此粘贴上一步返回的完整链接"}
 ```
 
-多身份回归可用 `cargo test -p shipforge-core --locked --test review_planning` 运行。Windows 隐藏原生窗口用 `cargo test -p shipforge-desktop --locked hidden_review_planning_window -- --ignored --test-threads=1` 执行，使用临时本地资料验证分拣、搁置、展示选项、专项时间线和任务链接。[核心验收](../crates/shipforge-core/tests/review_planning.rs) · [Windows 控件验收](../crates/shipforge-desktop/src/review_ui_test.rs)
+多身份回归可用 `cargo test -p shipforge-core --locked --test review_planning` 运行。Windows 隐藏原生窗口用 `cargo test -p shipforge-desktop --locked hidden_review_planning_window -- --ignored --test-threads=1` 执行，使用临时本地资料验证分拣、搁置、展示选项、专项时间线和任务链接。[核心验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/review_planning.rs) · [Windows 控件验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/review_ui_test.rs)
 
-使用调试版 CLI 与团队服务运行 `python scripts/verify-planning.py target/debug`，将建立三个临时身份并经本机 HTTP 验证公开投递、私有队列、跨空间时间线和任务链接撤权边界。[团队服务验收](../scripts/verify-planning.py)
+使用调试版 CLI 与团队服务运行 `python scripts/verify-planning.py target/debug`，将建立三个临时身份并经本机 HTTP 验证公开投递、私有队列、跨空间时间线和任务链接撤权边界。[团队服务验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-planning.py)

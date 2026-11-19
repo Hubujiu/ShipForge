@@ -368,6 +368,6 @@
 [work-service]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-work-collaboration.py
 [tag-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/tags.rs
 [tag-ui]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/tag_ui.rs
-[planning-tests]: ../crates/shipforge-core/tests/review_planning.rs
-[planning-native]: ../crates/shipforge-desktop/src/review_ui_test.rs
+[planning-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/review_planning.rs
+[planning-native]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/review_ui_test.rs
 [planning-flow]: triage-planning.md
