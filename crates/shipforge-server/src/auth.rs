@@ -4,9 +4,10 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::time::Duration;
 use uuid::Uuid;
+pub(crate) mod identity;
 mod personal;
 
-pub struct Auth(Connection);
+pub struct Auth(Connection, Option<Connection>);
 #[derive(Clone)]
 pub struct Principal {
     pub actor: String,
@@ -38,7 +39,18 @@ impl Auth {
           CREATE TABLE IF NOT EXISTS personal_tokens(
             token_id TEXT PRIMARY KEY,issuer TEXT NOT NULL,prefix TEXT NOT NULL,expires INTEGER,last_used INTEGER,
             lifetime TEXT NOT NULL,source TEXT NOT NULL,machine_space TEXT,machine_id TEXT,request_id TEXT,UNIQUE(issuer,request_id));").map_err(sql)?;
-        Ok(Self(db))
+        identity::initialize(&db)?;
+        let workspace = dir.join("workspace.sqlite3");
+        let retirement = if workspace.is_file() {
+            let team =
+                Connection::open_with_flags(workspace, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+                    .map_err(sql)?;
+            let migrated=team.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name='account_retirements' AND type='table')",[],|r|r.get::<_,bool>(0)).map_err(sql)?;
+            migrated.then_some(team)
+        } else {
+            None
+        };
+        Ok(Self(db, retirement))
     }
     pub fn issue(
         &self,
@@ -123,11 +135,23 @@ impl Auth {
         }
         let principal=self.0.query_row("SELECT t.actor,t.scope,t.id,b.space,b.resource,b.binding,p.token_id IS NOT NULL
             FROM tokens t LEFT JOIN token_bindings b ON b.token_id=t.id LEFT JOIN personal_tokens p ON p.token_id=t.id
+            LEFT JOIN identity_sessions s ON s.token_id=t.id
             LEFT JOIN tokens issuer ON p.issuer=issuer.id WHERE t.digest=?1 AND t.revoked IS NULL
-            AND (p.expires IS NULL OR p.expires>unixepoch()) AND issuer.revoked IS NULL",[fingerprint(token)],
+            AND (p.expires IS NULL OR p.expires>unixepoch()) AND (s.expires IS NULL OR s.expires>unixepoch()) AND issuer.revoked IS NULL",[fingerprint(token)],
             |r| Ok(Principal{actor:r.get(0)?,scope:r.get(1)?,id:r.get(2)?,bound_space:r.get(3)?,resource:r.get(4)?,binding:r.get(5)?,
                 personal:r.get(6)?,prefix:token.chars().take(11).collect()})).optional().map_err(sql)?
             .ok_or_else(||"unauthorized: invalid, expired or revoked access token".to_owned())?;
+        if let Some(team) = &self.1
+            && team
+                .query_row(
+                    "SELECT EXISTS(SELECT 1 FROM account_retirements WHERE actor=?)",
+                    [&principal.actor],
+                    |r| r.get::<_, bool>(0),
+                )
+                .map_err(sql)?
+        {
+            return Err("unauthorized: account has been closed".into());
+        }
         if principal.personal {
             self.0.execute("UPDATE personal_tokens SET last_used=unixepoch() WHERE token_id=?1 AND last_used IS NOT unixepoch()",
                 [&principal.id]).map_err(sql)?;
@@ -144,12 +168,23 @@ pub fn execute(
 ) -> Result<Value, String> {
     let op = request["op"].as_str().unwrap_or("");
     if op == "access.whoami" {
-        return Ok(
-            json!({"actor":principal.actor,"scope":principal.scope,"token_id":principal.id,"prefix":principal.prefix,"personal":principal.personal,"mode":"team"}),
-        );
+        let verified = store.has_verified_profile(&principal.actor)?;
+        let mut value = json!({"actor":principal.actor,"scope":principal.scope,"token_id":principal.id,"prefix":principal.prefix,"personal":principal.personal,"email_account":verified,"mode":"team"});
+        if verified && !principal.personal && matches!(principal.scope.as_str(), "read" | "write") {
+            let profile = store.account_profile(&principal.actor)?;
+            value["display"] = json!(format!(
+                "{} · {}",
+                profile["name"].as_str().unwrap_or_default(),
+                profile["email"].as_str().unwrap_or_default()
+            ));
+        }
+        return Ok(value);
     }
     if op.starts_with("access.personal.") {
         return auth.personal_request(principal, store, op, request);
+    }
+    if op.starts_with("access.account.") {
+        return auth.account(principal, store, request);
     }
     if principal.personal || principal.actor != "owner" || principal.scope != "write" {
         return Err("forbidden: only the installation owner can manage access tokens".into());
@@ -176,6 +211,8 @@ pub fn authorize(principal: &Principal, request: &Value) -> Result<(), String> {
             op,
             "machine.register"
                 | "machine.heartbeat"
+                | "skill.jobs"
+                | "skill.finish"
                 | "run.claim"
                 | "run.heartbeat"
                 | "run.report"

@@ -36,6 +36,7 @@ pub(crate) fn export(c: &Context<'_>) -> Result<Value> {
                         && let Some(f) = row.fields.as_object_mut()
                     {
                         f.remove("following");
+                        f.remove("awaiting_review");
                     }
                     row
                 })

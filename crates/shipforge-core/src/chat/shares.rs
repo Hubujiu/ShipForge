@@ -72,8 +72,25 @@ pub(super) fn create(c: &Context<'_>, room: &Record, q: &Value) -> Result<Value>
     if ids.is_empty() || ids.len() > 100 || ids.len() != selection.len() {
         return Err(invalid("select 1 to 100 distinct messages"));
     }
+    let mut included = selection.clone();
+    let mut parent_ids = Vec::new();
+    if q["include_questions"] == true {
+        for id in &ids {
+            let message = c.readable("message", id)?;
+            if message.fields["chat"] == room.id
+                && let Some(run) = message.fields["run"].as_str()
+            {
+                let run = c.readable("run", run)?;
+                if let Some(origin) = run.fields["chat_message"].as_str() {
+                    parent_ids.push(origin.to_owned());
+                }
+            }
+        }
+    }
+    included.extend(parent_ids.iter().map(String::as_str));
+    let mut total_image_bytes = 0usize;
     let mut messages = Vec::new();
-    for id in ids {
+    for id in included {
         let message = c.readable("message", id)?;
         super::may_share_inherited(c, id)?;
         let f = &message.fields;
@@ -105,10 +122,38 @@ pub(super) fn create(c: &Context<'_>, room: &Record, q: &Value) -> Result<Value>
             .filter_map(|a| a["filename"].as_str())
             .collect();
         let seq:i64=c.db.query_row("SELECT coalesce(max(seq),0) FROM event_log WHERE space=? AND kind='message' AND id=? AND action='create' AND rev<=?",params![c.space,id,message.rev],|r|r.get(0)).map_err(storage)?;
-        messages.push((
-            seq,
-            json!({"author":author,"body":body,"attachments":filenames}),
-        ));
+        let mut images = Vec::new();
+        for file in f["attachments"].as_array().into_iter().flatten() {
+            let Some(key) = file["id"].as_str() else {
+                continue;
+            };
+            let bytes: Option<Vec<u8>> =
+                c.db.query_row(
+                    "SELECT content FROM attachments WHERE space=? AND id=? AND (
+                        substr(content,1,8)=X'89504E470D0A1A0A'
+                        OR substr(content,1,3)=X'FFD8FF'
+                        OR substr(content,1,6) IN (X'474946383761',X'474946383961')
+                        OR (substr(content,1,4)=X'52494646' AND substr(content,9,4)=X'57454250'))",
+                    params![c.space, key],
+                    |r| r.get(0),
+                )
+                .optional()
+                .map_err(storage)?;
+            if let Some(image) = bytes.as_deref().and_then(|b| {
+                super::share_image::thumbnail(b, file["filename"].as_str().unwrap_or("image"))
+            }) {
+                total_image_bytes += image["png"].as_str().map_or(0, str::len);
+                if total_image_bytes > 768 * 1024 {
+                    return Err(invalid("select fewer image attachments for one share"));
+                }
+                images.push(image);
+            }
+        }
+        let mut selected = json!({"author":author,"body":body,"attachments":filenames});
+        if !images.is_empty() {
+            selected["images"] = json!(images);
+        }
+        messages.push((seq, selected));
     }
     messages.sort_by_key(|(seq, _)| *seq);
     let messages = messages.into_iter().map(|(_, m)| m).collect::<Vec<_>>();

@@ -1,10 +1,14 @@
 mod accounts;
 mod credentials;
 mod files;
+mod identity;
 mod remote;
+pub mod skill_files;
 mod vendors;
 
 pub use files::{save_attachment, upload_file};
+pub use identity::link_id as identity_link_id;
+pub use shipforge_core::skill_package;
 
 use directories::ProjectDirs;
 use serde_json::{Value, json};
@@ -61,6 +65,7 @@ pub fn schema() -> Value {
         ] {
             operations.push(json!(name));
         }
+        operations.extend(vendors::CLOUD_OPERATIONS.iter().map(|op| json!(op)));
     }
     let props = schema["properties"]
         .as_object_mut()
@@ -73,6 +78,7 @@ pub fn schema() -> Value {
     props.insert("allow_cached".into(), json!({"type":"boolean"}));
     props.insert("queue_if_offline".into(), json!({"type":"boolean"}));
     let rules = schema["allOf"].as_array_mut().expect("core schema rules");
+    rules.push(json!({"if":{"properties":{"op":{"enum":vendors::CLOUD_OPERATIONS}}},"then":{"required":["id"],"properties":{"page_size":{"type":"integer","minimum":1,"maximum":100},"import_mode":{"enum":["history","changes","refresh"]}}}}));
     for (op, required) in [
         ("access.issue", vec!["actor", "scope"]),
         ("access.revoke", vec!["id"]),
@@ -105,6 +111,7 @@ pub fn schema() -> Value {
     rules.push(json!({"if":{"properties":{"op":{"const":"access.personal.issue"}}},
         "then":{"properties":{"lifetime":{"enum":["30d","90d","1y","never"]},"source":{"enum":["personal","machine_setup"]},
         "label":{"type":"string","minLength":1,"maxLength":100}},"not":{"anyOf":[{"required":["actor"]},{"required":["scope"]}]}}}));
+    identity::schema(&mut schema);
     schema
 }
 
@@ -224,10 +231,7 @@ impl Client {
         let normalized = remote::endpoint(url, token)?;
         let mut client = Self::remote_in(&location, &normalized, token)?;
         let who = client.execute(json!({"op":"access.whoami"}))?;
-        let actor = who["actor"]
-            .as_str()
-            .ok_or("server: missing account identity")?;
-        accounts::save(&location, &normalized, token, actor, expected)
+        accounts::save(&location, &normalized, token, &who, expected)
     }
     pub fn forget_connection(directory: Option<&Path>) -> Result<(), String> {
         let location = match directory {
@@ -252,6 +256,13 @@ impl Client {
         }
     }
     pub fn execute(&mut self, request: Value) -> Result<Value, String> {
+        let request = skill_files::prepare(request)?;
+        if request["op"]
+            .as_str()
+            .is_some_and(|op| identity::DEVICE_OPS.contains(&op))
+        {
+            return identity::execute(self, &request);
+        }
         if let Some(op) = request["op"]
             .as_str()
             .filter(|op| op.starts_with("profiles."))
@@ -304,7 +315,10 @@ impl Client {
                     | "imports.push"
                     | "imports.synchronize"
             )
-        ) {
+        ) || request["op"]
+            .as_str()
+            .is_some_and(|op| vendors::CLOUD_OPERATIONS.contains(&op))
+        {
             return vendors::execute(self, &request);
         }
         if request["op"] == "schema" {

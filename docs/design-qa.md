@@ -1,5 +1,15 @@
 # Windows 原生界面验收
 
+## 技能市场和同机任务目录
+
+隐藏的 Windows GPUI 窗口在临时工作区中打开市场，检查真实 UI Automation 节点，并走桌面动作入口打开条目详情、安装技能、选择要绑定的 Agent。切换到没有条目的分类后，原有详情按钮消失。空间技能页能打开目录和机器导入，实际提交文件后从第二个客户端读取到了新技能。小队详情中开启共享后，按钮变为「关闭同机共享任务目录」。[原生验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/market_ui_test.rs)
+
+正式工作机可执行文件启动两个并行子进程。各自写入的 PID 和队长写下的任务标识在同一任务的工作树中相互可见，汇总进程读取两份结果。另一任务使用新的工作树。隔离夹具里绑定源仓库的 Git 状态保持干净。独立的服务端和两个 CLI 配置同时检验组织发布、共享安装、升级、卸载和版本快照。 [工作机验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/tests/native_runtime.rs) · [HTTP 验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-skill-market.py)
+
+## 邮箱登录和注销
+
+隐藏的 Windows 原生窗口连接临时团队服务，在账号列表填写邮箱，读取设备配对码，使用隔离邮件网关返回的浏览器链接完成验证。关闭验证表单后，邮件网页返回的应用链接可重新打开原表单。登录后查看与修改姓名，预览将解散的组织，重新验证并输入「注销」，界面回到本机工作区。另用两个独立设备配置和另一位成员检验撤权、新手积分和组织数据保留。[Windows 窗口用例](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/identity_ui_test.rs) · [账号验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-identity.py)
+
 ## 禅道和 PingCode
 
 Windows x64 隐藏 D3D 窗口打开两个连接器详情，通过 UI Automation 核对不同平台的凭据、发现、预览、同步、回写和批次入口。分别打开密码及用户授权码表单，验证敏感输入控件，再将预览切换到「检查增量变更」。在 PingCode 原生窗口输入合成预览批次号并提交，独立数据库连接读到一条新任务。随后在窗口撤回该批，任务数恢复为零。单独的 HTTP 上游夹具覆盖三种 PingCode 身份与禅道认证、权限和真实发布请求。[原生窗口用例](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/tracker_ui_test.rs) · [HTTP 验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-trackers.py)
@@ -83,6 +93,14 @@ final result: passed
 团队服务和三个独立 CLI 身份另验证同名跨空间结果、按人收藏、撤销源 Agent 权限及断网后的取数结果。核心用例验证领取运行后归档的取消状态、公开 Agent 私人历史的匿名行和管理者的只读范围。 [HTTP 验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-agent-directory.py) · [核心验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/agent_directory.rs)
 
 
+### Linear、ClickUp 与 ONES 的集成表单
+
+Windows 隐藏 GPUI 窗口在临时资料目录打开三个连接器的详情。原生无障碍树可读到账户发现、项目选择、凭据、预览和回写入口。测试检查个人令牌输入遮蔽、OAuth 回调字段、增量模式选择，并实际提交「暂停」后从另一客户端读回连接器状态。网络鉴权、工作机同步和回写另由模拟供应商及真实团队服务逐项验证。[原生窗口用例](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/cloud_tracker_ui_test.rs) · [隔离服务验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-cloud-trackers.py)
+
 ### 专项时间线和分拣
 
 Windows 隐藏 D3D 窗口使用独立临时资料，打开分拣模块与待分拣任务，读取原生无障碍树中的接受、标记重复、拒绝、搁置和分享控件。通过原生表单提交搁置并检查数据库队列，再打开「显示稍后处理」找回任务。在专项详情验证日期模式和已排期条目，再用工作区限定的任务链接打开正确的详情。此次运行验证 ShipForge 本机窗口及核心数据，跨成员授权另由合成角色回归覆盖。真实 HiFox 组织仅用于只读参考。[Windows 回归](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/review_ui_test.rs) · [多身份回归](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/review_planning.rs) · [操作说明](triage-planning.md)
+
+## Windows 对话指令和文档引用
+
+独立本机测试工作区打开隐藏的原生 D3D 窗口，经 Windows 辅助功能树定位任务指令、管理、文档引用和 PNG 保存入口。测试向编辑器派发 Tab 后确认仅插入命令，派发 Esc 后确认输入框仍在，再发送并核对后端消息。工作机报告结果后，从详情发送审阅确认，任务保持原状态。PNG 在测试目录写出并核对文件签名。测试未接外部商业 Runtime。[原生测试](../crates/shipforge-desktop/src/conversation_ui_test.rs)

@@ -8,12 +8,26 @@ use uuid::Uuid;
 
 #[path = "automation.rs"]
 mod automation;
+mod crew_workspace;
+mod market;
 mod working_hours;
 
 pub(crate) const OPS: &[&str] = &[
     "agent.resolve",
     "catalog.list",
     "catalog.install",
+    "catalog.detail",
+    "catalog.publish",
+    "catalog.update",
+    "catalog.uninstall",
+    "catalog.instantiate",
+    "skill.import",
+    "skill.bind",
+    "skill.sources",
+    "skill.discover",
+    "skill.machine_import",
+    "skill.jobs",
+    "skill.finish",
     "tool.authorize",
     "machine.register",
     "machine.heartbeat",
@@ -36,12 +50,15 @@ pub(crate) const OPS: &[&str] = &[
 pub(crate) const READ_OPS: &[&str] = &[
     "agent.resolve",
     "catalog.list",
+    "catalog.detail",
+    "skill.sources",
     "tool.authorize",
     "connector.export",
 ];
 const LEASE_MS: i64 = 120_000;
 
 pub(crate) fn extend_schema(schema: &mut Value) {
+    market::schema(schema);
     let props = schema["properties"]
         .as_object_mut()
         .expect("schema properties");
@@ -177,6 +194,7 @@ fn sql_init(db: &Connection) -> Result<()> {
 pub(crate) fn init(db: &Connection) -> Result<()> {
     sql_init(db)?;
     crate::agents::init(db)?;
+    market::init(db)?;
     automation::init(db)
 }
 
@@ -190,6 +208,9 @@ pub(crate) fn dispatch(c: &Context<'_>, q: &Value) -> Option<Result<Value>> {
             c.require_edit()?;
         }
         match op {
+            op if op.starts_with("skill.") || op.starts_with("catalog.") => {
+                market::execute(c, op, q)
+            }
             "agent.resolve" => resolved(c, req(q, "id")?),
             "machine.register" => register(c, q),
             "machine.heartbeat" => {
@@ -291,6 +312,15 @@ pub(crate) fn validate(c: &Context<'_>, before: Option<&Record>, item: &Record) 
     }
 }
 pub(crate) fn allow_delete(c: &Context<'_>, r: &Record) -> Result<()> {
+    if matches!(r.kind.as_str(), "task" | "crew") {
+        let sql = if r.kind == "task" {
+            "DELETE FROM crew_workspaces WHERE space=? AND task=?"
+        } else {
+            "DELETE FROM crew_workspaces WHERE space=? AND crew=?"
+        };
+        c.db.execute(sql, params![c.space, r.id])
+            .map_err(db_error)?;
+    }
     match r.kind.as_str() {
         "run" | "machine" => Err("managed record; cancel a run or disable a machine".into()),
         "connector" => c.require_admin(),
@@ -355,7 +385,7 @@ fn resolved(c: &Context<'_>, id: &str) -> Result<Value> {
     crate::agents::effective(c, id)
 }
 
-fn snapshot(c: &Context<'_>, handler: &str, kind: &str) -> Result<Value> {
+pub(crate) fn snapshot(c: &Context<'_>, handler: &str, kind: &str) -> Result<Value> {
     let (agent, crew) = if kind == "crew" {
         let crew = read(c, "crew", handler)?;
         (req(&crew.fields, "leader_id")?.to_owned(), Some(crew))
@@ -386,7 +416,7 @@ fn snapshot(c: &Context<'_>, handler: &str, kind: &str) -> Result<Value> {
                     == "private";
             }
             let entry = if target == "skill" {
-                json!({"id":id,"title":item.title,"rev":item.rev,"instructions":item.fields["instructions"]})
+                json!({"id":id,"title":item.title,"rev":item.rev,"version":item.fields["version"],"instructions":item.fields["instructions"],"files":item.fields["files"]})
             } else {
                 json!({"id":id,"title":item.title,"rev":item.rev,"type":item.fields["type"],"description":item.fields["description"]})
             };
@@ -439,6 +469,7 @@ pub(crate) fn enqueue(
     fields["handler_kind"] = json!(kind);
     fields["runtime"] = config["runtime"].clone();
     fields["config"] = config;
+    fields["crew_workspace"] = crew_workspace::snapshot(c, &handler_record, &fields)?;
     fields["status"] = json!("queued");
     fields["requested_by"] = json!(c.actor);
     fields["attempt"] = json!(0);
@@ -482,7 +513,7 @@ fn is_ready(c: &Context<'_>, task: &Record) -> Result<bool> {
         "todo" | "in_progress" | "started" | "unstarted" | "active"
     ))
 }
-fn task_context(c: &Context<'_>, task: &Record) -> Result<Value> {
+pub(crate) fn task_context(c: &Context<'_>, task: &Record) -> Result<Value> {
     let mut comments = c
         .records("comment")?
         .into_iter()
@@ -717,7 +748,8 @@ fn register(c: &Context<'_>, q: &Value) -> Result<Value> {
     if shared {
         c.require_admin()?;
     }
-    let f = json!({"owner":c.actor,"shared":shared,"visibility":if shared{"space"}else{"private"},"runtimes":runtimes,"capacity":capacity,"last_seen":now(),"disabled":false});
+    let commands = crate::conversation_tools::advertised_commands(&q["slash_commands"], &runtimes)?;
+    let f = json!({"owner":c.actor,"shared":shared,"visibility":if shared{"space"}else{"private"},"runtimes":runtimes,"slash_commands":commands,"capacity":capacity,"last_seen":now(),"disabled":false});
     let r = if c.find("machine", id)?.is_some() {
         let prior = authenticate(c, q)?;
         c.update(&prior, title, f)?
@@ -918,6 +950,9 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
             if c.actor != f["requested_by"].as_str().unwrap_or_default() {
                 continue;
             }
+            if f["visibility"] != "private" {
+                f["crew_workspace"] = Value::Null;
+            }
             f["visibility"] = json!("private");
             f["owner"] = f["requested_by"].clone();
         }
@@ -1031,6 +1066,12 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
     if let Some(usage) = q.get("usage").filter(|v| !v.is_null()) {
         fingerprint.push(usage);
     }
+    if let Some(review) = q.get("needs_review") {
+        if !review.is_boolean() {
+            return Err(crate::invalid("needs_review must be boolean"));
+        }
+        fingerprint.push(review);
+    }
     if run.fields["chat_conversion"] == true {
         fingerprint.push(&q["task_draft"]);
     }
@@ -1138,6 +1179,7 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
     }
     let updated = c.update(&run, &run.title, f)?;
     record_artifacts(c, &updated, &q["artifacts"])?;
+    crate::conversation_tools::reviews::finished(c, &updated, q)?;
     if updated.fields["status"] == "waiting" {
         crate::inbox::task_run(c, &updated)?;
     }

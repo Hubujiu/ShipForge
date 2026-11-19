@@ -46,10 +46,12 @@ pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(storage)?;
     tx.execute_batch(V1).map_err(storage)?;
+    crate::identity::initialize(&tx)?;
     crate::spaces::init(&tx)?;
     crate::saved_views::init(&tx)?;
     crate::inbox::init(&tx)?;
     crate::triage::init(&tx)?;
+    crate::conversation_tools::init(&tx)?;
     tx.pragma_update(None, "application_id", APP_ID)
         .map_err(storage)?;
     tx.pragma_update(None, "user_version", 1).map_err(storage)?;

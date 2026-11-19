@@ -4,6 +4,7 @@ use shipforge_core::zentao_installation as site;
 use std::collections::BTreeMap;
 use url::Url;
 
+mod cloud;
 mod pingcode;
 mod publish;
 mod zentao;
@@ -259,6 +260,9 @@ pub(super) fn execute(client: &mut Client, q: &Value) -> Result<Value> {
     let provider = binding["provider"]
         .as_str()
         .ok_or("invalid: select a supported tracker")?;
+    if matches!(provider, "linear" | "clickup" | "ones") {
+        return cloud::execute(client, q, &binding);
+    }
     let zen = match provider {
         "zentao" => true,
         "pingcode" => false,
@@ -328,12 +332,27 @@ pub(super) fn execute(client: &mut Client, q: &Value) -> Result<Value> {
     } else {
         pingcode::issues(&api, &scope, size, since)?
     };
+    let mut result = stage_batch(client, q, &binding, &scope, issues, mode, polling)?;
+    result["since"] = if zen { Value::Null } else { json!(since) };
+    Ok(result)
+}
+
+fn stage_batch(
+    client: &mut Client,
+    q: &Value,
+    binding: &Value,
+    scope: &str,
+    issues: Vec<Value>,
+    mode: &str,
+    polling: bool,
+) -> Result<Value> {
     let mut stage = scoped(q, "imports.stage");
     stage["project"] = json!(scope);
     stage["issues"] = json!(issues);
     stage["binding_rev"] = binding["revision"].clone();
     stage["checkpoint"] = binding["checkpoint"].clone();
     stage["import_mode"] = json!(mode);
+    stage["source_account"] = binding["enterprise_id"].clone();
     stage["poll"] = json!(polling);
     let mut result = client.execute(stage)?;
     if polling && result["state"] == "preview" {
@@ -342,6 +361,5 @@ pub(super) fn execute(client: &mut Client, q: &Value) -> Result<Value> {
         result = client.execute(commit)?;
     }
     result["mode"] = json!(mode);
-    result["since"] = if zen { Value::Null } else { json!(since) };
     Ok(result)
 }

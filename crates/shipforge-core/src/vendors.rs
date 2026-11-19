@@ -3,6 +3,9 @@ use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 
 mod batches;
+mod cloud;
+mod signals;
+pub(crate) use signals::{linear_relay, uses_project};
 mod trackers;
 pub use trackers::zentao_installation;
 mod bugly;
@@ -12,6 +15,7 @@ mod tapd;
 mod zoho;
 
 pub(crate) fn init(db: &Connection) -> Result<()> {
+    signals::init(db)?;
     batches::init(db)?;
     writeback::init(db)?;
     bugly::init(db)
@@ -41,6 +45,7 @@ pub(crate) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
             "tapd_auth",
             "company_id",
             "instance_url",
+            "ones_url",
             "remote_scope",
             "scope_kind",
             "enterprise_id",
@@ -60,6 +65,7 @@ pub(crate) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
         bugly::disconnect(c, &r.id)?;
     }
     match f["provider"].as_str() {
+        Some("linear" | "clickup" | "ones") => cloud::validate(f)?,
         Some("zentao" | "pingcode") => trackers::validate(f)?,
         Some("tapd") => tapd::validate(f)?,
         Some("zoho") => {
@@ -101,6 +107,11 @@ pub(crate) fn removing(c: &Context<'_>, r: &Record) -> Result<()> {
             ));
         }
         bugly::disconnect(c, &r.id)?;
+        c.db.execute(
+            "DELETE FROM sf_tracker_signal WHERE space=? AND connector=?",
+            params![c.space, r.id],
+        )
+        .map_err(storage)?;
         c.db.execute(
             "DELETE FROM sf_vendor_push WHERE space=? AND connector=?",
             params![c.space, r.id],
@@ -187,7 +198,7 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
     let cleanup = op == "imports.binding" && q["clear_device_credentials"] == true;
     if !matches!(
         r.fields["provider"].as_str(),
-        Some("zoho" | "tapd" | "zentao" | "pingcode")
+        Some("zoho" | "tapd" | "zentao" | "pingcode" | "linear" | "clickup" | "ones")
     ) || (r.fields["enabled"] == false
         && !cleanup
         && !matches!(
@@ -199,6 +210,7 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
     }
     match op {
         "imports.binding" => batches::binding(c, &r, !cleanup),
+        "imports.sync_control" => cloud::sync_control(c, &r, required(q, "action")?),
         "imports.prepare_push" | "imports.finish_push" | "imports.push_history" => {
             writeback::execute(c, &r, op, q)
         }
@@ -234,6 +246,7 @@ pub(crate) fn schema(s: &mut Value) {
             vec!["id", "batch"],
         ),
         (vec!["imports.prepare_push"], vec!["id", "task_id"]),
+        (vec!["imports.sync_control"], vec!["id", "action"]),
         (
             vec!["imports.finish_push"],
             vec!["id", "delivery", "lease", "result"],

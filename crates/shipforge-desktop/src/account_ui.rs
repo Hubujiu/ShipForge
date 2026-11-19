@@ -78,6 +78,56 @@ impl Workbench {
                         .child(crate::locale::label("添加账号")),
                 ),
         );
+        panel = panel.child(
+            outlined(self.button(
+                "mail-sign-in",
+                "使用邮箱登录或注册",
+                UiAction::Form(Mode::Identity(super::identity_ui::IdentityForm::Login(
+                    None,
+                ))),
+                cx,
+            ))
+            .child(crate::locale::label("使用邮箱登录或注册")),
+        );
+        if self.active_profile.is_some()
+            && self.access_identity["email_account"] == true
+            && self.access_identity["personal"] == false
+        {
+            panel = panel.child(
+                row()
+                    .gap(px(8.))
+                    .child(
+                        outlined(self.button(
+                            "identity-profile",
+                            "个人资料",
+                            UiAction::IdentityProfile,
+                            cx,
+                        ))
+                        .child(crate::locale::label("个人资料")),
+                    )
+                    .child(
+                        outlined(self.button(
+                            "identity-logout",
+                            "退出当前账号",
+                            UiAction::Form(Mode::Confirm {
+                                label: "退出当前账号".into(),
+                                command: json!({"op":"profiles.logout"}),
+                            }),
+                            cx,
+                        ))
+                        .child(crate::locale::label("退出当前账号")),
+                    )
+                    .child(
+                        self.button(
+                            "identity-close",
+                            "永久注销账号",
+                            UiAction::IdentityClose,
+                            cx,
+                        )
+                        .child(crate::locale::label("永久注销账号")),
+                    ),
+            );
+        }
         if self.account_rows.is_empty() {
             return panel.child(text("本机尚未保存团队账号。", 13., MUTED));
         }
@@ -86,9 +136,14 @@ impl Workbench {
                 continue;
             };
             let endpoint = account["url"].as_str().unwrap_or_default();
-            let actor = account["actor"]
-                .as_str()
-                .unwrap_or_else(|| crate::locale::label("已保存的账号"));
+            let actor = if account["active"] == true {
+                self.access_identity["display"].as_str()
+            } else {
+                None
+            }
+            .or_else(|| account["display"].as_str())
+            .or_else(|| account["actor"].as_str())
+            .unwrap_or_else(|| crate::locale::label("已保存的账号"));
             let mut line = row().w_full().gap(px(8.)).child(
                 col()
                     .flex_1()
@@ -98,14 +153,22 @@ impl Workbench {
             if account["active"] == true {
                 line = line.child(text("当前使用", 12., GREEN));
             } else if account["needs_login"] == true {
+                let reauth = if account["email_account"] == true {
+                    Mode::Identity(super::identity_ui::IdentityForm::Login(Some((
+                        id.into(),
+                        endpoint.into(),
+                    ))))
+                } else {
+                    Mode::Reauthenticate {
+                        account: id.into(),
+                        url: endpoint.into(),
+                    }
+                };
                 line = line.child(
                     outlined(self.button(
                         format!("login-{id}"),
                         "重新登录账号",
-                        UiAction::Form(Mode::Reauthenticate {
-                            account: id.into(),
-                            url: endpoint.into(),
-                        }),
+                        UiAction::Form(reauth),
                         cx,
                     ))
                     .child(crate::locale::label("重新登录账号")),

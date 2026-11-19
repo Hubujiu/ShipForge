@@ -96,6 +96,19 @@ impl Workbench {
             .child(text("/", 12., DIM))
             .child(headline(page_title.to_owned(), 14.))
             .child(div().flex_1());
+        if p == Page::Docs {
+            header = header.child(
+                outlined(self.button(
+                    "open-document-link",
+                    "打开文档链接",
+                    UiAction::Form(Mode::Conversation(
+                        crate::app::conversation_ui::CommandForm::OpenDocument,
+                    )),
+                    cx,
+                ))
+                .child("打开文档链接"),
+            );
+        }
         if p == Page::Docs && self.writable() {
             header = header.child(
                 outlined(self.button(
@@ -305,6 +318,24 @@ impl Workbench {
                 root.child(self.member_invitations(cx)).into_any_element()
             }
             Page::Market => root.child(self.market_page(cx)).into_any_element(),
+            Page::Skills => root
+                .child(self.skill_toolbar(cx))
+                .child(self.record_page(cx))
+                .into_any_element(),
+            Page::Connectors => root
+                .child(
+                    row().px(px(14.)).py(px(8.)).child(
+                        outlined(self.button(
+                            "connector-skills",
+                            "空间技能",
+                            UiAction::Go(Page::Skills),
+                            cx,
+                        ))
+                        .child(crate::locale::label("空间技能")),
+                    ),
+                )
+                .child(self.record_page(cx))
+                .into_any_element(),
             Page::Chats => root
                 .child(self.chat_invitations(cx))
                 .child(self.chat_list_page(cx))
@@ -374,7 +405,7 @@ impl Workbench {
         }
         list
     }
-    fn pill(
+    pub(crate) fn pill(
         &self,
         id: String,
         label: &str,
@@ -903,7 +934,11 @@ impl Workbench {
             .w_full()
             .gap(px(5.))
             .child(icon("circle-dot", 12.).text_color(rgb(GREEN)))
-            .child(text(label_value("type", r.field("type")), 11., MUTED));
+            .child(text(label_value("type", r.field("type")), 11., MUTED))
+            .when(
+                r.fields.get("awaiting_review") == Some(&Value::Bool(true)),
+                |b| b.child(text("待审阅", 11., VIOLET)),
+            );
         if !r.field("due_date").is_empty() {
             bottom = bottom
                 .child(icon("calendar-days", 12.).text_color(rgb(MUTED)))
@@ -990,6 +1025,10 @@ impl Workbench {
                 .border_color(rgb(LINE))
                 .child(text(r.code(), 11., DIM).w(px(85.)).truncate())
                 .child(text(r.title.clone(), 13., INK).flex_1().truncate())
+                .when(
+                    r.fields.get("awaiting_review") == Some(&Value::Bool(true)),
+                    |b| b.child(text("待审阅", 11., VIOLET)),
+                )
                 .child(text(label_value("status", r.field("status")), 12., MUTED).w(px(78.)));
             if table {
                 b = b.child(
@@ -1570,76 +1609,6 @@ impl Workbench {
                     }),
             )
     }
-    fn market_page(&self, cx: &Context<Self>) -> AnyElement {
-        let agents = self.loc.section == "agents";
-        let kind = if agents { "agent" } else { "skill" };
-        let mut page = col()
-            .id("market-list")
-            .w_full()
-            .min_h_0()
-            .flex_1()
-            .overflow_y_scroll()
-            .p(px(18.))
-            .gap(px(12.))
-            .child(
-                row()
-                    .gap(px(5.))
-                    .child(self.pill(
-                        "market-skills".into(),
-                        "技能",
-                        UiAction::Section(String::new()),
-                        !agents,
-                        cx,
-                    ))
-                    .child(self.pill(
-                        "market-agents".into(),
-                        "Agent 模板",
-                        UiAction::Section("agents".into()),
-                        agents,
-                        cx,
-                    )),
-            );
-        for t in self.list("catalog").iter().filter(|t| t.kind == kind) {
-            let installed = self
-                .list(kind)
-                .iter()
-                .any(|r| r.field("template_id") == t.id);
-            let cmd = json!({"op":"catalog.install","id":t.id});
-            page = page.child(
-                row()
-                    .w_full()
-                    .p(px(13.))
-                    .gap(px(12.))
-                    .border_1()
-                    .border_color(rgb(LINE))
-                    .bg(white())
-                    .rounded(px(9.))
-                    .child(icon(if agents { "bot" } else { "blocks" }, 22.).text_color(rgb(VIOLET)))
-                    .child(
-                        col()
-                            .flex_1()
-                            .min_w_0()
-                            .child(headline(t.title.clone(), 14.))
-                            .child(text(t.description.clone(), 12., MUTED)),
-                    )
-                    .child(
-                        outlined(self.button(
-                            format!("install-{}", t.id),
-                            "添加到空间",
-                            UiAction::Apply(cmd, "已添加到空间".into()),
-                            cx,
-                        ))
-                        .disabled(installed || !self.writable())
-                        .child(if installed {
-                            "已添加"
-                        } else {
-                            "添加到空间"
-                        }),
-                    ),
-            );
-        }
-        page.into_any_element()
-    }
     pub fn detail(&self, w: &Window, cx: &Context<Self>) -> AnyElement {
         let Some(r) = self.loc.selected.as_ref() else {
             return div().into_any_element();
@@ -1678,6 +1647,16 @@ impl Workbench {
             "automation" => r.field("instruction"),
             _ => r.field("description"),
         };
+        if matches!(r.kind.as_str(), "document" | "task" | "chat") {
+            body = body.child(self.conversation_controls(
+                r,
+                f32::from(w.viewport_size().width) >= 900.,
+                cx,
+            ));
+        }
+        if matches!(r.kind.as_str(), "document" | "task" | "comment") {
+            body = body.child(self.document_embeds_panel(r, cx));
+        }
         if !long.is_empty() {
             body = body.child(text(long.to_owned(), 14., INK));
         }
@@ -2104,6 +2083,84 @@ impl Workbench {
                         "imports.history",
                         "imports.rollback",
                     ]
+                } else if matches!(r.field("provider"), "linear" | "clickup" | "ones") {
+                    match (r.field("provider"), r.field("cloud_auth")) {
+                        ("linear", "oauth") => &[
+                            "linear.authorize",
+                            "linear.accounts",
+                            "linear.credential",
+                            "linear.projects",
+                            "linear.preview",
+                            "imports.commit",
+                            "imports.synchronize",
+                            "imports.sync_control",
+                            "imports.history",
+                            "imports.rollback",
+                            "imports.push",
+                            "imports.push_history",
+                            "provider.preview",
+                            "provider.ingest",
+                            "connector.ingest",
+                            "connector.export",
+                        ],
+                        ("linear", _) => &[
+                            "linear.accounts",
+                            "linear.credential",
+                            "linear.projects",
+                            "linear.preview",
+                            "imports.commit",
+                            "imports.synchronize",
+                            "imports.sync_control",
+                            "imports.history",
+                            "imports.rollback",
+                            "imports.push",
+                            "imports.push_history",
+                            "provider.preview",
+                            "provider.ingest",
+                            "connector.ingest",
+                            "connector.export",
+                        ],
+                        ("clickup", "oauth") => &[
+                            "clickup.authorize",
+                            "clickup.accounts",
+                            "clickup.credential",
+                            "clickup.projects",
+                            "clickup.preview",
+                            "imports.commit",
+                            "imports.synchronize",
+                            "imports.sync_control",
+                            "imports.history",
+                            "imports.rollback",
+                            "imports.push",
+                            "imports.push_history",
+                        ],
+                        ("clickup", _) => &[
+                            "clickup.accounts",
+                            "clickup.credential",
+                            "clickup.projects",
+                            "clickup.preview",
+                            "imports.commit",
+                            "imports.synchronize",
+                            "imports.sync_control",
+                            "imports.history",
+                            "imports.rollback",
+                            "imports.push",
+                            "imports.push_history",
+                        ],
+                        _ => &[
+                            "ones.accounts",
+                            "ones.credential",
+                            "ones.projects",
+                            "ones.preview",
+                            "imports.commit",
+                            "imports.synchronize",
+                            "imports.sync_control",
+                            "imports.history",
+                            "imports.rollback",
+                            "imports.push",
+                            "imports.push_history",
+                        ],
+                    }
                 } else if matches!(r.field("provider"), "zentao" | "pingcode") {
                     if r.field("provider") == "zentao" {
                         &[

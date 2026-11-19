@@ -206,6 +206,11 @@ impl Context<'_> {
         if let Some(view) = existing.filter(|r| r.kind == "view") {
             crate::saved_views::can_edit(self, view)?;
         }
+        if let Some(skill) = existing.filter(|r| r.kind == "skill")
+            && skill.fields["creator"].as_str().unwrap_or("owner") != self.actor
+        {
+            self.require_admin()?;
+        }
         if kind == "space" {
             return match self.metadata_role()?.as_str() {
                 "owner" | "admin" => Ok(()),
@@ -249,6 +254,9 @@ impl Context<'_> {
     }
     pub(crate) fn authorize_replay(&self, q: &Value, result: &Value) -> Result<()> {
         let op = required(q, "op")?;
+        if crate::conversation_tools::handles(op) {
+            return crate::conversation_tools::replay(self, op, q, result);
+        }
         if crate::agents::handles(op) {
             return crate::agents::replay(self, q, result);
         }

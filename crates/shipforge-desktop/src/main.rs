@@ -72,7 +72,9 @@ fn main() {
                 .filter(|s| {
                     shipforge_core::view_link_parts(s).is_ok()
                         || shipforge_core::task_link_parts(s).is_ok()
+                        || shipforge_core::document_link_parts(s).is_ok()
                         || shipforge_core::inbox_link_parts(s).is_ok()
+                        || shipforge_client::identity_link_id(s).is_some()
                         || s.strip_prefix("shipforge://invite/").is_some_and(|body| {
                             body.len() == 80
                                 && body.bytes().all(|b| {
@@ -142,10 +144,14 @@ fn main() {
                     if let Some(link) = invitation.clone() {
                         if link.starts_with("shipforge://view/") {
                             workbench.open_view_link(link);
+                        } else if link.starts_with("shipforge://document/") {
+                            workbench.open_document_link(link);
                         } else if link.starts_with("shipforge://task/") {
                             workbench.open_task_link(link);
                         } else if link.starts_with("shipforge://inbox/") {
                             workbench.inbox.initial_link = Some(link);
+                        } else if let Some(id) = shipforge_client::identity_link_id(&link) {
+                            workbench.open_identity_link(id);
                         } else {
                             workbench.open_invitation(link, window, cx);
                         }

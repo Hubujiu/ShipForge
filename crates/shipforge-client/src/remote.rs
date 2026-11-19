@@ -136,6 +136,15 @@ impl Remote {
             let base = self.command_url.trim_end_matches("/v1/command");
             data["link"] = json!(format!("{base}/share/{key}"));
         }
+        if body["op"] == "document.share"
+            && let Some(path) = data["path"].as_str()
+        {
+            data["http_url"] = json!(format!(
+                "{}{}",
+                self.command_url.trim_end_matches("/v1/command"),
+                path
+            ));
+        }
         Ok(data)
     }
 
@@ -167,6 +176,7 @@ impl Remote {
                 request["kind"].as_str(),
                 Some(
                     "chat"
+                        | "document"
                         | "message"
                         | "notification"
                         | "artifact"
@@ -175,6 +185,7 @@ impl Remote {
                         | "comment"
                         | "agent"
                         | "crew"
+                        | "skill"
                 )
             ) || (op == "search" && request["kind"].as_str().is_none()));
         let cacheable = !needs_live_access
@@ -188,7 +199,6 @@ impl Remote {
                     | "search"
                     | "space.list"
                     | "space.navigation"
-                    | "document.history"
             );
         if queue && request.get("request_id").is_none() {
             request["request_id"] = json!(Uuid::new_v4().to_string());

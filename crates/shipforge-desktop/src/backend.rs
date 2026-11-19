@@ -230,7 +230,7 @@ impl Backend {
                             {
                                 command["queue_if_offline"] = json!(true);
                             }
-                            let profile_change=matches!(command["op"].as_str(),Some("profiles.use"|"profiles.forget"));
+                            let profile_change=matches!(command["op"].as_str(),Some("profiles.use"|"profiles.forget"|"profiles.login.finish"|"profiles.logout"|"profiles.close.finish"));
                             let result = execute(&mut client, command);
                             if profile_change && result.is_ok(){let _=events.send(Event::Ready(report(&mut client)));}
                             if events.send(Event::Reply { ticket, result }).is_err() {

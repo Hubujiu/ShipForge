@@ -1,5 +1,6 @@
 mod auth;
 mod bugly;
+mod conversation_http;
 mod github;
 mod jira;
 mod slack;
@@ -171,6 +172,14 @@ fn serve(
             let bugly_origin = &bugly_origin;
             scope.spawn(move||{
                 for mut request in server.incoming_requests() {
+                    if conversation_http::matches(request.url()) {
+                        conversation_http::respond(request, &auth, &mut store);
+                        continue;
+                    }
+                    if request.url().starts_with("/identity/") || request.url().starts_with("/v1/identity/") {
+                        auth::identity::respond(request,&auth,&mut store);
+                        continue;
+                    }
                     if request.url().starts_with("/v1/bugly/") {
                         bugly::respond(request, &auth, &mut store, bugly_origin);
                         continue;

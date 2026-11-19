@@ -209,6 +209,7 @@ pub(crate) fn visible_records(c: &Context<'_>, kind: &str) -> Result<Vec<Record>
         if c.visible(&row)? {
             if kind == "task" {
                 row.fields["following"] = json!(followed.contains(&row.id));
+                crate::conversation_tools::reviews::decorate(c, &mut row)?;
             }
             if kind == "notification"
                 && row.fields["state"] == "snoozed"

@@ -485,6 +485,14 @@ impl Workbench {
         }
         if r.kind == "agent" {
             let is_variant = !settings.field("parent_id").is_empty();
+            if manage && !is_variant {
+                panel = panel.child(self.directory_button(
+                    "agent-add-skill".into(),
+                    "添加技能",
+                    UiAction::Form(Mode::Library(super::market_ui::LibraryForm::Add)),
+                    cx,
+                ));
+            }
             if is_variant && manage {
                 panel = panel.child(self.directory_button(
                     "variant-override".into(),
@@ -517,6 +525,17 @@ impl Workbench {
                 }
             }
         } else {
+            let shared = settings.fields.get("share_task_directory") == Some(&Value::Bool(true));
+            let label = if shared {
+                "关闭同机共享任务目录"
+            } else {
+                "开启同机共享任务目录"
+            };
+            if manage {
+                panel = panel.child(self.directory_button("crew-workspace".into(), label, UiAction::Apply(
+                    json!({"op":"update","kind":"crew","space":r.space,"id":r.id,"expected_rev":settings.rev,"fields":{"share_task_directory":!shared}}),
+                    "已更新小队目录设置".into()), cx));
+            }
             for member in info
                 .and_then(|v| v.get("members"))
                 .and_then(Value::as_array)

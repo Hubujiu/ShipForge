@@ -15,6 +15,7 @@ struct Host {
     dir: PathBuf,
     key: String,
 }
+mod skills;
 struct ProgressFile(PathBuf);
 impl ProgressFile {
     fn new(dir: &Path) -> Result<Self> {
@@ -70,7 +71,16 @@ impl Host {
             .filter(|(_, spec)| program_path(&spec.program).is_ok())
             .map(|(name, _)| name)
             .collect::<Vec<_>>();
-        self.call(client,json!({"op":"machine.register","title":self.cfg.name,"shared":self.cfg.shared,"capacity":self.cfg.capacity,"runtimes":enabled}))?;
+        let commands = enabled
+            .iter()
+            .filter_map(|name| {
+                self.cfg.runtimes[*name]
+                    .slash_commands
+                    .as_ref()
+                    .map(|items| ((*name).clone(), items))
+            })
+            .collect::<std::collections::BTreeMap<_, _>>();
+        self.call(client,json!({"op":"machine.register","title":self.cfg.name,"shared":self.cfg.shared,"capacity":self.cfg.capacity,"runtimes":enabled,"slash_commands":commands}))?;
         Ok(())
     }
     fn spool(&self, request: &Value) -> Result<PathBuf> {
@@ -258,6 +268,12 @@ pub fn run(file: &Path, once: bool) -> Result<Value> {
                     return Err(error);
                 }
                 eprintln!("automation tick: {error}");
+            }
+            if let Err(error) = skills::poll(&host, &mut client) {
+                if once {
+                    return Err(error);
+                }
+                eprintln!("skill discovery: {error}");
             }
             last_ping = Instant::now();
         }

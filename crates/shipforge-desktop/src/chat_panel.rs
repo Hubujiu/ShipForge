@@ -312,6 +312,13 @@ impl Workbench {
                         .gap(px(6.))
                         .child(text(format!("{scope} · {count} 条消息"), 12., MUTED))
                         .child(read)
+                        .child(button(
+                            &format!("png-{key}"),
+                            "保存分享图片",
+                            UiAction::Form(Mode::Conversation(
+                                crate::app::conversation_ui::CommandForm::Image(key.into()),
+                            )),
+                        ))
                         .child(revoke),
                 );
             }

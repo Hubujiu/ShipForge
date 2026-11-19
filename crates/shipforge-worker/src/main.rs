@@ -85,7 +85,7 @@ enum Action {
         #[arg(long)]
         watch: bool,
     },
-    /// Pull an incremental batch from a ZenTao or PingCode connector on this machine.
+    /// Pull an incremental batch from a configured project or List tracker on this machine.
     TrackerSync {
         #[arg(long, default_value = "default")]
         space: String,
@@ -201,6 +201,10 @@ fn execute() -> Result<serde_json::Value> {
                 if !watch {
                     return result;
                 }
+                let signal = result
+                    .as_ref()
+                    .ok()
+                    .and_then(|data| data["signal_revision"].as_i64());
                 match result {
                     Ok(data) => println!(
                         "{}",
@@ -208,7 +212,7 @@ fn execute() -> Result<serde_json::Value> {
                     ),
                     Err(error) => eprintln!("{error}"),
                 }
-                std::thread::sleep(std::time::Duration::from_secs(interval));
+                wait_for_tracker(&mut client, &space, &connector, interval, signal);
             }
         }
         Action::GithubSync {
@@ -245,6 +249,35 @@ fn execute() -> Result<serde_json::Value> {
         }
     }
 }
+fn wait_for_tracker(
+    client: &mut Client,
+    space: &str,
+    connector: &str,
+    interval: u64,
+    signal: Option<i64>,
+) {
+    use std::time::{Duration, Instant};
+    let deadline = Instant::now() + Duration::from_secs(interval);
+    while let Some(remaining) = deadline.checked_duration_since(Instant::now()) {
+        let Some(seen) = signal else {
+            std::thread::sleep(remaining);
+            return;
+        };
+        std::thread::sleep(remaining.min(Duration::from_secs(5)));
+        if Instant::now() >= deadline {
+            return;
+        }
+        if let Ok(binding) =
+            client.execute(json!({"op":"imports.binding","space":space,"id":connector}))
+            && binding["signal_revision"]
+                .as_i64()
+                .is_some_and(|latest| latest > seen)
+        {
+            return;
+        }
+    }
+}
+
 fn main() {
     match execute() {
         Ok(result) => println!("{result}"),
