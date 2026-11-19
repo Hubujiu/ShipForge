@@ -43,6 +43,15 @@ impl Render for DraggedTask {
 impl Workbench {
     pub fn page_body(&mut self, w: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         let p = self.loc.page;
+        if p == Page::Inbox {
+            return self.inbox_page(cx).into_any_element();
+        }
+        if p == Page::Settings && self.loc.section == "notifications" {
+            return self.notification_settings(cx).into_any_element();
+        }
+        if matches!(p, Page::Agents | Page::Crews) {
+            return self.agent_directory_page(cx).into_any_element();
+        }
         if p == Page::GettingStarted {
             return self.guide_page(f32::from(w.viewport_size().width), cx);
         }
@@ -285,7 +294,8 @@ impl Workbench {
             page if self.module_disabled(page) => {
                 root.child(self.space_module_page(cx)).into_any_element()
             }
-            Page::Tasks | Page::Mine | Page::Triage | Page::Dashboard => root
+            Page::Triage => root.child(self.review_page(cx)).into_any_element(),
+            Page::Tasks | Page::Mine | Page::Dashboard => root
                 .child(self.task_page(f32::from(w.viewport_size().width), cx))
                 .into_any_element(),
             Page::Settings => root.child(self.settings_page(cx)).into_any_element(),
@@ -1348,6 +1358,15 @@ impl Workbench {
                 13.,
                 MUTED,
             )));
+        page = page.child(
+            outlined(self.button(
+                "notification-settings",
+                "通知设置",
+                UiAction::Inbox(crate::app::inbox_ui::Action::Settings(None)),
+                cx,
+            ))
+            .child(crate::locale::label("通知设置")),
+        );
         if self.mode != "demo" {
             page = page.child(
                 row()
@@ -1663,6 +1682,12 @@ impl Workbench {
             body = body.child(text(long.to_owned(), 14., INK));
         }
         let can_edit = self.writable()
+            && (!matches!(r.kind.as_str(), "agent" | "crew")
+                || self.list("agent_settings").iter().any(|v| {
+                    v.id == r.id
+                        && v.fields["record"]["fields"]["can_manage"] == true
+                        && !v.fields["record"]["fields"]["parent_id"].is_string()
+                }))
             && !matches!(
                 r.kind.as_str(),
                 "run" | "notification" | "machine" | "artifact"
@@ -1688,12 +1713,42 @@ impl Workbench {
         }
         match r.kind.as_str() {
             "task" => {
+                actions = actions
+                    .child(
+                        outlined(self.button(
+                            "share-task-link",
+                            "复制任务链接",
+                            UiAction::Review(crate::app::review_ui::Action::Share(r.id.clone())),
+                            cx,
+                        ))
+                        .child("复制任务链接"),
+                    )
+                    .child(
+                        outlined(self.button(
+                            "open-task-link",
+                            "打开任务链接",
+                            UiAction::Form(Mode::Review(
+                                crate::app::review_ui::ReviewForm::OpenTask,
+                            )),
+                            cx,
+                        ))
+                        .child("打开任务链接"),
+                    );
                 let following = r.fields.get("following") == Some(&Value::Bool(true));
                 let (label, glyph) = if following {
                     ("取消关注", "bell-off")
                 } else {
                     ("关注", "bell")
                 };
+                actions = actions.child(
+                    outlined(self.button(
+                        "task-followers",
+                        "更改关注者",
+                        UiAction::Inbox(crate::app::inbox_ui::Action::Followers(r.clone())),
+                        cx,
+                    ))
+                    .child(crate::locale::label("更改关注者")),
+                );
                 actions = actions.when(!self.current_archived(), |a| {
                     a.child(
                         outlined(self.button(
@@ -1719,6 +1774,19 @@ impl Workbench {
                         ))
                         .child(icon("messages-square", 13.))
                         .child(crate::locale::label("评论")),
+                    );
+                }
+                if self.writable() {
+                    actions = actions.child(
+                        outlined(self.button(
+                            "task-mention-agent",
+                            "在评论中提及 Agent",
+                            UiAction::Form(Mode::Directory(
+                                crate::app::agent_directory::DirectoryForm::Mention(r.clone()),
+                            )),
+                            cx,
+                        ))
+                        .child(crate::locale::label("在评论中提及 Agent")),
                     );
                 }
                 body = body.child(actions);
@@ -1911,6 +1979,14 @@ impl Workbench {
                     }
                 }
             }
+            "customer_request" => {
+                if matches!(self.role.as_str(), "owner" | "admin" | "member" | "editor")
+                    && !self.current_archived()
+                {
+                    actions=actions.child(outlined(self.button("convert-request","转为任务",UiAction::Form(Mode::Confirm{label:"将此客户请求转换为任务".into(),command:json!({"op":"customer_request.convert","space":r.space,"id":r.id,"expected_rev":r.rev})}),cx)).child("转为任务"));
+                }
+                body = body.child(actions).child(self.attributes(r));
+            }
             "iteration" | "project" => {
                 if r.kind == "iteration"
                     && !matches!(r.field("status"), "closed" | "cancelled" | "active")
@@ -1950,10 +2026,11 @@ impl Workbench {
                         .child(crate::locale::label("结束迭代")),
                     );
                 }
-                body = body
-                    .child(actions)
-                    .child(self.attributes(r))
-                    .child(headline("关联任务", 14.));
+                body = body.child(actions).child(self.attributes(r));
+                if r.kind == "project" {
+                    body = body.child(self.project_chart(r, cx));
+                }
+                body = body.child(headline("关联任务", 14.));
                 for t in self
                     .list("task")
                     .iter()
@@ -1962,7 +2039,7 @@ impl Workbench {
                     body = body.child(self.related_row(t, cx));
                 }
             }
-            "agent" => {
+            "agent" | "crew" => {
                 actions = actions.child(
                     outlined(self.button(
                         "agent-runs",
@@ -1974,11 +2051,7 @@ impl Workbench {
                     .child(crate::locale::label("运行历史")),
                 );
                 body = body.child(actions);
-                if self.drawer_tab == "runs" {
-                    body = self.related_runs(body, r, cx);
-                } else {
-                    body = body.child(self.attributes(r));
-                }
+                body = body.child(self.handler_panel(r, cx));
             }
             "automation" => {
                 if self.writable() {
@@ -2031,6 +2104,32 @@ impl Workbench {
                         "imports.history",
                         "imports.rollback",
                     ]
+                } else if matches!(r.field("provider"), "zentao" | "pingcode") {
+                    if r.field("provider") == "zentao" {
+                        &[
+                            "zentao.credential",
+                            "zentao.projects",
+                            "zentao.preview",
+                            "imports.commit",
+                            "imports.synchronize",
+                            "imports.history",
+                            "imports.rollback",
+                            "imports.push",
+                            "imports.push_history",
+                        ]
+                    } else {
+                        &[
+                            "pingcode.credential",
+                            "pingcode.projects",
+                            "pingcode.preview",
+                            "imports.commit",
+                            "imports.synchronize",
+                            "imports.history",
+                            "imports.rollback",
+                            "imports.push",
+                            "imports.push_history",
+                        ]
+                    }
                 } else if r.field("provider") == "tapd" {
                     &[
                         "tapd.credential",
@@ -2342,33 +2441,12 @@ impl Workbench {
         }
         if self.writable() {
             let mut actions = row().flex_wrap().pt(px(8.)).gap(px(4.));
-            if r.field("status") == "triage" {
-                actions = actions.child(
-                    outlined(self.button(
-                        "triage-duplicate",
-                        "标记重复",
-                        UiAction::Form(Mode::Workflow {
-                            op: "triage",
-                            record: r.clone(),
-                        }),
-                        cx,
-                    ))
-                    .child(crate::locale::label("标记重复")),
-                );
-                for (d, l) in [("accept", "接收"), ("defer", "延后"), ("reject", "拒绝")] {
-                    actions = actions.child(
-                        outlined(self.button(
-                            format!("triage-{d}"),
-                            l,
-                            UiAction::Apply(
-                                json!({"op":"triage","id":r.id,"decision":d,"expected_rev":r.rev}),
-                                "已分拣".into(),
-                            ),
-                            cx,
-                        ))
-                        .child(l),
-                    );
-                }
+            if r.field("status") == "triage"
+                || self
+                    .find("status", r.field("status"))
+                    .is_some_and(|s| s.field("category") == "triage")
+            {
+                actions = actions.child(self.review_actions(r, cx));
             } else {
                 for (status, label) in [
                     ("todo", "待开始"),

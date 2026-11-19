@@ -78,7 +78,7 @@ pub enum Response {
     Preview(Value),
     Shared,
     Opened,
-    Located,
+    Located { inbox: bool },
 }
 
 pub(crate) fn retain_other_filters(view: &Record, fields: &mut Map<String, Value>) {
@@ -142,6 +142,8 @@ impl Workbench {
                 let format = match field.field("value_type") {
                     "number" => Format::Decimal,
                     "boolean" => Format::Bool,
+                    "member" => Format::Ref("member"),
+                    "members" => Format::Many("member"),
                     "select" => Format::Choice(&[]),
                     _ => Format::Text,
                 };
@@ -232,7 +234,9 @@ impl Workbench {
             }
             Action::Locate { task, comment } => self.send(
                 json!({"op":"comment.thread","space":self.loc.space,"task_id":task,"id":comment}),
-                After::Work(Response::Located),
+                After::Work(Response::Located {
+                    inbox: self.loc.page == crate::catalog::Page::Inbox,
+                }),
                 false,
             ),
             Action::ShowViews => self.open_form(Mode::Work(WorkForm::Views), w, cx),
@@ -378,10 +382,20 @@ impl Workbench {
                         serde_json::from_value(v["tasks"].clone()).unwrap_or_default();
                 }
             }
-            Response::Located => {
+            Response::Located { inbox } => {
                 if let Ok(task) = serde_json::from_value::<Record>(v["task"].clone()) {
+                    if inbox
+                        && (self.loc.page != crate::catalog::Page::Inbox
+                            || self.loc.selected.as_ref().is_none_or(|r| {
+                                r.kind != "task" || r.id != task.id || r.space != task.space
+                            }))
+                    {
+                        return;
+                    }
                     self.close_form(w, cx);
-                    self.open(task, true);
+                    if !inbox {
+                        self.open(task, true);
+                    }
                     if let (Some(root), Some(id)) =
                         (v["root"]["id"].as_str(), v["selected"].as_str())
                     {
@@ -672,7 +686,19 @@ impl Workbench {
                     if self.writable() {
                         let btn=row().child(self.button(format!("reply-comment-{}",r.id),"回复",UiAction::Form(Mode::Work(WorkForm::Reply{task:task.id.clone(),parent:r.id.clone()})),cx).child("回复"))
                           .child(self.button(format!("mark-comment-{}",r.id),if marked{"重新打开"}else{"用此评论解决"},UiAction::Apply(json!({"op":if marked{"comment.reopen"}else{"comment.resolve"},"id":r.id,"task_id":task.id,"expected_rev":root.rev}),"讨论已更新".into()),cx).child(if marked{"重新打开"}else{"用此评论解决"}));
-                        line = line.child(btn);
+                        line = line.child(
+                            btn.child(
+                                self.button(
+                                    format!("react-comment-{}", r.id),
+                                    "表情回应",
+                                    UiAction::Inbox(crate::app::inbox_ui::Action::Reactions(
+                                        r.clone(),
+                                    )),
+                                    cx,
+                                )
+                                .child(crate::locale::label("表情回应")),
+                            ),
+                        );
                     }
                     discussion = discussion.child(line);
                     if let Some(replies) = children.remove(r.id.as_str()) {

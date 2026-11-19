@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS space_defaults(space TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS personal_preferences(actor TEXT PRIMARY KEY, rev INTEGER NOT NULL, settings TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS discussion_calls(space TEXT NOT NULL,run TEXT NOT NULL,call_id TEXT NOT NULL,payload BLOB NOT NULL,comment TEXT NOT NULL,PRIMARY KEY(space,run,call_id));
 CREATE TABLE IF NOT EXISTS discussion_authors(space TEXT NOT NULL,comment TEXT NOT NULL,agent TEXT NOT NULL,PRIMARY KEY(space,comment));
+CREATE TABLE IF NOT EXISTS comment_reactions(space TEXT NOT NULL,comment TEXT NOT NULL,actor TEXT NOT NULL,emoji TEXT NOT NULL,PRIMARY KEY(space,comment,actor,emoji));
+CREATE TRIGGER IF NOT EXISTS remove_comment_reactions AFTER DELETE ON records WHEN OLD.kind='comment' BEGIN DELETE FROM comment_reactions WHERE space=OLD.space AND comment=OLD.id; END;
 CREATE TABLE IF NOT EXISTS task_conversations(space TEXT NOT NULL, actor TEXT NOT NULL, task TEXT NOT NULL, kind TEXT NOT NULL, handler TEXT NOT NULL, chat TEXT NOT NULL, PRIMARY KEY(space,actor,task,kind,handler));
 CREATE TABLE IF NOT EXISTS attachments(space TEXT NOT NULL,id TEXT NOT NULL,content BLOB NOT NULL,PRIMARY KEY(space,id));
 CREATE TABLE IF NOT EXISTS followers(space TEXT NOT NULL,task TEXT NOT NULL,actor TEXT NOT NULL,PRIMARY KEY(space,task,actor));
@@ -46,6 +48,8 @@ pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
     tx.execute_batch(V1).map_err(storage)?;
     crate::spaces::init(&tx)?;
     crate::saved_views::init(&tx)?;
+    crate::inbox::init(&tx)?;
+    crate::triage::init(&tx)?;
     tx.pragma_update(None, "application_id", APP_ID)
         .map_err(storage)?;
     tx.pragma_update(None, "user_version", 1).map_err(storage)?;
@@ -134,6 +138,13 @@ fn from_row(r: &Row<'_>) -> rusqlite::Result<Record> {
 }
 
 impl Context<'_> {
+    pub(crate) fn own_notifications(&self) -> Result<Vec<Record>> {
+        let mut stmt=self.db.prepare(&format!("SELECT {COLUMNS} FROM records WHERE space=?1 AND kind='notification' AND json_extract(fields,'$.recipient')=?2 ORDER BY updated_at DESC,id")).map_err(storage)?;
+        stmt.query_map(params![self.space, self.actor], from_row)
+            .map_err(storage)?
+            .collect::<rusqlite::Result<_>>()
+            .map_err(storage)
+    }
     pub(crate) fn find(&self, kind: &str, id: &str) -> Result<Option<Record>> {
         self.db
             .query_row(
@@ -289,6 +300,7 @@ impl Context<'_> {
         let mut tombstone = old.clone();
         if old.kind == "member" {
             crate::chat::forget_grants(self, &old.id)?;
+            crate::agents::forget(self, &old.id)?;
         }
         tombstone.rev += 1;
         tombstone.updated_at = now();

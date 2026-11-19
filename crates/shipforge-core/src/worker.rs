@@ -176,6 +176,7 @@ fn sql_init(db: &Connection) -> Result<()> {
 }
 pub(crate) fn init(db: &Connection) -> Result<()> {
     sql_init(db)?;
+    crate::agents::init(db)?;
     automation::init(db)
 }
 
@@ -230,12 +231,15 @@ pub(crate) fn dispatch(c: &Context<'_>, q: &Value) -> Option<Result<Value>> {
     })())
 }
 
-pub(crate) fn validate(c: &Context<'_>, _before: Option<&Record>, item: &Record) -> Result<()> {
+pub(crate) fn validate(c: &Context<'_>, before: Option<&Record>, item: &Record) -> Result<()> {
     let fields = &item.fields;
+    crate::agents::validate(c, before, item)?;
     match item.kind.as_str() {
         "run" | "machine" => Err("managed record; use an execution or machine operation".into()),
         "agent" => {
-            if let Some(parent) = fields["parent_id"].as_str() {
+            if let Some(parent) = fields["parent_id"].as_str()
+                && fields["parent_space"].is_null()
+            {
                 let mut next = parent.to_owned();
                 let mut seen = HashSet::from([item.id.clone()]);
                 while !next.is_empty() {
@@ -265,6 +269,7 @@ pub(crate) fn validate(c: &Context<'_>, _before: Option<&Record>, item: &Record)
             working_hours::WorkingHours::parse(&fields["working_hours"])?;
             for key in ["max_parallel", "chat_parallel"] {
                 if let Some(n) = fields.get(key)
+                    && !n.is_null()
                     && n.as_u64().filter(|n| (1..=64).contains(n)).is_none()
                 {
                     return Err(format!("invalid {key}"));
@@ -297,6 +302,7 @@ pub(crate) fn allow_delete(c: &Context<'_>, r: &Record) -> Result<()> {
             Err("cancel active runs before deleting their source".into())
         }
         "agent" | "crew" => {
+            if r.kind=="agent" && c.db.query_row("SELECT EXISTS(SELECT 1 FROM records WHERE kind='agent' AND json_extract(fields,'$.parent_space')=? AND json_extract(fields,'$.parent_id')=?)",params![c.space,r.id],|row|row.get::<_,bool>(0)).map_err(db_error)?{return Err(crate::conflict("remove cross-space variants before deleting their original Agent"));}
             let used = c
                 .records("task")?
                 .iter()
@@ -346,45 +352,7 @@ pub(crate) fn allow_delete(c: &Context<'_>, r: &Record) -> Result<()> {
 }
 
 fn resolved(c: &Context<'_>, id: &str) -> Result<Value> {
-    let mut chain = Vec::new();
-    let mut seen = HashSet::new();
-    let mut cursor = id.to_owned();
-    while !cursor.is_empty() {
-        if !seen.insert(cursor.clone()) || seen.len() > 32 {
-            return Err("cyclic or overly deep inheritance".into());
-        }
-        let item = read(c, "agent", &cursor)?;
-        cursor = item.fields["parent_id"]
-            .as_str()
-            .unwrap_or_default()
-            .to_owned();
-        chain.push(item);
-    }
-    let mut value = json!({"runtime":"local-tool","directory_mode":"isolated","skills":[],"tools":[],"instructions":"","max_parallel":1,"chat_parallel":1});
-    for item in chain.iter().rev() {
-        if item.fields["visibility"] == "private" {
-            value["private_source"] = json!(true);
-        }
-        for key in [
-            "runtime",
-            "directory_mode",
-            "skills",
-            "tools",
-            "instructions",
-            "working_hours",
-            "max_parallel",
-            "chat_parallel",
-            "machine_id",
-            "profile",
-            "model",
-            "timeout_seconds",
-        ] {
-            if let Some(v) = item.fields.get(key).filter(|v| !v.is_null()) {
-                value[key] = v.clone();
-            }
-        }
-    }
-    Ok(value)
+    crate::agents::effective(c, id)
 }
 
 fn snapshot(c: &Context<'_>, handler: &str, kind: &str) -> Result<Value> {
@@ -409,14 +377,13 @@ fn snapshot(c: &Context<'_>, handler: &str, kind: &str) -> Result<Value> {
         let mut entries = Vec::new();
         let mut private = false;
         for id in array_ids(&data[field])? {
-            let item = read(c, target, id)?;
+            let item = crate::agents::resource(c, &data, field, target, id)?;
             private |= item.fields["visibility"] == "private";
             if target == "tool"
                 && let Some(doc) = item.fields["document"].as_str()
             {
-                private |= c
-                    .find("document", doc)?
-                    .is_some_and(|doc| doc.fields["visibility"] == "private");
+                private |= crate::agents::resource(c, &data, field, "document", doc)?.fields["visibility"]
+                    == "private";
             }
             let entry = if target == "skill" {
                 json!({"id":id,"title":item.title,"rev":item.rev,"instructions":item.fields["instructions"]})
@@ -452,6 +419,7 @@ pub(crate) fn enqueue(
     {
         return read(c, "run", &id);
     }
+    crate::agents::usable(c, kind, handler, fields["parent_id"].as_str())?;
     let config = snapshot(c, handler, kind)?;
     let handler_record = read(c, kind, handler)?;
     if handler_record.fields["visibility"] == "private"
@@ -542,6 +510,9 @@ fn manual_enqueue(c: &Context<'_>, q: &Value) -> Result<Value> {
         .as_str()
         .map(|id| read(c, "chat", id))
         .transpose()?;
+    if let Some(room) = &chat {
+        crate::agents::chat_available(c, room)?;
+    }
     if chat
         .as_ref()
         .is_some_and(|r| r.fields["visibility"] == "private")
@@ -568,6 +539,9 @@ fn manual_enqueue(c: &Context<'_>, q: &Value) -> Result<Value> {
     encoded(enqueue(c, &origin, handler, kind, &title, fields)?)
 }
 pub(crate) fn changed(c: &Context<'_>, before: Option<&Record>, item: &Record) -> Result<()> {
+    if item.kind == "comment" {
+        crate::agents::mentioned(c, before, item)?;
+    }
     if item.kind == "task" {
         let handler = item.fields["assignee"].as_str().unwrap_or_default();
         let kind = item.fields["assignee_kind"].as_str().unwrap_or("member");
@@ -590,7 +564,10 @@ pub(crate) fn changed(c: &Context<'_>, before: Option<&Record>, item: &Record) -
                 cancel(c, &r)?;
             }
         }
-        if eligible && (reassigned || !prior_ready) {
+        if eligible
+            && (reassigned || !prior_ready)
+            && crate::agents::usable(c, kind, handler, None).is_ok()
+        {
             enqueue(
                 c,
                 &format!("assignment:{}:{}", item.id, item.rev),
@@ -629,7 +606,7 @@ fn active(r: &Record) -> bool {
         Some("queued" | "running" | "cancelling" | "waiting" | "waiting_children")
     )
 }
-fn cancel(c: &Context<'_>, r: &Record) -> Result<Record> {
+pub(crate) fn cancel(c: &Context<'_>, r: &Record) -> Result<Record> {
     if !active(r) {
         return Ok(r.clone());
     }
@@ -661,6 +638,12 @@ fn cancel(c: &Context<'_>, r: &Record) -> Result<Record> {
 }
 fn retry(c: &Context<'_>, q: &Value) -> Result<Value> {
     let run = read(c, "run", req(q, "id")?)?;
+    crate::agents::usable(
+        c,
+        req(&run.fields, "handler_kind")?,
+        req(&run.fields, "handler_id")?,
+        run.fields["parent_id"].as_str(),
+    )?;
     if !matches!(
         run.fields["status"].as_str(),
         Some("failed" | "cancelled" | "interrupted")
@@ -891,7 +874,14 @@ fn claim(c: &Context<'_>, q: &Value) -> Result<Value> {
         return Ok(Value::Null);
     }
     for run in runs.iter().filter(|r| r.fields["status"] == "queued") {
+        if !crate::agents::requester_can_continue(c, run)? {
+            cancel(c, run)?;
+            continue;
+        }
         if !c.visible(run)? {
+            continue;
+        }
+        if !crate::agents::machine_eligible(c, &machine, run)? {
             continue;
         }
         let mut f = run.fields.clone();
@@ -1038,6 +1028,9 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
     let (run, expires, last) = lease_row(c, q)?;
     let at = now();
     let mut fingerprint = vec![&q["status"], &q["result"], &q["artifacts"], &q["delegates"]];
+    if let Some(usage) = q.get("usage").filter(|v| !v.is_null()) {
+        fingerprint.push(usage);
+    }
     if run.fields["chat_conversion"] == true {
         fingerprint.push(&q["task_draft"]);
     }
@@ -1060,7 +1053,9 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
         return Err("stale lease".into());
     }
     let private_result;
-    let q = if crate::chat::claim_still_visible(c, &run)? {
+    let q = if crate::chat::claim_still_visible(c, &run)?
+        && crate::agents::requester_can_continue(c, &run)?
+    {
         q
     } else {
         private_result =
@@ -1084,6 +1079,9 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
     } else {
         outcome
     });
+    if let Some(usage) = crate::agents::usage(q)? {
+        f["usage"] = usage;
+    }
     f["result"] = json!(text);
     if let Some(progress) = q.get("progress").filter(|v| !v.is_null()) {
         apply_progress(&mut f, progress, at)?;
@@ -1140,6 +1138,9 @@ fn report(c: &Context<'_>, q: &Value) -> Result<Value> {
     }
     let updated = c.update(&run, &run.title, f)?;
     record_artifacts(c, &updated, &q["artifacts"])?;
+    if updated.fields["status"] == "waiting" {
+        crate::inbox::task_run(c, &updated)?;
+    }
     c.db.execute(
         "UPDATE sf_run_leases SET response_hash=?,expires=? WHERE space=? AND run=?",
         params![body_digest, at, c.space, run.id],

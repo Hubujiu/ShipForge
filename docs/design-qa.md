@@ -1,5 +1,13 @@
 # Windows 原生界面验收
 
+## 禅道和 PingCode
+
+Windows x64 隐藏 D3D 窗口打开两个连接器详情，通过 UI Automation 核对不同平台的凭据、发现、预览、同步、回写和批次入口。分别打开密码及用户授权码表单，验证敏感输入控件，再将预览切换到「检查增量变更」。在 PingCode 原生窗口输入合成预览批次号并提交，独立数据库连接读到一条新任务。随后在窗口撤回该批，任务数恢复为零。单独的 HTTP 上游夹具覆盖三种 PingCode 身份与禅道认证、权限和真实发布请求。[原生窗口用例](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/tracker_ui_test.rs) · [HTTP 验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-trackers.py)
+
+## 收件箱与通知设置
+
+Windows x64 隐藏 D3D 窗口使用独立工作区，另一个合成身份发送指派和评论提及。通过 UI Automation 读取通知标题，打开对应任务及评论，再关闭详情，核对筛选仍停在「重要」。从同一窗口将提醒稍后处理并恢复，随后在桌面渠道关闭分配组、用第二个客户端读取该配置，恢复默认后确认覆盖项消失。另用真实团队服务和三个 CLI 账号验证到时自动返回、按空间清理以及移除成员后的即时权限。[原生窗口用例](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/inbox_ui_test.rs) · [服务端验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-inbox.py)
+
 在 Windows x64 上启动 ShipForge 的 GPUI 桌面程序，使用独立 SQLite 工作区核对了空间看板、任务详情和新建自动化。下表的三张图取自实际窗口，任务、文件和执行者均为验收用的虚构数据。参考客户端为 HiFox 0.4.538。[参考界面编号与原图说明](interfaces.md)
 
 ## 账号切换与个人令牌
@@ -60,3 +68,21 @@ final result: passed
 | 从分支搜索并绑定已有任务，再打开任务 | 可以从分支打开任务，再从任务详情回到分支。源对话维持独立。 |
 
 另以实际 CLI 和工作机启动外部 Python 合成运行时。进程分别读取源与分支的真实上下文，成功回传任务草稿并绑定原对话。重发相同请求只得到原运行和一个任务。另有核心用例占用运行租约，在同一对话提交转换，核对后一项等待先前工作完成。 [工作机验收脚本](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-chat-workflows.py) · [两个身份、租约与继承权限用例](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/chat_workflows.rs)
+
+## Windows Agent 目录、分身和小队
+
+在独立的 Windows x64 GPUI 窗口，UI Automation 读到了空间目录、设置页和历史按钮。合成工作区包含两个空间、两名 Agent、一支小队和一项已入队的工作。 [可重跑的原生窗口用例](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/agent_directory_ui_test.rs)
+
+| 操作 | 实际结果 |
+| --- | --- |
+| 从目录打开 Agent，再进入运行历史 | 目录可搜索、筛选，历史页有一项工作并能返回设置。 |
+| 归档后关闭详情，打开「已归档」，再恢复 | 原 Agent 从常用目录消失，在归档视图能打开并恢复使用。 |
+| 在设置中创建分身，从空间选择器选择第二个空间 | 窗口切到第二个空间，并打开新分身，可看到逐字段覆盖和恢复继承入口。 |
+| 将小队成员设为专属，再回 Agent 目录 | 小队详情出现「取消小队专属」，独立目录不再显示该成员。 |
+
+团队服务和三个独立 CLI 身份另验证同名跨空间结果、按人收藏、撤销源 Agent 权限及断网后的取数结果。核心用例验证领取运行后归档的取消状态、公开 Agent 私人历史的匿名行和管理者的只读范围。 [HTTP 验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-agent-directory.py) · [核心验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/agent_directory.rs)
+
+
+### 专项时间线和分拣
+
+Windows 隐藏 D3D 窗口使用独立临时资料，打开分拣模块与待分拣任务，读取原生无障碍树中的接受、标记重复、拒绝、搁置和分享控件。通过原生表单提交搁置并检查数据库队列，再打开「显示稍后处理」找回任务。在专项详情验证日期模式和已排期条目，再用工作区限定的任务链接打开正确的详情。此次运行验证 ShipForge 本机窗口及核心数据，跨成员授权另由合成角色回归覆盖。真实 HiFox 组织仅用于只读参考。[Windows 回归](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/review_ui_test.rs) · [多身份回归](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/review_planning.rs) · [操作说明](triage-planning.md)

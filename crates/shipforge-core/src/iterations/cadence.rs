@@ -45,7 +45,10 @@ fn move_to(c: &Context<'_>, task: &Record, target: Option<&str>) -> Result<()> {
     let mut f = task.fields.clone();
     f["iteration"] = json!(target);
     if target.is_none()
-        && !matches!(c.status_category(task)?.as_str(), "done" | "cancelled")
+        && !matches!(
+            c.status_category(task)?.as_str(),
+            "done" | "cancelled" | "duplicate"
+        )
         && let Ok(backlog) = crate::tasks::target_status(c, task, "backlog")
     {
         f["status"] = json!(backlog);
@@ -73,7 +76,10 @@ fn close(c: &Context<'_>, it: &Record, next: Option<&Record>) -> Result<()> {
     history::capture(c, it)?;
     for task in c.records("task")? {
         if task.fields["iteration"] == it.id
-            && !matches!(c.status_category(&task)?.as_str(), "done" | "cancelled")
+            && !matches!(
+                c.status_category(&task)?.as_str(),
+                "done" | "cancelled" | "duplicate"
+            )
         {
             move_to(c, &task, next.map(|i| i.id.as_str()))?;
         }

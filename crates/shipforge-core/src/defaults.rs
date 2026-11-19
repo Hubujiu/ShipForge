@@ -7,6 +7,7 @@ const STATUSES: &[(&str, &str)] = &[
     ("in_progress", "进行中"),
     ("done", "已完成"),
     ("cancelled", "已取消"),
+    ("duplicate", "重复"),
 ];
 const TYPES: &[(&str, &str)] = &[("task", "任务"), ("requirement", "需求"), ("bug", "缺陷")];
 const RELATIONS: &[(&str, &str, &str)] = &[

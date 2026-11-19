@@ -61,7 +61,7 @@ fn link(c: &Context<'_>, record: Record) -> Result<Value> {
         json!({"link":format!("{PREFIX}{}.{}",record.id,URL_SAFE_NO_PAD.encode(signature.as_ref())),"invitation":record}),
     )
 }
-fn active(row: &Record) -> bool {
+pub(crate) fn active(row: &Record) -> bool {
     row.fields["state"] == "active"
         && row.fields["expires_at"]
             .as_i64()
@@ -297,6 +297,7 @@ pub(crate) fn execute(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
         let mut fields = row.fields.clone();
         fields["state"] = json!("accepted");
         org.update(&row, &row.title, fields)?;
+        crate::inbox::accept_invited_follower(&org, id, c.actor)?;
     }
     Ok(json!({"organization":org_id,"actor":c.actor,"joined":joined}))
 }

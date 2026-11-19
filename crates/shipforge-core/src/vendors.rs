@@ -3,13 +3,17 @@ use rusqlite::{Connection, params};
 use serde_json::{Value, json};
 
 mod batches;
+mod trackers;
+pub use trackers::zentao_installation;
 mod bugly;
+mod writeback;
 pub use bugly::bugly_authorization;
 mod tapd;
 mod zoho;
 
 pub(crate) fn init(db: &Connection) -> Result<()> {
     batches::init(db)?;
+    writeback::init(db)?;
     bugly::init(db)
 }
 
@@ -36,6 +40,10 @@ pub(crate) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
             "tapd_workspace",
             "tapd_auth",
             "company_id",
+            "instance_url",
+            "remote_scope",
+            "scope_kind",
+            "enterprise_id",
         ]
         .iter()
         .any(|&k| old.fields[k] != f[k])
@@ -52,6 +60,7 @@ pub(crate) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
         bugly::disconnect(c, &r.id)?;
     }
     match f["provider"].as_str() {
+        Some("zentao" | "pingcode") => trackers::validate(f)?,
         Some("tapd") => tapd::validate(f)?,
         Some("zoho") => {
             if !digits(required(f, "portal_id")?)
@@ -92,6 +101,11 @@ pub(crate) fn removing(c: &Context<'_>, r: &Record) -> Result<()> {
             ));
         }
         bugly::disconnect(c, &r.id)?;
+        c.db.execute(
+            "DELETE FROM sf_vendor_push WHERE space=? AND connector=?",
+            params![c.space, r.id],
+        )
+        .map_err(storage)?;
         c.db.execute(
             "DELETE FROM sf_import_binding WHERE space=? AND connector=?",
             params![c.space, r.id],
@@ -170,13 +184,24 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
     }
     c.require_admin()?;
     let r = c.readable("connector", id)?;
-    if !matches!(r.fields["provider"].as_str(), Some("zoho" | "tapd"))
-        || (r.fields["enabled"] == false && !matches!(op, "imports.history" | "imports.rollback"))
+    let cleanup = op == "imports.binding" && q["clear_device_credentials"] == true;
+    if !matches!(
+        r.fields["provider"].as_str(),
+        Some("zoho" | "tapd" | "zentao" | "pingcode")
+    ) || (r.fields["enabled"] == false
+        && !cleanup
+        && !matches!(
+            op,
+            "imports.history" | "imports.rollback" | "imports.push_history" | "imports.finish_push"
+        ))
     {
         return Err(invalid("an enabled batch import connector is required"));
     }
     match op {
-        "imports.binding" => batches::binding(c, &r),
+        "imports.binding" => batches::binding(c, &r, !cleanup),
+        "imports.prepare_push" | "imports.finish_push" | "imports.push_history" => {
+            writeback::execute(c, &r, op, q)
+        }
         "imports.stage" => batches::stage(c, &r, q),
         "imports.commit" => batches::commit(c, &r, required(q, "batch")?),
         "imports.history" => batches::history(c, &r),
@@ -208,6 +233,12 @@ pub(crate) fn schema(s: &mut Value) {
             vec!["imports.commit", "imports.rollback"],
             vec!["id", "batch"],
         ),
+        (vec!["imports.prepare_push"], vec!["id", "task_id"]),
+        (
+            vec!["imports.finish_push"],
+            vec!["id", "delivery", "lease", "result"],
+        ),
+        (vec!["imports.push_history"], vec!["id"]),
         (
             vec!["bugly.settle"],
             vec!["id", "delivery", "lease", "success"],

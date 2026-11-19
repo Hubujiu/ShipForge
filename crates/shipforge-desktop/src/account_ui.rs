@@ -26,6 +26,7 @@ impl Workbench {
             self.metrics = Value::Null;
             self.view_tasks.clear();
             self.work = Default::default();
+            self.inbox = Default::default();
         }
         self.session_started = true;
         self.active_profile = session["id"].as_str().map(str::to_owned);

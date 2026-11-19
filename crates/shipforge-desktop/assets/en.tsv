@@ -957,3 +957,163 @@ TAPD 个人访问令牌	TAPD personal access token
 已向 Agent 提交建单请求	Task requested from Agent
 已从我的对话列表隐藏	Hidden from your conversation list
 对话列表已更新	Conversation list updated
+禅道	ZenTao
+禅道安装根地址	ZenTao installation URL
+禅道来源	ZenTao scope
+禅道版本类型	ZenTao edition
+开源版	Open source
+企业版	Enterprise
+旗舰版	Ultimate
+禅道版本号（可选）	ZenTao version (optional)
+PingCode 企业 ID	PingCode enterprise ID
+PingCode 凭据方式	PingCode credentials
+立即同步工作项	Synchronize linked work items
+用户授权码	User authorization code
+应用凭据	Application credentials
+来源产品或项目 ID	Source product or project ID
+允许显式回写来源平台	Allow publishing to the source
+发现禅道产品或项目	Discover ZenTao products or projects
+发现 PingCode 项目	Discover PingCode projects
+连接禅道实例	Connect to ZenTao
+连接 PingCode 企业	Connect to PingCode
+预览禅道导入	Preview ZenTao import
+预览 PingCode 导入	Preview PingCode import
+回写关联工作项	Publish to a linked item
+查看工作项回写记录	View publication history
+历史导入	Import history
+禅道账号	ZenTao account
+禅道密码	ZenTao password
+PingCode 授权码	PingCode authorization code
+PingCode 访问令牌	PingCode access token
+已关联的任务	Linked task
+回写内容	Publish
+指定评论	Selected comment
+需要发布的本地评论	Local comment to publish
+待确认的远程评论 ID	Remote comment ID to confirm
+Agent 目录	Agent directory
+搜索目录	Search directory
+全部可访问空间	All accessible spaces
+我的	Mine
+收藏	Favorite
+取消收藏	Remove favorite
+清除搜索	Clear search
+没有符合条件的成员	No matching members
+创建分身	Create variant
+分身名称	Variant name
+成员访问权限	Member access
+可使用	Can use
+可管理	Can manage
+撤销授权	Revoke access
+转让所有权	Transfer ownership
+覆盖或恢复继承	Override or restore inheritance
+设置项	Setting
+变更方式	Change
+覆盖	Override
+恢复继承	Restore inheritance
+设置值	Setting value
+已覆盖	Overridden
+继承	Inherited
+返回设置	Back to settings
+只有所有者可以查看私有成员的运行记录	Only the owner can view this private member’s history
+私人对话	Private conversation
+累计 Token	Total tokens
+恢复使用	Restore member
+归档成员	Archive member
+列表已更新	Directory updated
+设置已更新	Settings updated
+发起对话	Start conversation
+默认模型	Default model
+环境变量（JSON）	Environment variables (JSON)
+自定义参数（JSON）	Custom arguments (JSON)
+谁可以创建分身	Who can create variants
+可使用者	Users
+可管理者	Managers
+允许他人的分身继承环境变量	Allow others’ variants to inherit environment variables
+小队专属	Crew exclusive
+设为小队专属	Restrict to this crew
+取消小队专属	Remove crew restriction
+在评论中提及 Agent	Mention an Agent in a comment
+名称或描述	Name or description
+已发布评论	Comment posted
+通知设置	Notification settings
+打开通知	Open notification
+更改关注者	Manage followers
+成员（单选）	Member
+成员（多选）	Multiple members
+重要	Important
+其他	Other
+筛选收件箱	Filter inbox
+搜索任务标题或评论	Task title or comment
+仅查看这些空间	Include spaces
+排除这些空间	Exclude spaces
+仅显示未读	Unread only
+全部标为已读	Mark all as read
+清理当前分区	Clear this section
+确认清理	Confirm clear
+清理范围	Clear range
+当前筛选全部	All matching notifications
+仅指定任务状态	Selected task statuses
+稍后提醒	Snooze
+确认提醒时间	Snooze notification
+提醒时间	Remind me
+20 分钟后	In 20 minutes
+2 小时后	In 2 hours
+明天 09:00	Tomorrow at 09:00
+下周一 09:00	Next Monday at 09:00
+自定义时间	Choose time
+本地时间（YYYY-MM-DD HH:MM）	Local time (YYYY-MM-DD HH:MM)
+邀请中成员	Invited member
+表情回应	Reactions
+表情	Emoji
+返回通知渠道	All channels
+恢复渠道默认设置	Restore channel defaults
+渠道总开关	Enable channel
+上一页	Previous page
+下一页	Next page
+桌面端	Desktop
+移动端	Mobile
+浏览器	Browser
+邮件	Email
+任务分配	Task assignments
+任务状态变更	Task status changes
+评论与回复	Comments and replies
+提及	Mentions
+Agent 活动	Agent activity
+分拣责任	Triage duty
+任务详情	Task details
+任务指派给你	Task assigned to you
+你不再处理此任务	You were unassigned
+指派给你的任务更换处理人	Assignees changed on your task
+关注任务的处理人变更	Assignees changed on a followed task
+你被添加为关注者	You were added as a follower
+负责的任务变更状态	Status changed on your task
+关注的任务变更状态	Status changed on a followed task
+负责的任务变更优先级	Priority changed on your task
+关注的任务变更优先级	Priority changed on a followed task
+负责的任务变更开始日期	Start date changed on your task
+关注的任务变更开始日期	Start date changed on a followed task
+负责的任务变更截止日期	Due date changed on your task
+关注的任务变更截止日期	Due date changed on a followed task
+负责的任务已完成	Your task was completed
+关注的任务已完成	A followed task was completed
+任务有新评论	New task comment
+任务有新回复	New reply on a task
+评论收到表情回应	Someone reacted to a comment
+收到对话消息	New conversation message
+评论提到了你	You were mentioned in a comment
+对话提到了你	You were mentioned in a conversation
+任务描述提到了你	You were mentioned in a task description
+Agent 在任务中发表评论	An Agent commented on a task
+Agent 执行失败	Agent run failed
+Agent 执行受阻	Agent run blocked
+Agent 已完成工作	Agent run completed
+运行需要回复	A run needs a reply
+自动化产生结果	Automation result
+此任务需要你分拣	A task needs your triage
+任务详情已更新	Task details updated
+新通知	New notification
+当前筛选没有通知。	No notifications match these filters.
+需要移动设备	Mobile device required
+需要浏览器订阅	Browser subscription required
+需要邮件投递服务	Mail delivery service required
+需要外部通知服务	External notification service required

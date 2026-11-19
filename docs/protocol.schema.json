@@ -650,6 +650,58 @@
         "properties": {
           "op": {
             "enum": [
+              "imports.prepare_push"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "task_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "imports.finish_push"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "delivery",
+          "lease",
+          "result"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "imports.push_history"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
               "bugly.settle"
             ]
           }
@@ -662,6 +714,135 @@
           "lease",
           "success"
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "agent.settings",
+              "agent.history",
+              "agent.archive",
+              "agent.restore",
+              "agent.variant",
+              "agent.override",
+              "agent.organize",
+              "agent.access",
+              "crew.exclusive"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "agent.variant"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "target_space"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "agent.override"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "field"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "agent.organize"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "agent.access"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "actor",
+          "permission"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "crew.exclusive"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "agent",
+          "exclusive"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "run.report"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "usage": {
+            "properties": {
+              "input_tokens": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "output_tokens": {
+                "minimum": 0,
+                "type": "integer"
+              },
+              "total_tokens": {
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        }
       }
     },
     {
@@ -2198,6 +2379,936 @@
       "if": {
         "properties": {
           "op": {
+            "const": "comment.react"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "emoji": {
+            "maxLength": 32,
+            "minLength": 1,
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "emoji",
+          "enabled"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "comment.reactions"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "followers.list",
+              "followers.change",
+              "inbox.open",
+              "inbox.locate"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "followers.change"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "target_kind": {
+            "enum": [
+              "member",
+              "agent",
+              "invitation"
+            ]
+          }
+        },
+        "required": [
+          "target",
+          "enabled"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "inbox.configure"
+          }
+        }
+      },
+      "then": {
+        "anyOf": [
+          {
+            "required": [
+              "landing"
+            ]
+          },
+          {
+            "required": [
+              "channel",
+              "enabled"
+            ]
+          },
+          {
+            "required": [
+              "channel",
+              "reset"
+            ]
+          }
+        ],
+        "properties": {
+          "channel": {
+            "enum": [
+              "desktop",
+              "mobile",
+              "browser",
+              "feishu",
+              "dingtalk",
+              "slack",
+              "lark",
+              "inbox",
+              "email"
+            ]
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "expected_rev": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "landing": {
+            "enum": [
+              "important",
+              "all",
+              "other"
+            ]
+          },
+          "reset": {
+            "const": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "inbox.query",
+              "inbox.bulk"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "exclude_spaces": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "include_spaces": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "section": {
+            "enum": [
+              "all",
+              "important",
+              "other",
+              "snoozed",
+              "cleared"
+            ]
+          },
+          "statuses": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "unread": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "inbox.bulk"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "action": {
+            "enum": [
+              "read",
+              "clear"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "task",
+              "project"
+            ]
+          },
+          "op": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "properties": {
+              "due_date": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "planned_end": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "planned_start": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "start_date": {
+                "format": "date",
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "project"
+          },
+          "op": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "properties": {
+              "owner": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "owner_kind": {
+                "enum": [
+                  "member",
+                  "agent"
+                ]
+              },
+              "primary_space": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "priority": {
+                "enum": [
+                  "none",
+                  "low",
+                  "medium",
+                  "high",
+                  "urgent"
+                ]
+              },
+              "spaces": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              "status": {
+                "enum": [
+                  "draft",
+                  "planned",
+                  "active",
+                  "paused",
+                  "done",
+                  "cancelled"
+                ]
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "customer_request.convert"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "custom": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "project.timeline"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "as_of": {
+            "format": "date",
+            "type": "string"
+          },
+          "basis": {
+            "enum": [
+              "schedule",
+              "plan",
+              "start",
+              "due"
+            ]
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "triage.configure"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "confirm": {
+            "type": "boolean"
+          },
+          "duty": {
+            "additionalProperties": false,
+            "if": {
+              "properties": {
+                "mode": {
+                  "enum": [
+                    "notify",
+                    "assign"
+                  ]
+                }
+              }
+            },
+            "properties": {
+              "member": {
+                "type": "string"
+              },
+              "mode": {
+                "enum": [
+                  "none",
+                  "notify",
+                  "assign"
+                ]
+              }
+            },
+            "required": [
+              "mode"
+            ],
+            "then": {
+              "required": [
+                "member"
+              ]
+            },
+            "type": "object"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "priority_required": {
+            "type": "boolean"
+          },
+          "rules": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "type": "boolean"
+                },
+                "id": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "set": {
+                  "additionalProperties": false,
+                  "minProperties": 1,
+                  "properties": {
+                    "assignee": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "labels": {
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "uniqueItems": true
+                    },
+                    "priority": {
+                      "enum": [
+                        "none",
+                        "low",
+                        "medium",
+                        "high",
+                        "urgent"
+                      ]
+                    },
+                    "project": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "space": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                },
+                "title": {
+                  "type": "string"
+                },
+                "when": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "assignee": {
+                      "type": "string"
+                    },
+                    "contains": {
+                      "type": "string"
+                    },
+                    "created_after": {
+                      "type": "integer"
+                    },
+                    "created_before": {
+                      "type": "integer"
+                    },
+                    "creator": {
+                      "type": "string"
+                    },
+                    "due_after": {
+                      "format": "date",
+                      "type": "string"
+                    },
+                    "due_before": {
+                      "format": "date",
+                      "type": "string"
+                    },
+                    "labels": {
+                      "items": {
+                        "minLength": 1,
+                        "type": "string"
+                      },
+                      "type": "array",
+                      "uniqueItems": true
+                    },
+                    "priority": {
+                      "enum": [
+                        "none",
+                        "low",
+                        "medium",
+                        "high",
+                        "urgent"
+                      ]
+                    },
+                    "project": {
+                      "type": "string"
+                    },
+                    "source": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    },
+                    "type": {
+                      "type": "string"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "required": [
+                "id",
+                "when",
+                "set"
+              ],
+              "type": "object"
+            },
+            "maxItems": 50,
+            "type": "array"
+          },
+          "sources": {
+            "items": {
+              "enum": [
+                "guest",
+                "external"
+              ]
+            },
+            "type": [
+              "array",
+              "null"
+            ],
+            "uniqueItems": true
+          },
+          "types": {
+            "oneOf": [
+              {
+                "items": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "type": "array",
+                "uniqueItems": true
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "triage.queue"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "include_deferred": {
+            "type": "boolean"
+          },
+          "order": {
+            "enum": [
+              "oldest",
+              "newest"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "triage.submit"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "custom": {
+            "type": "object"
+          },
+          "description": {
+            "type": "string"
+          },
+          "priority": {
+            "enum": [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "urgent"
+            ]
+          },
+          "type": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "title"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "task.share"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "task.open"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "link": {
+            "pattern": "^shipforge://task/",
+            "type": "string"
+          }
+        },
+        "required": [
+          "link"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "triage"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "assignees": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "comment": {
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "accept",
+              "reject",
+              "duplicate",
+              "defer",
+              "restore"
+            ]
+          },
+          "due_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "executor": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "labels": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "priority": {
+            "enum": [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "urgent"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "start_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "subscribe": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          },
+          "target_space": {
+            "type": "string"
+          },
+          "until": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "decision"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "defer"
+          },
+          "op": {
+            "enum": [
+              "triage",
+              "triage.batch"
+            ]
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "then": {
+        "required": [
+          "until"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "duplicate"
+          },
+          "op": {
+            "const": "triage"
+          }
+        },
+        "required": [
+          "decision"
+        ]
+      },
+      "then": {
+        "required": [
+          "target"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "triage.batch"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "assignees": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "comment": {
+            "type": "string"
+          },
+          "decision": {
+            "enum": [
+              "accept",
+              "reject",
+              "defer"
+            ]
+          },
+          "due_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "executor": {
+            "type": [
+              "object",
+              "null"
+            ]
+          },
+          "labels": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "priority": {
+            "enum": [
+              "none",
+              "low",
+              "medium",
+              "high",
+              "urgent"
+            ]
+          },
+          "project": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "revisions": {
+            "additionalProperties": {
+              "minimum": 1,
+              "type": "integer"
+            },
+            "type": "object"
+          },
+          "start_date": {
+            "format": "date",
+            "type": "string"
+          },
+          "subscribe": {
+            "type": "boolean"
+          },
+          "target": {
+            "type": "string"
+          },
+          "target_space": {
+            "type": "string"
+          },
+          "tasks": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          },
+          "until": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "tasks",
+          "decision"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "const": "task.move"
           }
         }
@@ -2476,6 +3587,119 @@
       "if": {
         "properties": {
           "op": {
+            "const": "zentao.credential"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "zentao.projects"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "zentao.preview"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "pingcode.credential"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "pingcode.projects"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "pingcode.preview"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "imports.push"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "task_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "imports.synchronize"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "const": "access.personal.issue"
           }
         }
@@ -2613,7 +3837,7 @@
       ]
     },
     "expected_rev": {
-      "minimum": 1,
+      "minimum": 0,
       "type": "integer"
     },
     "expected_type_rev": {
@@ -2750,8 +3974,17 @@
     },
     "op": {
       "enum": [
+        "inbox.settings",
+        "inbox.query",
+        "inbox.feed",
+        "inbox.locate",
+        "followers.list",
+        "agent.directory",
+        "agent.settings",
+        "agent.history",
         "imports.binding",
         "imports.history",
+        "imports.push_history",
         "bugly.outbox",
         "bugly.binding",
         "space.deactivate.preview",
@@ -2778,6 +4011,7 @@
         "task.type.preview",
         "task_type.bindings.preview",
         "comment.thread",
+        "comment.reactions",
         "view.catalog",
         "view.preview",
         "view.share",
@@ -2789,6 +4023,11 @@
         "iteration.history",
         "task.relations",
         "project.progress",
+        "project.timeline",
+        "triage.settings",
+        "triage.queue",
+        "task.share",
+        "task.open",
         "document.history",
         "export",
         "import.preview",
@@ -2796,8 +4035,21 @@
         "im.outbox",
         "im.threads",
         "attachment.download",
+        "inbox.configure",
+        "inbox.bulk",
+        "inbox.open",
+        "followers.change",
+        "agent.archive",
+        "agent.restore",
+        "agent.variant",
+        "agent.override",
+        "agent.access",
+        "agent.organize",
+        "crew.exclusive",
         "imports.stage",
         "imports.commit",
+        "imports.prepare_push",
+        "imports.finish_push",
         "imports.rollback",
         "bugly.rotate",
         "bugly.revoke",
@@ -2828,6 +4080,7 @@
         "onboarding.setup",
         "preferences.update",
         "comment.resolve",
+        "comment.react",
         "comment.reopen",
         "view.organize",
         "view.save_as",
@@ -2842,6 +4095,10 @@
         "iteration.configure",
         "iteration.start",
         "triage",
+        "triage.submit",
+        "triage.configure",
+        "triage.batch",
+        "customer_request.convert",
         "follow",
         "notification.act",
         "document.restore",
@@ -2899,7 +4156,15 @@
         "bugly.credentials",
         "tapd.projects",
         "tapd.preview",
-        "tapd.credential"
+        "tapd.credential",
+        "zentao.credential",
+        "zentao.projects",
+        "zentao.preview",
+        "pingcode.credential",
+        "pingcode.projects",
+        "pingcode.preview",
+        "imports.push",
+        "imports.synchronize"
       ],
       "type": "string"
     },

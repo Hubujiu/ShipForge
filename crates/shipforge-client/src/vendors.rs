@@ -3,6 +3,7 @@ use serde_json::{Value, json};
 use std::{collections::BTreeMap, time::Duration};
 use url::{Host, Url};
 mod tapd;
+mod trackers;
 mod vault;
 
 type Result<T> = std::result::Result<T, String>;
@@ -356,6 +357,13 @@ fn deliver(client: &mut Client, q: &Value) -> Result<Value> {
 }
 
 pub(super) fn execute(client: &mut Client, q: &Value) -> Result<Value> {
+    if q["op"].as_str().is_some_and(|s| {
+        s.starts_with("zentao.")
+            || s.starts_with("pingcode.")
+            || matches!(s, "imports.push" | "imports.synchronize")
+    }) {
+        return trackers::execute(client, q);
+    }
     if q["op"].as_str().is_some_and(|s| s.starts_with("tapd.")) {
         return tapd::execute(client, q);
     }

@@ -10,7 +10,14 @@ fn run(db: &mut Store, q: Value) -> Value {
 fn editable_builtin_configuration_and_portable_overrides() {
     let mut db = Store::memory().unwrap();
     let statuses = run(&mut db, json!({"op":"list","kind":"status"}));
-    assert_eq!(statuses.as_array().unwrap().len(), 6);
+    assert_eq!(statuses.as_array().unwrap().len(), 7);
+    assert!(
+        statuses
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|s| s["id"] == "duplicate")
+    );
     assert_eq!(statuses[0]["id"], "triage");
     assert_eq!(statuses[2]["fields"]["default"], true);
     run(

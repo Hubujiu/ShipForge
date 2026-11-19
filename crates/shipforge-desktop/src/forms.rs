@@ -57,6 +57,7 @@ const STATUS: &[(&str, &str)] = &[
     ("in_progress", "进行中"),
     ("done", "已完成"),
     ("cancelled", "已取消"),
+    ("duplicate", "重复"),
     ("triage", "待分拣"),
 ];
 const TRIGGERS: &[(&str, &str)] = &[
@@ -67,7 +68,10 @@ const TRIGGERS: &[(&str, &str)] = &[
 ];
 #[derive(Clone)]
 pub enum Mode {
+    Inbox(crate::app::inbox_ui::InboxForm),
+    Directory(crate::app::agent_directory::DirectoryForm),
     Work(crate::app::workspace_ui::WorkForm),
+    Review(crate::app::review_ui::ReviewForm),
     BindChat(Record),
     ChatRow(Record),
     DeactivateSpace {
@@ -147,7 +151,16 @@ impl Mode {
     pub fn heading(&self) -> String {
         use Mode::*;
         match self {
+            Directory(f) => f.title().into(),
             Work(f) => f.title(),
+            Review(f) => f.title().into(),
+            Inbox(crate::app::inbox_ui::InboxForm::Followers(_, names)) if !names.is_empty() => {
+                format!("{} · {names}", crate::locale::label("更改关注者"))
+            }
+            Inbox(crate::app::inbox_ui::InboxForm::Reaction(_, counts)) if !counts.is_empty() => {
+                format!("{} · {counts}", crate::locale::label("表情回应"))
+            }
+            Inbox(f) => f.title().into(),
             BindChat(_) => "绑定到已有任务".into(),
             ChatRow(room) => room.title.clone(),
             DeactivateSpace { .. } => "停用空间".into(),
@@ -199,7 +212,10 @@ impl Mode {
     }
     pub fn submit_label(&self) -> &'static str {
         match self {
+            Self::Directory(_) => "确认",
             Self::Work(f) => f.submit_label(),
+            Self::Review(_) => "确认",
+            Self::Inbox(f) => f.submit_label(),
             Self::BindChat(_) => "查找",
             Self::ChatRow(_) => "关闭",
             Self::DeactivateSpace { .. } => "停用空间",
@@ -288,7 +304,10 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             item("owner", "负责人", Ref("member"), ""),
             item("iteration", "迭代", Ref("iteration"), ""),
             item("project", "专项", Ref("project"), ""),
+            item("start_date", "开始日期（YYYY-MM-DD）", Text, ""),
             item("due_date", "截止日期（YYYY-MM-DD）", Text, ""),
+            item("planned_start", "计划开始（YYYY-MM-DD）", Text, ""),
+            item("planned_end", "计划结束（YYYY-MM-DD）", Text, ""),
             item("labels", "任务标签", Many("$tag_choices"), ""),
             item("estimate", "预估工作量", Decimal, ""),
             item("parent", "父任务", Ref("task"), ""),
@@ -302,7 +321,34 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             item("end_date", "结束日期（YYYY-MM-DD）", Text, ""),
             item("capacity", "容量（任务数）", Number, ""),
         ],
-        "project" => vec![title, body, item("owner", "负责人", Ref("member"), "")],
+        "project" => vec![
+            title,
+            body,
+            item("project_owner", "专项负责人", Ref("$project_owners"), ""),
+            item(
+                "status",
+                "专项状态",
+                Choice(&[
+                    ("draft", "草稿"),
+                    ("planned", "计划中"),
+                    ("active", "进行中"),
+                    ("paused", "已暂停"),
+                    ("done", "已完成"),
+                    ("cancelled", "已取消"),
+                ]),
+                "draft",
+            ),
+            item(
+                "priority",
+                "优先级",
+                Choice(crate::catalog::PRIORITIES),
+                "none",
+            ),
+            item("spaces", "关联空间", Many("space"), ""),
+            item("primary_space", "主空间", Ref("space"), ""),
+            item("start_date", "开始日期（YYYY-MM-DD）", Text, ""),
+            item("due_date", "目标日期（YYYY-MM-DD）", Text, ""),
+        ],
         "view" => {
             let mut fields = vec![
                 title,
@@ -422,8 +468,22 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 Choice(&[("code", "代码开发"), ("office", "日常办公")]),
                 "code",
             ),
-            item("parent_id", "继承其他 Agent", Ref("agent"), ""),
             item("instructions", "职责与指令", Body, ""),
+            item("model", "默认模型", Text, ""),
+            item("environment", "环境变量（JSON）", Json, ""),
+            item("arguments", "自定义参数（JSON）", Json, ""),
+            item(
+                "variant_permission",
+                "谁可以创建分身",
+                Choice(&[("use", "可使用者"), ("manage", "可管理者")]),
+                "use",
+            ),
+            item(
+                "allow_variant_environment",
+                "允许他人的分身继承环境变量",
+                Bool,
+                "true",
+            ),
             item("runtime", "Runtime 名称", Text, "local-tool"),
             item("machine_id", "指定机器", Ref("machine"), ""),
             item(
@@ -488,6 +548,8 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                     ("bugly", "腾讯 Bugly"),
                     ("tapd", "TAPD"),
                     ("zoho", "Zoho BugTracker"),
+                    ("zentao", "禅道"),
+                    ("pingcode", "PingCode"),
                     ("gitlab", "GitLab"),
                     ("linear", "Linear"),
                     ("asana", "Asana"),
@@ -524,6 +586,37 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             ),
             item("project_key", "Jira 项目标识", Text, ""),
             item("portal_id", "Zoho 门户 ID", Text, ""),
+            item("instance_url", "禅道安装根地址", Text, ""),
+            item(
+                "scope_kind",
+                "禅道来源",
+                Choice(&[("product", "产品"), ("project", "项目")]),
+                "product",
+            ),
+            item(
+                "zentao_edition",
+                "禅道版本类型",
+                Choice(&[
+                    ("opensource", "开源版"),
+                    ("enterprise", "企业版"),
+                    ("ultimate", "旗舰版"),
+                ]),
+                "opensource",
+            ),
+            item("zentao_version", "禅道版本号（可选）", Text, ""),
+            item("enterprise_id", "PingCode 企业 ID", Text, ""),
+            item(
+                "pingcode_auth",
+                "PingCode 凭据方式",
+                Choice(&[
+                    ("token", "访问令牌"),
+                    ("authorization", "用户授权码"),
+                    ("application", "应用凭据"),
+                ]),
+                "token",
+            ),
+            item("remote_scope", "来源产品或项目 ID", Text, ""),
+            item("vendor_write", "允许显式回写来源平台", Bool, "false"),
             item(
                 "tapd_auth",
                 "TAPD 凭据类型",
@@ -569,6 +662,8 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                     ("boolean", "布尔"),
                     ("date", "日期"),
                     ("select", "选项"),
+                    ("member", "成员（单选）"),
+                    ("members", "成员（多选）"),
                 ]),
                 "text",
             ),
@@ -628,6 +723,15 @@ pub fn workflow_name(op: &str) -> &'static str {
         "chat.agents" => "管理群内 Agent",
         "provider.preview" => "预览平台事件",
         "zoho.projects" => "发现 Zoho 项目",
+        "zentao.projects" => "发现禅道产品或项目",
+        "pingcode.projects" => "发现 PingCode 项目",
+        "zentao.credential" => "连接禅道实例",
+        "pingcode.credential" => "连接 PingCode 企业",
+        "zentao.preview" => "预览禅道导入",
+        "pingcode.preview" => "预览 PingCode 导入",
+        "imports.push" => "回写关联工作项",
+        "imports.synchronize" => "立即同步工作项",
+        "imports.push_history" => "查看工作项回写记录",
         "zoho.credential" => "保存或更新 Zoho 凭据",
         "tapd.credential" => "配置 TAPD 凭据",
         "tapd.projects" => "发现 TAPD 项目",
@@ -654,7 +758,10 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
     use Format::*;
     use Mode::*;
     match mode {
+        Directory(f) => f.specs(),
         Work(f) => f.specs(),
+        Review(f) => f.specs(),
+        Inbox(f) => f.specs(),
         BindChat(_) => vec![item("query", "搜索任务标题或编号", Text, "")],
         ChatRow(_) => vec![],
         DeactivateSpace { unfinished, .. } if *unfinished > 0 => vec![
@@ -885,6 +992,57 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
                 item("event_id", "GitLab 或 Jira 上游投递 ID", Text, ""),
             ],
             "zoho.preview" => vec![item("full", "重新检查全部缺陷", Bool, "false")],
+            "zentao.preview" | "pingcode.preview" => vec![item(
+                "import_mode",
+                "导入方式",
+                Choice(&[
+                    ("history", "历史导入"),
+                    ("changes", "检查增量变更"),
+                    ("refresh", "重新检查全部条目"),
+                ]),
+                "history",
+            )],
+            "zentao.credential" => vec![
+                item("account", "禅道账号", Text, ""),
+                item("password", "禅道密码", Secret, ""),
+                item("clear", "移除本机凭据", Bool, "false"),
+            ],
+            "pingcode.credential"
+                if matches!(
+                    record.field("pingcode_auth"),
+                    "application" | "authorization"
+                ) =>
+            {
+                let mut specs = vec![
+                    item("client_id", "PingCode Client ID", Text, ""),
+                    item("client_secret", "PingCode Client Secret", Secret, ""),
+                ];
+                if record.field("pingcode_auth") == "authorization" {
+                    specs.push(item("code", "PingCode 授权码", Secret, ""));
+                }
+                specs.push(item("clear", "移除本机凭据", Bool, "false"));
+                specs
+            }
+            "pingcode.credential" => vec![
+                item("access_token", "PingCode 访问令牌", Secret, ""),
+                item("clear", "移除本机凭据", Bool, "false"),
+            ],
+            "imports.push" => {
+                let mut specs = vec![item("task_id", "已关联的任务", Ref("task"), "")];
+                if record.field("provider") == "pingcode" {
+                    specs.extend([
+                        item(
+                            "intent",
+                            "回写内容",
+                            Choice(&[("status", "任务状态"), ("comment", "指定评论")]),
+                            "status",
+                        ),
+                        item("comment_id", "需要发布的本地评论", Ref("comment"), ""),
+                        item("confirm_comment", "待确认的远程评论 ID", Text, ""),
+                    ]);
+                }
+                specs
+            }
             "tapd.preview" => vec![item(
                 "import_mode",
                 "导入方式",
@@ -1372,6 +1530,9 @@ pub fn connector_field_visible(key: &str, provider: &str) -> bool {
         "repository_host" | "project_id" => provider == "gitlab",
         "project_key" => provider == "jira",
         "portal_id" | "zoho_project" => provider == "zoho",
+        "instance_url" | "scope_kind" | "zentao_edition" | "zentao_version" => provider == "zentao",
+        "enterprise_id" | "pingcode_auth" => provider == "pingcode",
+        "remote_scope" | "vendor_write" => matches!(provider, "zentao" | "pingcode"),
         "company_id" | "tapd_auth" | "tapd_workspace" => provider == "tapd",
         "product_id" | "default_task_type" | "bugly_outbound" => provider == "bugly",
         "workspace_id" | "channel_id" | "app_id" | "bot_id" | "outbound" | "slack_assignment" => {
@@ -1398,6 +1559,19 @@ pub fn trigger_field_visible(key: &str, kind: &str, frequency: &str) -> bool {
 }
 pub fn initial_record(r: &Record) -> Map<String, Value> {
     let mut f = r.fields.clone();
+    if r.kind == "project" && !r.field("owner").is_empty() {
+        f.insert(
+            "project_owner".into(),
+            json!(format!(
+                "{}/{}",
+                r.fields
+                    .get("owner_kind")
+                    .and_then(Value::as_str)
+                    .unwrap_or("member"),
+                r.field("owner")
+            )),
+        );
+    }
     if r.kind == "task_type"
         && let Some(bindings) = r.fields.get("field_bindings").and_then(Value::as_array)
     {
@@ -1481,7 +1655,27 @@ pub fn compile_record(
             fields.insert("outbound".into(), json!(false));
         }
     }
-    for key in ["due_date", "start_date", "end_date"] {
+    if kind == "project" {
+        let selected = fields.remove("project_owner");
+        if let Some((kind, id)) = selected
+            .as_ref()
+            .and_then(Value::as_str)
+            .and_then(|s| s.split_once('/'))
+        {
+            fields.insert("owner".into(), json!(id));
+            fields.insert("owner_kind".into(), json!(kind));
+        } else {
+            fields.insert("owner".into(), Value::Null);
+            fields.remove("owner_kind");
+        }
+    }
+    for key in [
+        "due_date",
+        "start_date",
+        "end_date",
+        "planned_start",
+        "planned_end",
+    ] {
         if fields.get(key).and_then(Value::as_str) == Some("") {
             fields.insert(key.into(), Value::Null);
         }

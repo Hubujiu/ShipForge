@@ -35,7 +35,7 @@ pub(super) fn issue_type(r: &Record) -> Value {
 pub(super) fn status(r: &Record) -> Value {
     let (id, key, name, color) = match r.fields["category"].as_str() {
         Some("in_progress") => (4, "indeterminate", "In Progress", "yellow"),
-        Some("done" | "cancelled") => (3, "done", "Done", "green"),
+        Some("done" | "cancelled" | "duplicate") => (3, "done", "Done", "green"),
         _ => (2, "new", "To Do", "blue-gray"),
     };
     json!({"id":r.id,"name":r.title,"statusCategory":{"id":id,"key":key,"name":name,"colorName":color}})

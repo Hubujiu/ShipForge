@@ -329,6 +329,13 @@ fn following_is_rendered_per_actor_and_excluded_from_exports() {
     let mut db = Store::memory().unwrap();
     add(&mut db, "member", "p", json!({"role":"member"}));
     add(&mut db, "task", "t", json!({}));
+    let created = ok(&mut db, "owner", json!({"op":"get","kind":"task","id":"t"}));
+    assert_eq!(created["fields"]["following"], true);
+    ok(
+        &mut db,
+        "owner",
+        json!({"op":"follow","id":"t","enabled":false}),
+    );
     ok(&mut db, "p", json!({"op":"follow","id":"t","enabled":true}));
     let a = ok(&mut db, "p", json!({"op":"get","kind":"task","id":"SF-1"}));
     let b = ok(&mut db, "owner", json!({"op":"list","kind":"task"}));

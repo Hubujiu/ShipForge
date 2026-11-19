@@ -1,6 +1,6 @@
 # Rust + GPUI 架构与交付顺序
 
-ShipForge 面向共同维护一个空间的成员、Agent 和执行机器。GPUI 负责原生窗口、键盘操作、长列表和后台任务的界面。业务核心、团队服务和机器服务分别处理业务事务、跨成员授权及外部执行。下图对应 Windows 0.9.0 的组件，文末保留完整产品的分阶段验收目标。[GPUI 官方介绍](https://www.gpui.rs/) · [功能基线](features.md) · [HiFox 客户端取证](client-analysis.md)
+ShipForge 面向共同维护一个空间的成员、Agent 和执行机器。GPUI 负责原生窗口、键盘操作、长列表和后台任务的界面。业务核心、团队服务和机器服务分别处理业务事务、跨成员授权及外部执行。下图对应 Windows 0.10.0 的组件，文末列出完整产品的分阶段验收目标。[GPUI 官方介绍](https://www.gpui.rs/) · [功能基线](features.md) · [HiFox 客户端取证](client-analysis.md)
 
 ## 组件和依赖方向
 

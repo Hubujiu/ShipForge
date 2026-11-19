@@ -57,7 +57,7 @@ fn main() {
         }
         if arg == "--help" || arg == "-h" {
             print_information(
-                "ShipForge Windows 工作台\nshipforge-desktop [--data-dir <目录>] [--demo] [--smoke-test] [--open-link <视图或邀请链接>]\n--demo 使用内存示例数据。",
+                "ShipForge Windows 工作台\nshipforge-desktop [--data-dir <目录>] [--demo] [--smoke-test] [--open-link <工作区链接>]\n--demo 使用内存示例数据。",
             );
             return;
         }
@@ -71,6 +71,8 @@ fn main() {
                 .and_then(|arg| arg.into_string().ok())
                 .filter(|s| {
                     shipforge_core::view_link_parts(s).is_ok()
+                        || shipforge_core::task_link_parts(s).is_ok()
+                        || shipforge_core::inbox_link_parts(s).is_ok()
                         || s.strip_prefix("shipforge://invite/").is_some_and(|body| {
                             body.len() == 80
                                 && body.bytes().all(|b| {
@@ -140,6 +142,10 @@ fn main() {
                     if let Some(link) = invitation.clone() {
                         if link.starts_with("shipforge://view/") {
                             workbench.open_view_link(link);
+                        } else if link.starts_with("shipforge://task/") {
+                            workbench.open_task_link(link);
+                        } else if link.starts_with("shipforge://inbox/") {
+                            workbench.inbox.initial_link = Some(link);
                         } else {
                             workbench.open_invitation(link, window, cx);
                         }

@@ -56,7 +56,7 @@ Filename: "{app}\shipforge-install.ini"; Section: "Installation"; Key: "data_dir
 Type: files; Name: "{app}\shipforge-install.ini"
 
 [Icons]
-Name: "{userprograms}\ShipForge Workspace"; Filename: "{app}\shipforge-desktop.exe"; Parameters: "{code:DataArguments}"; WorkingDir: "{app}"; Check: not VerificationMode
+Name: "{userprograms}\ShipForge Workspace"; Filename: "{app}\shipforge-desktop.exe"; Parameters: "{code:DataArguments}"; WorkingDir: "{app}"; AppUserModelID: "ShipForge.Workspace"; Check: not VerificationMode
 Name: "{userdesktop}\ShipForge Workspace"; Filename: "{app}\shipforge-desktop.exe"; Parameters: "{code:DataArguments}"; WorkingDir: "{app}"; Tasks: desktopicon; Check: not VerificationMode
 
 [Registry]
