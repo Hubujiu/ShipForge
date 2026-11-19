@@ -103,4 +103,4 @@ Windows 隐藏 D3D 窗口使用独立临时资料，打开分拣模块与待分�
 
 ## Windows 对话指令和文档引用
 
-独立本机测试工作区打开隐藏的原生 D3D 窗口，经 Windows 辅助功能树定位任务指令、管理、文档引用和 PNG 保存入口。测试向编辑器派发 Tab 后确认仅插入命令，派发 Esc 后确认输入框仍在，再发送并核对后端消息。工作机报告结果后，从详情发送审阅确认，任务保持原状态。PNG 在测试目录写出并核对文件签名。测试未接外部商业 Runtime。[原生测试](../crates/shipforge-desktop/src/conversation_ui_test.rs)
+独立本机测试工作区打开隐藏的原生 D3D 窗口，经 Windows 辅助功能树定位任务指令、管理、文档引用和 PNG 保存入口。测试向编辑器派发 Tab 后确认仅插入命令，派发 Esc 后确认输入框仍在，再发送并核对后端消息。工作机报告结果后，从详情发送审阅确认，任务保持原状态。PNG 在测试目录写出并核对文件签名。测试未接外部商业 Runtime。[原生测试](https://github.com/Hubujiu/ShipForge/blob/v0.11.0/crates/shipforge-desktop/src/conversation_ui_test.rs)
