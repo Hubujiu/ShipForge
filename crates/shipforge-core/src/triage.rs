@@ -210,6 +210,14 @@ fn effective_status(c: &Context<'_>, task: &Record) -> Result<String> {
         c.category_for(id)
             .is_ok_and(|s| !matches!(s.as_str(), "triage" | "done" | "cancelled" | "duplicate"))
     };
+    if let Some(id) = ty
+        .as_ref()
+        .and_then(|ty| ty.fields["default_status"].as_str())
+        && usable(id)
+        && allowed.is_none_or(|ls| ls.iter().any(|v| v == id))
+    {
+        return Ok(id.to_owned());
+    }
     if usable(&default) && allowed.is_none_or(|ls| ls.iter().any(|v| v == &default)) {
         return Ok(default);
     }
@@ -221,7 +229,7 @@ fn effective_status(c: &Context<'_>, task: &Record) -> Result<String> {
             .map(str::to_owned)
             .ok_or_else(|| invalid("task type has no normal working status"));
     }
-    Ok("todo".into())
+    crate::tasks::target_status(c, task, "todo")
 }
 pub(crate) fn decision(c: &Context<'_>, q: &Value) -> Result<Value> {
     c.require_edit()?;

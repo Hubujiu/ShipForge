@@ -8,17 +8,24 @@ pub(super) fn receive(c: &Context<'_>, b: &Binding, q: &Value) -> Result<Value> 
     if !matches!(scene, "direct" | "group") {
         return Err(invalid("unsupported external conversation"));
     }
-    if !b.permits(scene) {
+    if !lark::provider(&b.provider) && !b.permits(scene) {
         return Ok(json!({"ignored":"disabled"}));
     }
-    if scene == "direct" && sender != peer || b.provider == "wechat" && sender != b.account {
+    if !lark::provider(&b.provider) && scene == "direct" && sender != peer
+        || b.provider == "wechat" && sender != b.account
+    {
         return Ok(json!({"ignored":"wrong_recipient"}));
     }
     let body = required(q, "body")?.trim();
     if body.is_empty() || body.len() > 262144 {
         return Err(invalid("external message text is empty or too long"));
     }
-    let digest = crate::worker::digest(&json!([sender, body]).to_string());
+    let fingerprint = if lark::provider(&b.provider) {
+        json!([sender, body, q["files"]])
+    } else {
+        json!([sender, body])
+    };
+    let digest = crate::worker::digest(&fingerprint.to_string());
     type Prior = (
         String,
         String,
@@ -42,7 +49,16 @@ pub(super) fn receive(c: &Context<'_>, b: &Binding, q: &Value) -> Result<Value> 
         }
         return Ok(json!({"turn":turn,"chat":chat,"message":message,"run":run,"duplicate":true}));
     }
-    let fresh = b.provider == "wechat" && body == "/new";
+    let new_prompt = if lark::provider(&b.provider) {
+        body.strip_prefix("/new")
+            .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+            .map(str::trim)
+    } else {
+        None
+    };
+    let fresh = b.provider == "wechat" && body == "/new" || new_prompt.is_some();
+    let prompt = new_prompt.unwrap_or(body);
+    let acknowledgement = fresh && new_prompt.is_none_or(str::is_empty);
     let existing: Option<String> =
         c.db.query_row(
             "SELECT chat FROM external_bot_rooms WHERE bot=? AND scene=? AND peer=?",
@@ -56,7 +72,11 @@ pub(super) fn receive(c: &Context<'_>, b: &Binding, q: &Value) -> Result<Value> 
         _ => {
             let title = format!(
                 "{} · {}",
-                if b.provider == "wechat" {
+                if b.provider == "feishu" {
+                    "飞书"
+                } else if b.provider == "lark" {
+                    "Lark"
+                } else if b.provider == "wechat" {
                     "微信"
                 } else if scene == "group" {
                     "QQ 群"
@@ -75,20 +95,30 @@ pub(super) fn receive(c: &Context<'_>, b: &Binding, q: &Value) -> Result<Value> 
         }
     };
     let turn = Uuid::new_v4().to_string();
-    let (message, run) = if fresh {
+    let (message, run) = if acknowledgement {
         (None, None)
     } else {
-        let sent = crate::chat::execute(c, &json!({"id":chat,"body":body}), "chat.send")?;
+        let sent = crate::chat::execute(c, &json!({"id":chat,"body":prompt}), "chat.send")?;
         let msg = c.readable("message", required(&sent, "message")?)?;
         let mut fields = msg.fields.clone();
         fields["external_provider"] = json!(b.provider);
         fields["external_author"] = json!(sender);
         fields["external_scene"] = json!(scene);
-        c.update(&msg, &msg.title, fields)?;
+        let mut current = c.update(&msg, &msg.title, fields)?;
+        if lark::provider(&b.provider)
+            && let Some(files) = q["files"].as_array()
+        {
+            if files.len() > 6 {
+                return Err(invalid("up to six inbound files are supported"));
+            }
+            for file in files {
+                current = crate::attachments::append(c, &current, file)?;
+            }
+        }
         (Some(msg.id), Some(required(&sent, "run")?.to_owned()))
     };
-    c.db.execute("INSERT INTO external_bot_turns(id,bot,provider,account,scene,peer,remote,digest,chat,message,run,prepared) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",params![turn,b.id,b.provider,b.account,scene,peer,remote,digest,chat,message,run,fresh]).map_err(storage)?;
-    if fresh {
+    c.db.execute("INSERT INTO external_bot_turns(id,bot,provider,account,scene,peer,remote,digest,chat,message,run,prepared) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",params![turn,b.id,b.provider,b.account,scene,peer,remote,digest,chat,message,run,acknowledgement]).map_err(storage)?;
+    if acknowledgement {
         deliveries::insert(c, &turn, 1, &json!({"text":"已开启新会话"}))?;
     }
     Ok(json!({"turn":turn,"chat":chat,"message":message,"run":run,"duplicate":false}))

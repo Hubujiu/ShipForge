@@ -91,7 +91,7 @@ impl Store {
                 "member",
                 Some(&actor),
                 name,
-                json!({"creator":actor,"actor":actor,"role":"admin"}),
+                json!({"creator":actor,"actor":actor,"role":"owner"}),
             )?;
             crate::defaults::seed(&c)?;
             tx.execute("INSERT INTO guide_setup(space) VALUES(?)", [&home])
@@ -189,6 +189,11 @@ impl Store {
         }
         profile(&tx, actor)?;
         let preview = impact(&tx, actor)?;
+        if !preview["spaces_to_transfer"].as_array().unwrap().is_empty() {
+            return Err(conflict(
+                "transfer your spaces in surviving organizations before closing the account",
+            ));
+        }
         if !preview["shared_machines"].as_array().unwrap().is_empty() {
             return Err(conflict("release access to shared machines first"));
         }
@@ -216,6 +221,7 @@ impl Store {
             "agent_grants",
             "followers",
             "inbox_settings",
+            "delivery_mail",
             "inbox_signals",
             "comment_reactions",
             "guide_display",
@@ -240,7 +246,7 @@ impl Store {
 }
 
 fn impact(db: &Connection, actor: &str) -> Result<Value> {
-    let mut stmt=db.prepare("SELECT o.id,o.title,json_extract(o.fields,'$.creator')=?1,
+    let mut stmt=db.prepare("SELECT o.id,o.title,(json_extract(mine.fields,'$.role')='owner' AND NOT EXISTS(SELECT 1 FROM records other WHERE other.kind='member' AND other.space=o.id AND other.id<>?1 AND json_extract(other.fields,'$.role')='owner')),
       (SELECT count(*) FROM records m WHERE m.kind='member' AND m.space=o.id)
       FROM records o JOIN records mine ON mine.space=o.id AND mine.kind='member' AND mine.id=?1 WHERE o.kind='organization' ORDER BY o.id").map_err(storage)?;
     let organizations=stmt.query_map([actor],|r|{
@@ -250,7 +256,18 @@ fn impact(db: &Connection, actor: &str) -> Result<Value> {
     }).map_err(storage)?.collect::<rusqlite::Result<Vec<_>>>().map_err(storage)?;
     let mut stmt=db.prepare("SELECT m.space,m.id,m.title FROM records m JOIN records member ON member.space=m.space AND member.kind='member' AND member.id=?1 WHERE m.kind='machine' AND json_extract(m.fields,'$.shared')=1 AND COALESCE(json_extract(m.fields,'$.disabled'),0)=0 ORDER BY m.space,m.id").map_err(storage)?;
     let machines=stmt.query_map([actor],|r|Ok(json!({"space":r.get::<_,String>(0)?,"id":r.get::<_,String>(1)?,"name":r.get::<_,String>(2)?}))).map_err(storage)?.collect::<rusqlite::Result<Vec<_>>>().map_err(storage)?;
-    Ok(json!({"organizations":organizations,"shared_machines":machines}))
+    let mut spaces_to_transfer = Vec::new();
+    let mut children = db.prepare("SELECT id,title FROM records WHERE kind='space' AND id<>?1 AND json_extract(fields,'$.organization')=?1 AND json_extract(fields,'$.creator')=?2 ORDER BY id").map_err(storage)?;
+    for org in organizations.iter().filter(|row| row["action"] == "leave") {
+        let id = org["id"].as_str().unwrap();
+        let rows=children.query_map(params![id,actor],|r|Ok(json!({"organization":id,"id":r.get::<_,String>(0)?,"name":r.get::<_,String>(1)?}))).map_err(storage)?;
+        for row in rows {
+            spaces_to_transfer.push(row.map_err(storage)?);
+        }
+    }
+    Ok(
+        json!({"organizations":organizations,"shared_machines":machines,"spaces_to_transfer":spaces_to_transfer}),
+    )
 }
 
 pub(crate) fn purge_organization(db: &Connection, org: &str) -> Result<()> {

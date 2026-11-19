@@ -14,6 +14,9 @@ static EN: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
 pub fn select(language: &str) {
     ENGLISH.set(language == "en");
 }
+pub fn language() -> &'static str {
+    if ENGLISH.get() { "en" } else { "zh-CN" }
+}
 pub fn label(s: &str) -> &str {
     if ENGLISH.get() {
         EN.get(s).copied().unwrap_or(s)

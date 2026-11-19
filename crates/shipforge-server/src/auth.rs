@@ -210,8 +210,14 @@ pub fn execute(
 
 pub fn authorize(principal: &Principal, request: &Value) -> Result<(), String> {
     let op = request["op"].as_str().unwrap_or("");
-    if op == "organization.depart" && principal.personal {
-        return Err("forbidden: sign in as the member to leave or dissolve an organization".into());
+    if matches!(
+        op,
+        "organization.depart" | "organization.ownership" | "space.transfer"
+    ) && principal.personal
+    {
+        return Err(
+            "forbidden: sign in with a member session to change ownership or depart".into(),
+        );
     }
     let allowed = match principal.scope.as_str() {
         "write" => true,
@@ -220,6 +226,10 @@ pub fn authorize(principal: &Principal, request: &Value) -> Result<(), String> {
             op,
             "machine.register"
                 | "machine.heartbeat"
+                | "machine.stopped"
+                | "machine.runtime.jobs"
+                | "machine.runtime.finish"
+                | "machine.runtime.publish"
                 | "skill.jobs"
                 | "skill.finish"
                 | "run.claim"

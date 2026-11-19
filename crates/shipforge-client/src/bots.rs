@@ -1,9 +1,10 @@
-//! Device-owned official Tencent adapters. The team server stores bindings and conversation work.
+//! Device-owned official messaging adapters. The team server stores bindings and conversation work.
 use super::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ring::rand::{SecureRandom, SystemRandom};
 use uuid::Uuid;
 mod gateway;
+mod lark;
 mod net;
 mod qq;
 mod vault;
@@ -96,8 +97,8 @@ fn connect(c: &mut Client, v: &vault::Vault, s: &mut Value) -> R<Value> {
 }
 fn start(c: &mut Client, v: &vault::Vault, q: &Value, space: &str, manual: bool) -> R<Value> {
     let provider = if manual { "qq" } else { field(q, "provider")? };
-    if !matches!(provider, "qq" | "wechat") {
-        return Err("invalid: provider must be qq or wechat".into());
+    if !matches!(provider, "qq" | "wechat" | "feishu" | "lark") {
+        return Err("invalid: unknown messaging provider".into());
     }
     let who = c.execute(json!({"op":"whoami","space":space,"allow_cached":false}))?;
     if !matches!(
@@ -114,7 +115,7 @@ fn start(c: &mut Client, v: &vault::Vault, q: &Value, space: &str, manual: bool)
         return Err("forbidden: Agent unavailable".into());
     }
     let id = Uuid::new_v4().to_string();
-    let mut s = json!({"id":id,"space":space,"provider":provider,"key":STANDARD.encode(rand_bytes::<32>()?),"agent":agent,"dm":q["dm"].as_bool().unwrap_or(true),"groups":q["groups"].as_bool().unwrap_or(provider=="qq"),"status":"wait"});
+    let mut s = json!({"id":id,"space":space,"provider":provider,"key":STANDARD.encode(rand_bytes::<32>()?),"agent":agent,"dm":q["dm"].as_bool().unwrap_or(true),"groups":q["groups"].as_bool().unwrap_or(provider!="wechat"),"status":"wait"});
     if provider == "wechat" && s["groups"] == true {
         return Err("invalid: personal WeChat supports direct chat".into());
     }
@@ -124,7 +125,9 @@ fn start(c: &mut Client, v: &vault::Vault, q: &Value, space: &str, manual: bool)
         qq::token(&mut s)?;
         return connect(c, v, &mut s);
     }
-    if provider == "wechat" {
+    if lark::branded(provider) {
+        lark::start(&mut s)?;
+    } else if provider == "wechat" {
         wechat::start(&mut s)?;
     } else {
         qq::start(&mut s)?;
@@ -135,7 +138,11 @@ fn start(c: &mut Client, v: &vault::Vault, q: &Value, space: &str, manual: bool)
 pub(super) fn execute(c: &mut Client, q: &Value) -> R<Value> {
     let space = q["space"].as_str().unwrap_or("default");
     let op = field(q, "op")?;
-    let identity = c.execute(json!({"op":"bot.bindings","space":space,"allow_cached":false}))?;
+    let mut lookup = json!({"op":"bot.bindings","space":space,"allow_cached":false});
+    if op == "bot.qr.start" && q["provider"].as_str().is_some_and(lark::branded) {
+        lookup["available_for"] = q["provider"].clone();
+    }
+    let identity = c.execute(lookup)?;
     let scope = json!([identity["workspace"], identity["space"], identity["actor"]]).to_string();
     let v = vault::Vault::new(
         c.directory
@@ -144,6 +151,13 @@ pub(super) fn execute(c: &mut Client, q: &Value) -> R<Value> {
         scope,
     )?;
     if matches!(op, "bot.qr.start" | "bot.qq.connect") {
+        if q["provider"].as_str().is_some_and(lark::branded)
+            && !identity["available_agents"]
+                .as_array()
+                .is_some_and(|a| a.iter().any(|v| v["id"] == q["agent"]))
+        {
+            return Err("conflict: this Agent is unavailable for this cloud".into());
+        }
         return start(c, &v, q, space, op == "bot.qq.connect");
     }
     let id = field(q, "id")?;
@@ -159,11 +173,13 @@ pub(super) fn execute(c: &mut Client, q: &Value) -> R<Value> {
         };
         v.remove(id)?;
         gateway::close(id);
+        lark::gateway::close(id);
         return Ok(result);
     }
     if op == "bot.sync" && !binding.is_some_and(|b| b["state"] == "connected") {
         v.remove(id)?;
         gateway::close(id);
+        lark::gateway::close(id);
         return Err("conflict: binding disconnected or replaced".into());
     }
     let _guard = v.lock(id)?;
@@ -174,12 +190,14 @@ pub(super) fn execute(c: &mut Client, q: &Value) -> R<Value> {
         }
         if matches!(
             s["status"].as_str(),
-            Some("expired" | "verify_code_blocked" | "binded_redirect")
+            Some("expired" | "verify_code_blocked" | "binded_redirect" | "denied" | "wrong_cloud")
         ) {
             return Ok(json!({"id":id,"state":s["status"]}));
         }
         if s["status"] != "confirmed" {
-            if s["provider"] == "wechat" {
+            if s["provider"].as_str().is_some_and(lark::branded) {
+                lark::check(&mut s)?;
+            } else if s["provider"] == "wechat" {
                 wechat::check(&mut s, q)?;
             } else {
                 qq::check(&mut s)?;
@@ -191,18 +209,26 @@ pub(super) fn execute(c: &mut Client, q: &Value) -> R<Value> {
         }
         Ok(json!({"id":id,"state":s["status"],"provider":s["provider"]}))
     } else {
+        if s["provider"].as_str().is_some_and(lark::branded) {
+            s["active_binding"] = binding.cloned().unwrap_or(Value::Null);
+        }
         let pending = deliver(c, &v, &mut s)?;
-        let poll = if s["provider"] == "wechat" {
+        let poll = if s["provider"].as_str().is_some_and(lark::branded) {
+            lark::gateway::poll(c, &v, &mut s)
+        } else if s["provider"] == "wechat" {
             wechat::poll(c, &v, &mut s)
         } else {
             gateway::poll(c, &v, &mut s)
         };
         if poll.as_ref().is_err_and(|e| {
-            e.contains("WeChat session expired") || e.contains("QQ credentials rejected")
+            e.contains("WeChat session expired")
+                || e.contains("QQ credentials rejected")
+                || e.contains("Lark application revoked")
         }) {
             adapter(c, &s, "bot.expire", json!({}))?;
             v.remove(id)?;
             gateway::close(id);
+            lark::gateway::close(id);
         }
         let incoming = poll?;
         v.save(id, &s)?;
@@ -217,7 +243,9 @@ fn deliver(c: &mut Client, v: &vault::Vault, s: &mut Value) -> R<usize> {
         if work.is_null() {
             break;
         }
-        let send = if s["provider"] == "wechat" {
+        let send = if s["provider"].as_str().is_some_and(lark::branded) {
+            lark::messages::send(c, v, s, &work)
+        } else if s["provider"] == "wechat" {
             wechat::send(c, v, s, &work)
         } else {
             qq::send(s, &work)
@@ -250,6 +278,6 @@ pub(super) fn schema(s: &mut Value) {
         ("bot.sync", vec!["id"]),
         ("bot.disconnect", vec!["id"]),
     ] {
-        rules.push(json!({"if":{"properties":{"op":{"const":op}}},"then":{"required":req,"properties":{"provider":{"enum":["wechat","qq"]},"dm":{"type":"boolean"},"groups":{"type":"boolean"},"verify_code":{"type":"string","pattern":"^[0-9]{4,12}$"}}}}));
+        rules.push(json!({"if":{"properties":{"op":{"const":op}}},"then":{"required":req,"properties":{"provider":{"enum":["wechat","qq","feishu","lark"]},"dm":{"type":"boolean"},"groups":{"type":"boolean"},"verify_code":{"type":"string","pattern":"^[0-9]{4,12}$"}}}}));
     }
 }

@@ -14,6 +14,19 @@ pub struct Record {
     pub rev: i64,
 }
 impl Record {
+    pub fn localized_title(&self) -> &str {
+        if matches!(self.kind.as_str(), "status" | "status_library") {
+            shipforge_core::status_display_name(
+                &self.id,
+                &self.title,
+                self.fields.get("names"),
+                self.fields.get("system").and_then(Value::as_bool) == Some(true),
+                crate::locale::language(),
+            )
+        } else {
+            &self.title
+        }
+    }
     pub fn field(&self, name: &str) -> &str {
         self.fields.get(name).and_then(Value::as_str).unwrap_or("")
     }

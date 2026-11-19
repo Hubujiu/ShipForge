@@ -403,6 +403,7 @@ pub fn execute(
     let canonical = workspace.path.canonicalize().map_err(|e| e.to_string())?;
     let until = began + timeout;
     let mut context = run.clone();
+    let _inputs = crate::personal_bots::stage_inputs(state, &mut context)?;
     let _skills = run_skills::stage(state, &mut context)?;
     for round in 0..=4 {
         if pulse()? {

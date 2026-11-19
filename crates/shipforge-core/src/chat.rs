@@ -588,6 +588,13 @@ pub(crate) fn notify(c: &Context<'_>, message: &Record) -> Result<()> {
             continue;
         }
         let event = if direct { "chat_mention" } else { "chat" };
+        crate::inbox::deliver_mail(
+            c,
+            &recipient,
+            event,
+            ("chat", &room.id),
+            Some(("message", &message.id)),
+        )?;
         if !crate::inbox::channel_enabled(c, &recipient, event)? {
             continue;
         }

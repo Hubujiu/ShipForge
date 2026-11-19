@@ -49,6 +49,7 @@ fn main() {
     let mut smoke = false;
     let mut dir: Option<PathBuf> = None;
     let mut invitation = None;
+    let mut machine_login = None;
     let mut args = std::env::args_os().skip(1);
     while let Some(arg) = args.next() {
         if arg == "--version" || arg == "-V" {
@@ -61,7 +62,13 @@ fn main() {
             );
             return;
         }
-        if arg == "--smoke" || arg == "--smoke-test" {
+        if arg == "--worker-login" {
+            machine_login = args.next().map(PathBuf::from);
+            if machine_login.is_none() {
+                print_information("缺少工作机配置");
+                return;
+            }
+        } else if arg == "--smoke" || arg == "--smoke-test" {
             smoke = true;
         } else if arg == "--demo" {
             demo = true;
@@ -74,6 +81,7 @@ fn main() {
                         || shipforge_core::task_link_parts(s).is_ok()
                         || shipforge_core::document_link_parts(s).is_ok()
                         || shipforge_core::inbox_link_parts(s).is_ok()
+                        || shipforge_core::delivery_link_parts(s).is_ok()
                         || shipforge_client::identity_link_id(s).is_some()
                         || s.strip_prefix("shipforge://invite/").is_some_and(|body| {
                             body.len() == 80
@@ -99,6 +107,32 @@ fn main() {
             print_information(&format!("未知参数 {}", arg.to_string_lossy()));
             std::process::exit(2);
         }
+    }
+    if let Some(file) = machine_login {
+        let data = dir.map(Ok).unwrap_or_else(shipforge_client::data_dir);
+        match data.and_then(|data| {
+            machine::service(&data, "login", Some(&file), &serde_json::Value::Null)
+        }) {
+            Ok(_) => return,
+            Err(e) => {
+                print_information(&e);
+                std::process::exit(1);
+            }
+        }
+    }
+    if !demo
+        && !smoke
+        && let Ok(data) = dir
+            .clone()
+            .map(Ok)
+            .unwrap_or_else(shipforge_client::data_dir)
+        && (data.join("machine-services").is_dir()
+            || data.join("machine.json").is_file()
+            || data.join("machines").is_dir())
+    {
+        std::thread::spawn(move || {
+            let _ = machine::service(&data, "desktop-open", None, &serde_json::Value::Null);
+        });
     }
     application().with_assets(assets::Assets).run(move |cx| {
         init(cx);
@@ -139,7 +173,7 @@ fn main() {
             },
             cx,
             move |window, cx| {
-                cx.new(|cx| {
+                let view = cx.new(|cx| {
                     let mut workbench = Workbench::new(dir.clone(), demo, smoke, window, cx);
                     if let Some(link) = invitation.clone() {
                         if link.starts_with("shipforge://view/") {
@@ -148,7 +182,9 @@ fn main() {
                             workbench.open_document_link(link);
                         } else if link.starts_with("shipforge://task/") {
                             workbench.open_task_link(link);
-                        } else if link.starts_with("shipforge://inbox/") {
+                        } else if link.starts_with("shipforge://inbox/")
+                            || link.starts_with("shipforge://activity/")
+                        {
                             workbench.inbox.initial_link = Some(link);
                         } else if let Some(id) = shipforge_client::identity_link_id(&link) {
                             workbench.open_identity_link(id);
@@ -157,7 +193,11 @@ fn main() {
                         }
                     }
                     workbench
-                })
+                });
+                if !demo && !smoke {
+                    app::machine_management::bind_close(&view, window, cx);
+                }
+                view
             },
         )
         .expect("打开 ShipForge 窗口");

@@ -1,5 +1,7 @@
 # ShipForge 机器执行器
 
+使用 `service status|configure|start|stop|restart` 管理本机监督进程，使用桌面的「运行时能力」检查已安装工具、请求受支持的安装与更新或发送模型连接测试。[命令、配置与工作机权限](../../docs/machine-management.md)
+
 使用 `approve-directory` 批准本机项目目录，`diagnose` 查看此监督进程管理的活动 PID 和最近事件。任务与对话可采用独立额度，运行设置支持错峰排班和多目录择空闲。[Windows 与 CLI 操作](../../docs/runtime-scheduling.md)
 
 `shipforge-worker.exe` 把空间中的任务交给本机安装的程序。它与桌面、CLI 共用工作区协议。单机模式使用当前用户的 ShipForge 数据目录，可用 `SHIPFORGE_DATA_DIR` 指定独立配置。团队模式读取该配置中保存的连接，也可同时设置 `SHIPFORGE_SERVER` 和 `SHIPFORGE_TOKEN`。持续领任务的进程可使用 `worker` 范围令牌，执行身份还需目标空间的编辑权限。运行、回复、产物及关联任务可以从客户端的执行历史中打开。
@@ -116,3 +118,7 @@ GitHub 连接器的字段为 `{"provider":"github","repository":"OWNER/REPO","en
 ### Personal WeChat and QQ
 
 After binding an official account to an Agent, run `shipforge-worker bot-sync --space default --binding <id> --watch` from the same device profile. An optional `--directory` selects the data directory, and omitting `--watch` processes a single cycle. The desktop starts the watcher on successful binding. Each bound ID has one watcher per profile. The machine supervisor that executes Agent runs can operate independently. [Account setup, delivery states and provider limits](../../docs/personal-bots.md)
+
+### 飞书与 Lark 智能体
+
+在绑定设备使用 `shipforge-worker bot-sync --space default --binding <绑定ID> --watch` 收取对应云端长连接消息并回传 Agent 结果。消息里的可用文件在该次私有运行的 `fields.chat_context.messages` 中给出 `input_files`，每个条目的 `local_path` 指向运行期间的临时文件。外部 Runtime 可在处理请求时读它。运行结束即清理该目录。[授权、运行和消息格式](../../docs/lark-agent.md)

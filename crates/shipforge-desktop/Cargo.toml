@@ -14,12 +14,13 @@ shipforge-client = { path = "../shipforge-client" }
 shipforge-core = { path = "../shipforge-core" }
 uuid.workspace = true
 [target.'cfg(windows)'.dependencies]
+raw-window-handle = "0.6"
+windows-sys = { version = "=0.61.2", features = ["Win32_Foundation","Win32_UI_Shell","Win32_UI_WindowsAndMessaging"] }
 windows = { version = "=0.61.3", features = ["Data_Xml_Dom", "UI_Notifications"] }
 [target.'cfg(windows)'.dev-dependencies]
 tiny_http.workspace = true
 ureq.workspace = true
 url.workspace = true
-raw-window-handle = "0.6"
 tempfile.workspace = true
 [build-dependencies]
 embed-resource = "=3.0.12"

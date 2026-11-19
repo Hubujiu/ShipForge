@@ -280,6 +280,7 @@ pub(crate) fn content_context(c: &Context<'_>, run: &Record) -> Result<Value> {
             value["external_scene"] = row.fields["external_scene"].clone();
         }
         if Some(row.id.as_str()) == anchor {
+            crate::bots::run_files(&requester, run, &row, &mut value)?;
             current = Some(value);
         } else {
             messages.push(value);

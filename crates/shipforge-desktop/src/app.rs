@@ -17,6 +17,8 @@ pub(crate) mod conversation_ui;
 pub(crate) mod identity_ui;
 #[path = "inbox_ui.rs"]
 pub(crate) mod inbox_ui;
+#[path = "machine_management.rs"]
+pub(crate) mod machine_management;
 #[path = "market_ui.rs"]
 pub(crate) mod market_ui;
 #[path = "navigation.rs"]
@@ -33,6 +35,8 @@ pub(crate) mod review_ui;
 pub(crate) mod runtime_ui;
 #[path = "space_ui.rs"]
 pub(crate) mod space_ui;
+#[path = "status_ui.rs"]
+pub(crate) mod status_ui;
 #[path = "workspace_ui.rs"]
 pub(crate) mod workspace_ui;
 use serde_json::{Map, Value, json};
@@ -71,6 +75,8 @@ impl Default for Location {
 }
 #[derive(Clone)]
 pub enum UiAction {
+    FoldStatuses(String, bool),
+    MachineManagement(machine_management::Action),
     LibraryDetails(String),
     Bot(personal_bots_ui::Action),
     IdentityProfile,
@@ -141,6 +147,7 @@ pub enum UiAction {
     NewPersonalToken(bool),
 }
 enum After {
+    MachineManagement(machine_management::Reply),
     Library(market_ui::Reply),
     Bot(personal_bots_ui::Reply),
     Identity(identity_ui::Reply),
@@ -153,6 +160,8 @@ enum After {
     OrganizedChat,
     OpenChat,
     SpacePreview(Record),
+    SpaceSuccessors(Record),
+    StatusRemoval,
     SpaceMembership,
     ChatShareCreated,
     ChatShareOpened,
@@ -190,6 +199,7 @@ struct Pending {
     write: bool,
 }
 pub struct Workbench {
+    pub status_folds: HashMap<String, bool>,
     pub offline: bool,
     pub people_query: String,
     pub people_kind: &'static str,
@@ -242,6 +252,7 @@ pub struct Workbench {
     sequence: u64,
     pending: HashMap<u64, Pending>,
     bot_poll_at: Instant,
+    machine_poll_at: Instant,
     poll_at: Instant,
     search_at: Instant,
 }
@@ -258,6 +269,7 @@ impl Workbench {
         root_focus.focus(window, cx);
         let app = Self {
             offline: false,
+            machine_poll_at: Instant::now(),
             people_query: String::new(),
             people_kind: "",
             resume_detail: None,
@@ -276,6 +288,7 @@ impl Workbench {
             history: vec![loc.clone()],
             loc,
             rows: Rows::new(),
+            status_folds: HashMap::new(),
             errors: BTreeMap::new(),
             form: None,
             motion: Motion::default(),
@@ -354,7 +367,7 @@ impl Workbench {
             return "未设置".into();
         }
         self.find(kind, id)
-            .map(|r| r.title.clone())
+            .map(|r| r.localized_title().to_owned())
             .unwrap_or_else(|| id.to_owned())
     }
     pub fn handler_name(&self, id: &str) -> String {
@@ -453,12 +466,13 @@ impl Workbench {
             ]);
         }
         match self.loc.page {
+            Page::Statuses | Page::Types => kinds.extend(["status_library", "status", "task_type"]),
             Page::Members if self.loc.section == "people" => kinds.push("people_directory"),
             Page::Members if matches!(self.role.as_str(), "admin" | "owner") => {
                 kinds.push("member_invitation")
             }
             Page::Iterations => kinds.extend(["task", "iteration_settings"]),
-            Page::Dashboard | Page::Projects | Page::Views => kinds.push("task"),
+            Page::Dashboard | Page::Projects | Page::Views => kinds.extend(["task", "status"]),
             Page::Assistant | Page::Chats => kinds.extend(["agent", "chat", "chat_invitation"]),
             Page::Connectors => kinds.push("agent"),
             Page::Market => kinds.extend(["skill", "agent"]),
@@ -483,6 +497,7 @@ impl Workbench {
                 kinds.push("connector");
             }
             match item.kind.as_str() {
+                "task_type" => kinds.extend(["status_library", "status", "task_type"]),
                 "task" => kinds.extend([
                     "chat",
                     "task",
@@ -649,6 +664,7 @@ impl Workbench {
         );
     }
     fn tick(&mut self, w: &mut Window, cx: &mut Context<Self>) {
+        self.machine_management_tick();
         self.bot_tick();
         self.slash_tick(cx);
         self.view_preview(cx);
@@ -920,6 +936,7 @@ impl Workbench {
             return;
         }
         match after {
+            After::MachineManagement(reply) => self.machine_management_reply(reply, value, w, cx),
             After::Library(reply) => self.library_reply(reply, value, w, cx),
             After::Bot(reply) => self.bot_reply(reply, value, w, cx),
             After::Identity(reply) => self.identity_reply(reply, value, w, cx),
@@ -963,6 +980,7 @@ impl Workbench {
                     self.open(room, true);
                 }
             }
+            After::StatusRemoval => self.status_removal_reply(value, w, cx),
             After::SpacePreview(mut space) => {
                 space.rev = value["rev"].as_i64().unwrap_or(space.rev);
                 self.open_form(
@@ -974,6 +992,27 @@ impl Workbench {
                     w,
                     cx,
                 );
+            }
+            After::SpaceSuccessors(space) => {
+                let peers = value
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter(|m| {
+                        m["id"] != self.actor.as_str()
+                            && matches!(
+                                m["fields"]["role"].as_str(),
+                                Some("admin" | "member" | "editor" | "owner")
+                            )
+                    })
+                    .filter_map(|m| {
+                        Some((
+                            m["id"].as_str()?.to_owned(),
+                            format!("{} · {}", m["title"].as_str()?, m["id"].as_str()?),
+                        ))
+                    })
+                    .collect();
+                self.open_form(Mode::SpaceTransfer(space, peers), w, cx);
             }
             After::SpaceMembership => self.space_membership_reply(&value, w, cx),
             After::RunConversation => {
@@ -1443,6 +1482,7 @@ impl Workbench {
                     });
                 }
             }
+            Mode::MachineManagement(f) => value = f.prefill(),
             Mode::Bot(f) => {
                 value = f.prefill();
                 if matches!(f, personal_bots_ui::BotForm::Start(_))
@@ -1471,6 +1511,9 @@ impl Workbench {
                 op: "iteration.configure",
                 record,
             } => value = record.fields.clone(),
+            Mode::Workflow { op, record } if status_ui::handles(op) => {
+                value = self.status_prefill(op, record)
+            }
             Mode::Create(k) if k == "agent" => {
                 if let Some(default) = self
                     .find("space", &self.loc.space)
@@ -1526,6 +1569,7 @@ impl Workbench {
             form.entries.retain(|e| e.spec.key != "publish_asana");
         }
         if is_task {
+            self.pick_task_initial(&mut form, false);
             self.configure_assignees(&mut form, &value);
             self.task_field_editors(&mut form, w, cx);
         }
@@ -1566,6 +1610,8 @@ impl Workbench {
             return;
         }
         match action {
+            FoldStatuses(key,collapsed)=>{self.status_folds.insert(key,collapsed);}
+            MachineManagement(action)=>self.machine_management_action(action,w,cx),
             Bot(action)=>self.bot_action(action,w,cx),
             IdentityProfile => self.send(
                 json!({"op":"access.account.profile"}),
@@ -1771,6 +1817,7 @@ impl Workbench {
                     *value = crate::forms::Selection::Many(defaults);
                 }
                 if type_changed && let Some(mut form) = self.form.take() {
+                    self.pick_task_initial(&mut form,true);
                     self.task_field_editors(&mut form, w, cx);
                     self.form = Some(form);
                 }
@@ -2021,6 +2068,8 @@ cx);
             Mode::QuickCreate => self.close_form(w,cx),
             Mode::OrgDefaults(r) => self.send(json!({"op":"organization.configure","space":self.loc.space,"expected_rev":r.rev,"default_language":val("default_language"),"priority_levels":val("priority_levels").parse::<u64>().map_err(|_|"请选择优先级档数")?}),After::Notice("已保存组织默认设置".into()),true),
             Mode::OrgDepart(r,action) => self.send(json!({"op":"organization.depart","space":self.loc.space,"action":action,"confirmation":val("confirmation"),"members":r.fields["members"],"expected_rev":r.rev}),After::Notice("组织成员关系已更新".into()),true),
+            Mode::SpaceTransfer(space,_)=>self.send(json!({"op":"space.transfer","space":space.id,"expected_rev":space.rev,"target":val("target")}),After::Notice("空间管理权已转让".into()),true),
+            Mode::OrgOwnership(r,action)=>self.send(json!({"op":"organization.ownership","space":self.loc.space,"expected_rev":r.rev,"action":action,"target":val("target")}),After::Notice("组织所有者已更新".into()),true),
             Mode::PeopleFilter => {self.people_query=val("query");self.close_form(w,cx);self.read(false);}
             Mode::StartChat(kind) => {
                 let mut command=Value::Object(values);
@@ -2093,6 +2142,7 @@ cx);
                 self.close_form(w, cx);
                 self.guide_action(onboarding::Action::Start("connect_machine"), w, cx);
             }
+            Mode::MachineManagement(f)=>self.machine_management_submit(f,Value::Object(values),w,cx)?,
             Mode::Bot(f)=>self.bot_submit(f,Value::Object(values),w,cx)?,
             Mode::Identity(f) => self.identity_submit(f, Value::Object(values))?,
             Mode::Directory(f) => self.directory_submit(f, values, w, cx)?,
@@ -2451,6 +2501,7 @@ cx);
                 self.backend.sender.send(Request::Machine{ticket,space:self.loc.space.clone(),fields,stop:false}).map_err(|e|e.to_string())?;
             }
 
+            Mode::Workflow {op,record} if status_ui::handles(op) => self.submit_status(op,&record,values),
             Mode::Workflow { op, record } => {
                 let mut q = Value::Object(values);
                 if op == "iteration.configure" {
@@ -2608,6 +2659,29 @@ cx);
         match source {
             "$approved_directories" => self.runtime_directory_choices(),
             "$machine_skills" => self.library.sources.clone(),
+            "$org_non_owners" | "$org_successors" | "$org_current_owners" => self
+                .list("organization_settings")
+                .first()
+                .and_then(|r| r.fields.get("ownership_choices"))
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter(|m| match source {
+                    "$org_non_owners" => m["role"] != "owner",
+                    "$org_successors" => m["id"] != self.actor.as_str(),
+                    _ => m["role"] == "owner" && m["id"] != "owner",
+                })
+                .filter_map(|m| {
+                    Some((
+                        m["id"].as_str()?.to_owned(),
+                        format!("{} · {}", m["name"].as_str()?, m["id"].as_str()?),
+                    ))
+                })
+                .collect(),
+            "$space_successors" => match self.form.as_ref().map(|f| &f.mode) {
+                Some(Mode::SpaceTransfer(_, peers)) => peers.clone(),
+                _ => Vec::new(),
+            },
             "$other_people" => self
                 .list("member")
                 .iter()
@@ -2740,13 +2814,10 @@ cx);
                 });
                 v
             }
-            "$statuses" => {
-                let mut v: Vec<_> = crate::catalog::STATUSES
-                    .iter()
-                    .map(|(v, l, _)| (v.to_string(), l.to_string()))
-                    .collect();
-                overlay_options(&mut v, from("status"));
-                v
+            "$statuses" => self.status_choices(""),
+            "$task_statuses" => self.task_form_statuses(),
+            "$workflow_statuses" | "$workflow_defaults" | "$org_status_targets" => {
+                self.workflow_choices(source)
             }
             "$priorities" => self
                 .priority_options()
@@ -2766,9 +2837,9 @@ cx);
             .iter()
             .filter(|r| {
                 if self.loc.page == Page::Triage {
-                    return r.field("status") == "triage";
+                    return self.status_category(r.field("status")) == "triage";
                 }
-                if r.field("status") == "triage"
+                if self.status_category(r.field("status")) == "triage"
                     && self.loc.page != Page::Mine
                     && self.loc.view.is_none()
                 {
@@ -2881,6 +2952,16 @@ cx);
             && let Some(review) = self.review_keys(key)
         {
             Some(review)
+        } else if mods.control && key == "n" && self.loc.page == Page::Statuses {
+            self.list("status_library")
+                .first()
+                .is_some_and(|r| {
+                    self.writable() && r.fields.get("can_manage") == Some(&Value::Bool(true))
+                })
+                .then_some(UiAction::Form(Mode::Workflow {
+                    op: "status.library.save",
+                    record: Record::default(),
+                }))
         } else if mods.control && key == "n" && self.loc.page.creatable() {
             Some(UiAction::Create(self.loc.page.info().kind.into()))
         } else if mods.alt && key == "left" {
@@ -2925,8 +3006,14 @@ mod conversation_ui_test;
 #[path = "enterprise_integration_ui_test.rs"]
 mod enterprise_integration_ui_test;
 #[cfg(all(test, windows))]
+#[path = "lark_ui_test.rs"]
+mod lark_ui_test;
+#[cfg(all(test, windows))]
 #[path = "live_navigation_test.rs"]
 mod live_navigation_test;
+#[cfg(all(test, windows))]
+#[path = "machine_management_ui_test.rs"]
+mod machine_management_ui_test;
 #[cfg(all(test, windows))]
 #[path = "market_ui_test.rs"]
 mod market_ui_test;
@@ -2945,6 +3032,9 @@ mod runtime_ui_test;
 #[cfg(all(test, windows))]
 #[path = "space_ui_test.rs"]
 mod space_ui_test;
+#[cfg(all(test, windows))]
+#[path = "status_ui_test.rs"]
+mod status_ui_test;
 #[cfg(all(test, windows))]
 #[path = "tag_ui.rs"]
 mod tag_ui;

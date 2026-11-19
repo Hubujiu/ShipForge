@@ -1,5 +1,13 @@
 # ShipForge 命令行与 JSON 协议
 
+`status.library` 读取当前组织的状态定义、译名、用量及其在当前空间的 ID。`status.library.save` 创建或按 `expected_rev` 编辑定义。`task_type.workflow` 读取当前空间指定类型的有序状态及有效默认值，`task_type.workflow.save` 按类型的修订号保存有序的 `statuses` 和可选 `default_status`。`status.library.removal` 预览删除与迁入影响，`status.library.remove` 使用同一目标及刚获得的 `preview` 原子迁移数据。[组织状态与类型工作流示例](status-workflows.md)
+
+`machine.runtimes` 读取已发现的工具、版本、在线状态与操作历史。机器所有者通过 `machine.runtime.request` 发起 `rescan`、`install`、`upgrade` 或 `test`。受托工作机通过 `machine.runtime.publish`、`machine.runtime.jobs`、`machine.runtime.finish` 与 `machine.stopped` 报告执行情况。本机 `shipforge-worker service` 管理监督进程、Windows 登录与退出策略。[机器管理命令与配置](machine-management.md)
+
+`organization.ownership` 使用组织当前修订号、成员 ID `target` 和 `action` 管理所有者。可选 `grant`、`transfer` 和 `revoke`。转让时原所有者成为管理员。每个组织至少保留一位所有者。`space.transfer` 将指定子空间的管理权交给已加入该空间的成员，需提交该空间的 `expected_rev`。[组织与空间管理权](navigation.md)
+
+`delivery.history` 列出当前身份仍可查看的邮件动态，传 `invitations:true` 可由组织管理员查邀请邮件。`delivery.open` 接受邮件落地页中的 `shipforge://activity/…` 链接，返回该身份有权打开的目标和关联评论。`delivery.retry` 使用投递 ID 重试邮件服务近期明确拒收的请求。发件服务的 `accepted` 表示已取得供应商回执。[邮件投递与状态](inbox.md)
+
 `organization.settings` 读取当前空间所属组织的语言、优先级档数、修订号和成员数。`organization.configure` 使用 `expected_rev` 保存 `default_language` 或 `priority_levels`。`organization.depart` 使用 `action:"leave"` 或 `"dissolve"`，提交修订号及组织名称 `confirmation`，删除还须提交刚确认的 `members` 人数。[组织设置及数据保留](navigation.md)
 
 `directory.people` 按对象类别查本组织已加入空间的成员和机器。`search` 可指定 `search_scope:"organization"` 跨空间查找。`chat.start` 支持真人私聊、Agent、小队和带初始成员的群聊，`request_id` 使重复请求返回同一会话。[请求示例](navigation.md)
@@ -14,7 +22,7 @@
 
 `profiles.verification` 读取本机发起、在十分钟内有效的邮箱验证状态。安装版从邮件网页的「打开 ShipForge 桌面版」链接恢复同一验证表单。
 
-邮箱登录或注册使用 `profiles.login.start` 和 `profiles.login.finish`。读取或修改资料用 `access.account.profile`、`access.account.update`。通过 `access.account.impact` 预览组织及共享机器影响。用 `profiles.close.start` 与 `profiles.close.finish` 在验证邮箱后注销账号，服务端操作为 `access.account.verify` 与 `access.account.close`。退出当前会话可用 `profiles.logout`，服务端对应 `access.account.logout`。[邮件配置与数据处理](account-lifecycle.md)
+邮箱登录或注册使用 `profiles.login.start` 和 `profiles.login.finish`。读取或修改资料用 `access.account.profile`、`access.account.update`。通过 `access.account.impact` 预览组织及共享机器影响。对于会继续存在的组织，按 `spaces_to_transfer` 列出的子空间先转让管理权。用 `profiles.close.start` 与 `profiles.close.finish` 在验证邮箱后注销账号，服务端操作为 `access.account.verify` 与 `access.account.close`。退出当前会话可用 `profiles.logout`，服务端对应 `access.account.logout`。[邮件配置与数据处理](account-lifecycle.md)
 
 禅道与 PingCode 连接器分别使用 `zentao.credential`、`zentao.projects`、`zentao.preview` 和 `pingcode.credential`、`pingcode.projects`、`pingcode.preview`。用 `imports.commit` 确认预览，`imports.synchronize` 增量拉取并应用，`imports.history` 和 `imports.rollback` 管理批次。启用回写的连接器可通过 `imports.push` 发布已映射状态，或向 PingCode 发布本地评论。`imports.push_history` 查看回执。自建投递端可用 `imports.prepare_push` 和 `imports.finish_push` 操作回写租约。持续同步由工作机 `tracker-sync --watch` 执行。[配置、认证、JSON 示例与故障恢复](tracker-integrations.md)
 
@@ -223,6 +231,10 @@ Slack 连接器管理员可用 `update` 设置布尔值 `fields.slack_assignment
 ## 对话指令、审阅与文档引用
 
 使用 `chat.slash` 查当前运行环境的命令，`chat.slash.send` 发送。任务快捷指令由 `shortcut.catalog`、`shortcut.save`、`shortcut.organize`、`shortcut.run`、`shortcut.history` 和 `shortcut.delete` 管理。用 `task.review.state` 查看当前待审轮次，`task.review` 发送确认。单独的 `chat.complete` 将会话及绑定任务标为完成。用 `shipforge share-image <分享码或链接> <新文件.png>` 或 `chat.share.image` 保存消息快照。文档的 `document.share`、`document.open`、`document.preview` 和 `document.embeds` 均按当前查看者权限读取。[请求示例、Windows 入口与权限](conversation-commands.md)
+
+## 飞书和 Lark 智能体
+
+在绑定设备上用 `bot.qr.start` 指定 `provider` 为 `feishu` 或 `lark` 及 Agent，随后用 `bot.qr.check` 等待对应云确认。`bot.lark.policy` 设置单聊、群 @、免 @ 的群 ID、表情和话题继续触发。`bot.lark.event` 由已验证的本机长连接适配器提交。工作机可用 `bot.sync` 或持续接收模式回传当前消息的文字和文件。[双云授权、命令与验收条件](lark-agent.md)
 
 ## 个人微信与 QQ 的外部 Agent 会话
 

@@ -53,6 +53,8 @@ pub struct Config {
     #[serde(default)]
     pub direct_profiles: std::collections::BTreeSet<String>,
     pub runtimes: BTreeMap<String, Runtime>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub runtime_management: BTreeMap<String, crate::runtime_tools::Management>,
     #[serde(default)]
     pub skill_roots: BTreeMap<String, Vec<PathBuf>>,
     #[serde(default)]
@@ -99,6 +101,11 @@ impl Config {
             .runtimes
             .values()
             .chain(config.approved_tools.values().map(|t| &t.runtime))
+            .chain(config.runtime_management.values().flat_map(|m| {
+                [m.probe.as_ref(), m.install.as_ref(), m.upgrade.as_ref()]
+                    .into_iter()
+                    .flatten()
+            }))
         {
             if runtime.program.as_os_str().is_empty()
                 || runtime.timeout_seconds == 0
@@ -191,6 +198,7 @@ impl Config {
             profiles: BTreeMap::new(),
             direct_profiles: Default::default(),
             runtimes,
+            runtime_management: BTreeMap::new(),
             approved_tools: BTreeMap::new(),
             skill_roots: BTreeMap::new(),
         };

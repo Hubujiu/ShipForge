@@ -8,6 +8,7 @@ use uuid::Uuid;
 
 #[path = "automation.rs"]
 mod automation;
+mod capabilities;
 mod crew_workspace;
 mod directories;
 mod scheduling;
@@ -34,6 +35,12 @@ pub(crate) const OPS: &[&str] = &[
     "tool.authorize",
     "machine.register",
     "machine.heartbeat",
+    "machine.stopped",
+    "machine.runtimes",
+    "machine.runtime.request",
+    "machine.runtime.jobs",
+    "machine.runtime.finish",
+    "machine.runtime.publish",
     "machine.disable",
     "machine.enable",
     "run.enqueue",
@@ -55,6 +62,7 @@ pub(crate) const OPS: &[&str] = &[
     "connector.export",
 ];
 pub(crate) const READ_OPS: &[&str] = &[
+    "machine.runtimes",
     "run.diagnostics",
     "machine.directories",
     "machine.diagnostics",
@@ -68,6 +76,7 @@ pub(crate) const READ_OPS: &[&str] = &[
 const LEASE_MS: i64 = 120_000;
 
 pub(crate) fn extend_schema(schema: &mut Value) {
+    capabilities::schema(schema);
     scheduling::schema(schema);
     market::schema(schema);
     let props = schema["properties"]
@@ -125,7 +134,7 @@ pub(crate) fn extend_schema(schema: &mut Value) {
             &["machine_id", "machine_key", "title"],
         ),
         (
-            &["machine.heartbeat", "run.claim"],
+            &["machine.heartbeat", "machine.stopped", "run.claim"],
             &["machine_id", "machine_key"],
         ),
         (
@@ -204,6 +213,7 @@ fn sql_init(db: &Connection) -> Result<()> {
        CREATE INDEX IF NOT EXISTS sf_lease_expiry ON sf_run_leases(expires,space) WHERE response_hash IS NULL;").map_err(db_error)
 }
 pub(crate) fn init(db: &Connection) -> Result<()> {
+    capabilities::init(db)?;
     directories::init(db)?;
     sql_init(db)?;
     crate::agents::init(db)?;
@@ -230,6 +240,17 @@ pub(crate) fn dispatch(c: &Context<'_>, q: &Value) -> Option<Result<Value>> {
             }
             "agent.resolve" => resolved(c, req(q, "id")?),
             "machine.register" => register(c, q),
+            "machine.runtimes"
+            | "machine.runtime.request"
+            | "machine.runtime.jobs"
+            | "machine.runtime.finish"
+            | "machine.runtime.publish" => capabilities::dispatch(c, op, q),
+            "machine.stopped" => {
+                let machine = authenticate(c, q)?;
+                let mut f = machine.fields.clone();
+                f["last_seen"] = Value::Null;
+                encoded(c.update(&machine, &machine.title, f)?)
+            }
             "machine.heartbeat" => {
                 let machine = authenticate(c, q)?;
                 let mut fields = machine.fields.clone();

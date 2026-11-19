@@ -109,6 +109,13 @@ impl IdentityForm {
                         m["name"].as_str()?
                     ));
                 }
+                for space in v["spaces_to_transfer"].as_array().into_iter().flatten() {
+                    lines.push(format!(
+                        "{} · {}",
+                        crate::locale::label("请先转让空间管理权"),
+                        space["name"].as_str()?
+                    ));
+                }
                 Some(lines.join("\n"))
             }
             _ => None,
@@ -168,6 +175,12 @@ impl Workbench {
                 After::Notice("个人资料已保存".into()),
             ),
             IdentityForm::Impact(impact) => {
+                if impact["spaces_to_transfer"]
+                    .as_array()
+                    .is_some_and(|spaces| !spaces.is_empty())
+                {
+                    return Err("请先转让空间管理权".into());
+                }
                 if impact["shared_machines"]
                     .as_array()
                     .is_some_and(|m| !m.is_empty())

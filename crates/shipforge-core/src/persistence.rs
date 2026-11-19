@@ -46,7 +46,9 @@ pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(storage)?;
     tx.execute_batch(V1).map_err(storage)?;
+    crate::statuses::init(&tx)?;
     crate::identity::initialize(&tx)?;
+    crate::organization::migrate_owners(&tx)?;
     crate::spaces::init(&tx)?;
     crate::saved_views::init(&tx)?;
     crate::inbox::init(&tx)?;
@@ -61,6 +63,7 @@ pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
     crate::iterations::init(&tx)?;
     crate::onboarding::initialize(&tx)?;
     crate::invitations::initialize(&tx)?;
+    crate::mail::initialize(&tx)?;
     if tables == 0 {
         tx.execute(
             "INSERT OR IGNORE INTO guide_setup(space) VALUES('default')",
@@ -314,7 +317,7 @@ impl Context<'_> {
         }
         Ok(())
     }
-    fn event(&self, row: &Record, action: &str) -> Result<()> {
+    pub(super) fn event(&self, row: &Record, action: &str) -> Result<()> {
         self.db.execute("INSERT INTO event_log(space,kind,id,rev,action,actor,at,snapshot) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)",params![self.space,row.kind,row.id,row.rev,action,self.actor,row.updated_at,serde_json::to_string(row).map_err(storage)?]).map_err(storage)?;
         if row.kind == "document" && action != "delete" {
             self.db.execute("INSERT INTO versions(space,id,rev,title,fields,actor,at) VALUES(?1,?2,?3,?4,?5,?6,?7)",params![self.space,row.id,row.rev,row.title,row.fields.to_string(),self.actor,row.updated_at]).map_err(storage)?;

@@ -68,9 +68,12 @@ const TRIGGERS: &[(&str, &str)] = &[
 ];
 #[derive(Clone)]
 pub enum Mode {
+    MachineManagement(crate::app::machine_management::Dialog),
     QuickCreate,
     PeopleFilter,
     OrgDefaults(Record),
+    SpaceTransfer(Record, Vec<(String, String)>),
+    OrgOwnership(Record, &'static str),
     OrgDepart(Record, &'static str),
     StartChat(&'static str),
     Library(crate::app::market_ui::LibraryForm),
@@ -163,11 +166,19 @@ impl Mode {
     pub fn heading(&self) -> String {
         use Mode::*;
         match self {
+            MachineManagement(f) => f.title().into(),
             Bot(f) => f.title().into(),
             Identity(f) => f.title().into(),
             QuickCreate => "快捷新建".into(),
             PeopleFilter => "查找成员与机器".into(),
             OrgDefaults(_) => "组织默认设置".into(),
+            SpaceTransfer(_, _) => "转让空间管理权".into(),
+            OrgOwnership(_, action) => match *action {
+                "grant" => "添加组织所有者",
+                "transfer" => "转让组织所有权",
+                _ => "将所有者改为管理员",
+            }
+            .into(),
             OrgDepart(r, action) => format!(
                 "{} · {}（{}）",
                 crate::locale::label(if *action == "leave" {
@@ -248,11 +259,14 @@ impl Mode {
     }
     pub fn submit_label(&self) -> &'static str {
         match self {
+            Self::MachineManagement(f) => f.submit(),
             Self::Bot(f) => f.submit(),
             Self::Identity(f) => f.submit(),
             Self::QuickCreate => "关闭",
             Self::PeopleFilter => "查找",
             Self::OrgDefaults(_) => "保存",
+            Self::SpaceTransfer(_, _) => "确认转让",
+            Self::OrgOwnership(_, _) => "确认",
             Self::OrgDepart(_, _) => "确认",
             Self::StartChat(_) => "打开对话",
             Self::Directory(_) => "确认",
@@ -344,7 +358,7 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             item("title", "任务标题", Text, ""),
             body,
             item("type", "类型", Ref("$types"), "task"),
-            item("status", "状态", Ref("$statuses"), "todo"),
+            item("status", "状态", Ref("$task_statuses"), ""),
             item("priority", "优先级", Ref("$priorities"), "none"),
             item("assignees", "人员处理人", Many("member"), ""),
             item("executor", "执行者（Agent 或小队）", Ref("$executors"), ""),
@@ -808,6 +822,9 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
 }
 pub fn workflow_name(op: &str) -> &'static str {
     match op {
+        "status.library.save" => "编辑组织状态",
+        "status.library.removal" => "预览状态迁移",
+        "task_type.workflow.save" => "配置类型工作流",
         "asana.accounts" => "发现 Asana 工作区",
         "asana.credential" => "绑定 Asana 工作区令牌",
         "asana.projects" => "发现 Asana 项目",
@@ -875,6 +892,7 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
     use Format::*;
     use Mode::*;
     match mode {
+        MachineManagement(f) => f.specs(),
         Bot(f) => f.specs(),
         Identity(f) => f.specs(),
         QuickCreate => vec![],
@@ -894,6 +912,17 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
             ),
         ],
         OrgDepart(_, _) => vec![item("confirmation", "输入组织名称确认", Text, "")],
+        SpaceTransfer(_, _) => vec![item("target", "空间成员", Ref("$space_successors"), "")],
+        OrgOwnership(_, action) => vec![item(
+            "target",
+            "组织成员",
+            Ref(match *action {
+                "grant" => "$org_non_owners",
+                "transfer" => "$org_successors",
+                _ => "$org_current_owners",
+            }),
+            "",
+        )],
         StartChat("group") => vec![
             item("title", "群聊名称", Text, ""),
             item("members", "真人成员", Many("$other_people"), ""),
@@ -1067,6 +1096,36 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
         }
         Download(..) => vec![item("path", "保存到新文件", Text, "")],
         Workflow { op, record } => match *op {
+            "status.library.save" => vec![
+                item("title", "显示名称", Text, ""),
+                item("category", "状态类别", Choice(STATUS), "todo"),
+                item("zh", "简体中文名称", Text, ""),
+                item("en", "英文名称", Text, ""),
+                item("color", "状态颜色（#RRGGBB）", Text, ""),
+                item("order", "显示顺序", Number, "0"),
+                item("collapsed", "列表默认折叠", Bool, "false"),
+                item("default", "组织默认状态", Bool, "false"),
+            ],
+            "status.library.removal" => vec![item(
+                "target",
+                "迁入组织状态",
+                Ref("$org_status_targets"),
+                "",
+            )],
+            "task_type.workflow.save" => vec![
+                item(
+                    "statuses",
+                    "按流转顺序选择状态",
+                    Many("$workflow_statuses"),
+                    "",
+                ),
+                item(
+                    "default_status",
+                    "新任务默认状态",
+                    Ref("$workflow_defaults"),
+                    "",
+                ),
+            ],
             "iteration.configure" => vec![
                 item(
                     "mode",

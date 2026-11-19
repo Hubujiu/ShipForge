@@ -3,13 +3,17 @@ use super::*;
 use rusqlite::OptionalExtension;
 use uuid::Uuid;
 mod deliveries;
+mod lark;
 mod turns;
+pub(crate) use lark::run_files;
 
 pub(crate) const READS: &[&str] = &["bot.bindings"];
 pub(crate) const WRITES: &[&str] = &[
     "bot.attach",
     "bot.policy",
     "bot.detach",
+    "bot.lark.policy",
+    "bot.lark.event",
     "bot.expire",
     "bot.receive",
     "bot.claim",
@@ -33,7 +37,8 @@ pub(crate) fn init(db: &Connection) -> Result<()> {
         CREATE INDEX IF NOT EXISTS external_bot_results ON external_bot_turns(bot,prepared);
         CREATE TABLE IF NOT EXISTS external_bot_deliveries (id TEXT PRIMARY KEY,turn TEXT NOT NULL,part INTEGER NOT NULL,
             payload TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'pending',lease TEXT,expires INTEGER,available INTEGER NOT NULL DEFAULT 0,
-            receipt TEXT, UNIQUE(turn,part));").map_err(storage)
+            receipt TEXT, UNIQUE(turn,part));").map_err(storage)?;
+    lark::init(db)
 }
 pub(crate) fn external_room(c: &Context<'_>, id: &str) -> Result<bool> {
     c.db.query_row("SELECT EXISTS(SELECT 1 FROM external_bot_turns t JOIN external_bots b ON b.id=t.bot WHERE b.space=? AND t.chat=?)",params![c.space,id],|r|r.get(0)).map_err(storage)
@@ -119,7 +124,7 @@ fn attach(c: &Context<'_>, q: &Value) -> Result<Value> {
     let id = short(q, "id")?;
     identifier(id)?;
     let provider = required(q, "provider")?;
-    if !matches!(provider, "wechat" | "qq") {
+    if !matches!(provider, "wechat" | "qq" | "feishu" | "lark") {
         return Err(invalid("unknown external bot provider"));
     }
     let account = short(q, "account")?;
@@ -127,7 +132,7 @@ fn attach(c: &Context<'_>, q: &Value) -> Result<Value> {
     let key = device(q)?;
     crate::agents::usable(c, "agent", agent, None)?;
     let dm = boolean(q, "dm", true)?;
-    let groups = boolean(q, "groups", provider == "qq")?;
+    let groups = boolean(q, "groups", provider != "wechat")?;
     if provider == "wechat" && groups {
         return Err(invalid("personal WeChat accepts direct conversations"));
     }
@@ -152,6 +157,7 @@ fn attach(c: &Context<'_>, q: &Value) -> Result<Value> {
         }
         return Err(conflict("binding identifier is already in use"));
     }
+    if lark::provider(provider) && c.db.query_row("SELECT EXISTS(SELECT 1 FROM external_bots WHERE (space=? AND agent=? OR account=?) AND provider=? AND state='connected')",params![c.space,agent,account,provider],|r|r.get::<_,bool>(0)).map_err(storage)?{return Err(conflict("this Agent or application is already connected to this cloud"));}
     if let Some(old)=c.db.query_row(&format!("SELECT {COLS} FROM external_bots WHERE provider=? AND account=? AND state='connected'"),params![provider,account],row).optional().map_err(storage)?{
         if old.space!=c.space||old.owner!=c.actor||provider=="wechat"&&old.agent!=agent{return Err(conflict("disconnect the existing account binding before rebinding"));}
         deactivate(c,&old,"replaced")?;
@@ -167,7 +173,7 @@ fn deactivate(c: &Context<'_>, b: &Binding, state: &str) -> Result<()> {
     .map_err(storage)?;
     deliveries::cancel(c, b, None)
 }
-fn bindings(c: &Context<'_>) -> Result<Value> {
+fn bindings(c: &Context<'_>, q: &Value) -> Result<Value> {
     let mut st =
         c.db.prepare(&format!(
             "SELECT {COLS} FROM external_bots WHERE space=? AND owner=? ORDER BY rowid DESC"
@@ -180,16 +186,40 @@ fn bindings(c: &Context<'_>) -> Result<Value> {
     {
         let b = row.map_err(storage)?;
         let mut summary = b.summary();
+        if lark::provider(&b.provider) {
+            summary["settings"] = lark::settings(c, &b)?;
+        }
         summary["deliveries"] = deliveries::summary(c, &b)?;
         items.push(summary);
     }
-    Ok(
-        json!({"workspace":crate::saved_views::workspace(c)?,"actor":c.actor,"space":c.space,"items":items}),
-    )
+    let mut data = json!({"workspace":crate::saved_views::workspace(c)?,"actor":c.actor,"space":c.space,"items":items});
+    if let Some(cloud) = q.get("available_for").and_then(Value::as_str) {
+        if !lark::provider(cloud) {
+            return Err(invalid("choose feishu or lark"));
+        }
+        let mut available = Vec::new();
+        if c.require_edit().is_ok() {
+            let mut used=c.db.prepare("SELECT agent FROM external_bots WHERE space=? AND provider=? AND state='connected'").map_err(storage)?;
+            let used = used
+                .query_map(params![c.space, cloud], |r| r.get::<_, String>(0))
+                .map_err(storage)?
+                .collect::<rusqlite::Result<std::collections::HashSet<_>>>()
+                .map_err(storage)?;
+            for agent in c.records("agent")? {
+                if !used.contains(&agent.id)
+                    && crate::agents::usable(c, "agent", &agent.id, None).is_ok()
+                {
+                    available.push(json!({"id":agent.id,"title":agent.title}));
+                }
+            }
+        }
+        data["available_agents"] = json!(available);
+    }
+    Ok(data)
 }
 pub(crate) fn execute(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
     if op == "bot.bindings" {
-        return bindings(c);
+        return bindings(c, q);
     }
     if op == "bot.attach" {
         return attach(c, q);
@@ -204,6 +234,9 @@ pub(crate) fn execute(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
     }
     if b.state != "connected" {
         return Err(conflict("external binding is disconnected or expired"));
+    }
+    if op == "bot.lark.policy" || op == "bot.policy" && lark::provider(&b.provider) {
+        return lark::policy(c, &b, q);
     }
     if op == "bot.policy" {
         let dm = boolean(q, "dm", b.dm)?;
@@ -233,10 +266,14 @@ pub(crate) fn execute(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
         deactivate(c, &b, "expired")?;
         return Ok(find(c, q)?.summary());
     }
-    if op == "bot.receive" || op == "bot.claim" {
+    if matches!(op, "bot.receive" | "bot.claim" | "bot.lark.event") {
         crate::agents::usable(c, "agent", &b.agent, None)?;
     }
     match op {
+        "bot.lark.event" => lark::event(c, &b, q),
+        "bot.receive" if lark::provider(&b.provider) => {
+            Err(invalid("use scoped Feishu/Lark event ingestion"))
+        }
         "bot.receive" => turns::receive(c, &b, q),
         "bot.claim" => deliveries::claim(c, &b),
         "bot.ack" => deliveries::ack(c, &b, q),
@@ -244,6 +281,7 @@ pub(crate) fn execute(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
     }
 }
 pub(crate) fn schema(s: &mut Value) {
+    lark::schema(s);
     let rules = s["allOf"].as_array_mut().unwrap();
     for (op, req) in [
         (
@@ -272,6 +310,6 @@ pub(crate) fn schema(s: &mut Value) {
         ),
         ("bot.retry", vec!["id", "delivery", "decision"]),
     ] {
-        rules.push(json!({"if":{"properties":{"op":{"const":op}}},"then":{"required":req,"properties":{"dm":{"type":"boolean"},"groups":{"type":"boolean"},"provider":{"enum":["qq","wechat"]},"device_key":{"type":"string","minLength":32,"maxLength":256},"scene":{"enum":["direct","group"]},"outcome":{"enum":["sent","retry","uncertain","failed"]},"decision":{"enum":["resend","confirm","discard"]}}}}));
+        rules.push(json!({"if":{"properties":{"op":{"const":op}}},"then":{"required":req,"properties":{"dm":{"type":"boolean"},"groups":{"type":"boolean"},"provider":{"enum":["qq","wechat","feishu","lark"]},"device_key":{"type":"string","minLength":32,"maxLength":256},"scene":{"enum":["direct","group"]},"outcome":{"enum":["sent","retry","uncertain","failed"]},"decision":{"enum":["resend","confirm","discard"]}}}}));
     }
 }

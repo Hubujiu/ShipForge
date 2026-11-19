@@ -424,10 +424,14 @@ pub(super) fn notify(c: &Context<'_>, run: &Record) -> Result<()> {
         } else {
             "run_done"
         };
-        if receiver.role().is_err()
-            || !receiver.visible(run)?
-            || !crate::inbox::channel_enabled(c, &recipient, event)?
-        {
+        if receiver.role().is_err() || !receiver.visible(run)? {
+            continue;
+        }
+        // Task runs also emit the task notification through inbox::task_run.
+        if run.fields["task_id"].is_null() {
+            crate::inbox::deliver_mail(c, &recipient, event, ("run", &run.id), None)?;
+        }
+        if !crate::inbox::channel_enabled(c, &recipient, event)? {
             continue;
         }
         let group = run.fields["automation_id"]

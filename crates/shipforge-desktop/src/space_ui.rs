@@ -14,6 +14,7 @@ pub enum Action {
     Join(String),
     Leave(Record),
     Preview(Record),
+    Transfer(Record),
     Restore(Record),
     Pin(String, bool),
     Enable(String),
@@ -290,6 +291,18 @@ impl Workbench {
                     UiAction::Space(Action::Leave(space.clone())),
                 ));
             }
+            if !archived
+                && space.field("organization") != space.id
+                && space.field("creator") == self.actor
+                && self.access_identity["personal"] != true
+                && self.access_identity["scope"] != "read"
+            {
+                line = line.child(action(
+                    "transfer",
+                    "转让空间管理权",
+                    UiAction::Space(Action::Transfer(space.clone())),
+                ));
+            }
             if flag(space, "can_manage_content") {
                 if archived {
                     line = line.child(action(
@@ -365,6 +378,7 @@ impl Workbench {
             Action::Join(id)=>self.send(json!({"op":"space.join","space":id}),After::SpaceMembership,true),
             Action::Leave(space)=>self.open_form(Mode::Confirm{label:format!("{} · {}",locale::label("退出空间"),space.title),command:json!({"op":"space.leave","space":space.id})},w,cx),
             Action::Preview(space)=>self.send(json!({"op":"space.deactivate.preview","space":space.id}),After::SpacePreview(space),false),
+            Action::Transfer(space)=>self.send(json!({"op":"list","space":space.id,"kind":"member","allow_cached":false}),After::SpaceSuccessors(space),false),
             Action::Restore(space)=>self.open_form(Mode::Confirm{label:format!("{} · {}",locale::label("恢复空间"),space.title),command:json!({"op":"space.restore","space":space.id,"expected_rev":space.rev})},w,cx),
             Action::Pin(module,pinned)=>self.send(json!({"op":"space.pin","space":self.loc.space,"module":module,"pinned":pinned}),After::Notice(locale::label("侧栏已更新").into()),true),
             Action::Enable(module)=>{

@@ -290,6 +290,32 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
         required(q, "space")?;
     }
     match op {
+        "space.transfer" => {
+            let row = c.get("space", c.space)?;
+            if c.space == c.org_id()? || row.fields["creator"] != c.actor {
+                return Err(forbidden("only the owner of a child space can transfer it"));
+            }
+            if q["expected_rev"].as_i64() != Some(row.rev) {
+                return Err(conflict("refresh the space before transferring it"));
+            }
+            let member = c.readable("member", required(q, "target")?)?;
+            if member.id == c.actor
+                || !matches!(
+                    member.fields["role"].as_str(),
+                    Some("admin" | "member" | "editor" | "owner")
+                )
+            {
+                return Err(invalid("choose another participating member of this space"));
+            }
+            if member.fields["role"] != "admin" && member.fields["role"] != "owner" {
+                let mut fields = member.fields.clone();
+                fields["role"] = json!("admin");
+                c.update(&member, &member.title, fields)?;
+            }
+            let mut fields = row.fields.clone();
+            fields["creator"] = json!(member.id);
+            Ok(as_value(c.update(&row, &row.title, fields)?))
+        }
         "space.navigation" => navigation(c),
         "space.pin" => pin(c, q),
         "space.join" | "space.leave" => membership(c, op == "space.join"),
@@ -302,6 +328,7 @@ pub(crate) fn schema(schema: &mut Value) {
     let rules = schema["allOf"].as_array_mut().unwrap();
     rules.push(json!({"if":{"properties":{"op":{"const":"space.pin"}}},"then":{"required":["space","module","pinned"],"properties":{"module":{"enum":MODULES},"pinned":{"type":"boolean"}}}}));
     rules.push(json!({"if":{"properties":{"op":{"enum":["space.join","space.leave","space.deactivate","space.deactivate.preview","space.restore"]}}},"then":{"required":["space"]}}));
+    rules.push(json!({"if":{"properties":{"op":{"const":"space.transfer"}}},"then":{"required":["space","target","expected_rev"]}}));
     rules.push(json!({"if":{"properties":{"op":{"const":"space.deactivate"}}},"then":{"properties":{"preview_token":{"type":"string","pattern":"^[0-9a-f]{64}$"},"unfinished":{"enum":["cancel","move"]}},"if":{"properties":{"unfinished":{"const":"move"}},"required":["unfinished"]},"then":{"required":["target"]}}}));
     rules.push(json!({"if":{"required":["kind"],"properties":{"kind":{"const":"customer_request"},"op":{"enum":["create","update"]}}},"then":{"properties":{"fields":{"type":"object","properties":{"status":{"enum":["open","in_progress","resolved"]},"contact":{"type":"string"},"description":{"type":"string"}}}}}}));
     rules.push(json!({"if":{"required":["kind"],"properties":{"kind":{"const":"space"},"op":{"enum":["create","update"]}}},"then":{"properties":{"fields":{"type":"object","properties":{"triage_enabled":{"type":"boolean"},"iterations_enabled":{"type":"boolean"},"customer_requests_enabled":{"type":"boolean"}}}}}}));

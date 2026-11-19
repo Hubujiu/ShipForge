@@ -15,6 +15,7 @@ struct Host {
     dir: PathBuf,
     key: String,
 }
+mod runtime;
 mod skills;
 struct ProgressFile(PathBuf);
 impl ProgressFile {
@@ -141,6 +142,9 @@ impl Host {
         context["fields"]["progress_file"] = json!(progress.0);
         let mut sent_progress = None;
         let heartbeat = || {
+            if std::fs::read(self.dir.join("stop.request")).is_ok_and(|v| v == b"immediate") {
+                return Ok(true);
+            }
             if previous.elapsed() < Duration::from_secs(3) {
                 return Ok(false);
             }
@@ -235,21 +239,33 @@ pub fn run(file: &Path, once: bool) -> Result<Value> {
         fs::remove_file(&stop_marker).map_err(|e| e.to_string())?;
     }
     let mut host = Host { cfg, dir, key };
+    let began = crate::service::now();
+    crate::service::live(&host.dir, &host.cfg.machine_id, "starting", began)?;
     crate::diagnostics::record(&host.dir, &Value::Null, "supervisor_started", None, None);
     let mut client = Client::from_env()?;
     host.register(&mut client)?;
+    runtime::publish(&host, &mut client)?;
+    crate::service::live(&host.dir, &host.cfg.machine_id, "online", began)?;
     let mut advertised = host.cfg.approved_directories();
     let mut jobs: Vec<thread::JoinHandle<Result<Value>>> = Vec::new();
     let mut results = Vec::new();
+    let mut capability_job: Option<thread::JoinHandle<Result<Value>>> = None;
+    let mut last_capabilities = None;
     let mut last_ping = Instant::now()
         .checked_sub(Duration::from_secs(65))
         .unwrap_or_else(Instant::now);
     loop {
         if stop_marker.exists() {
+            crate::service::live(&host.dir, &host.cfg.machine_id, "stopping", began)?;
+            if let Some(job) = capability_job.take() {
+                let _ = job.join();
+            }
             for job in jobs.drain(..) {
                 results.push(job.join().map_err(|_| "runtime supervisor stopped")??);
             }
             host.flush(&mut client)?;
+            let _ = host.call(&mut client, json!({"op":"machine.stopped"}));
+            crate::service::live(&host.dir, &host.cfg.machine_id, "stopped", began)?;
             return Ok(json!({"machine":host.cfg.machine_id,"stopped":true,"runs":results}));
         }
         // A finished thread has removed its spool entry, so flush only outside active dispatch.
@@ -307,6 +323,25 @@ pub fn run(file: &Path, once: bool) -> Result<Value> {
             }
             last_ping = Instant::now();
         }
+        if capability_job.as_ref().is_some_and(|job| job.is_finished())
+            && let Some(job) = capability_job.take()
+        {
+            let _ = job.join();
+        }
+        if capability_job.is_none()
+            && last_capabilities
+                .is_none_or(|last: Instant| last.elapsed() >= Duration::from_secs(3))
+        {
+            last_capabilities = Some(Instant::now());
+            match host.call(&mut client, json!({"op":"machine.runtime.jobs"})) {
+                Ok(job) if !job.is_null() => {
+                    let runner = host.clone();
+                    capability_job = Some(thread::spawn(move || runtime::poll(runner, job)));
+                }
+                Err(e) if once => return Err(e),
+                _ => {}
+            }
+        }
         while jobs.len() < host.cfg.capacity as usize {
             let claim = match host.call(
                 &mut client,
@@ -326,6 +361,10 @@ pub fn run(file: &Path, once: bool) -> Result<Value> {
             jobs.push(thread::spawn(move || worker.perform(claim)));
         }
         if once {
+            if let Some(job) = capability_job.take() {
+                job.join()
+                    .map_err(|_| "runtime capability supervisor stopped")??;
+            }
             for job in jobs.drain(..) {
                 results.push(job.join().map_err(|_| "runtime supervisor stopped")??);
             }

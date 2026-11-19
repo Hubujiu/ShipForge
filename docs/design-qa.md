@@ -1,5 +1,15 @@
 # Windows 原生界面验收
 
+## 工作机服务、托盘与运行时能力
+
+隔离的 Windows D3D 窗口通过辅助功能树找到「本机服务设置」。读取临时配置后，切换为打开桌面时启动、关闭收起到托盘，再次读取验证设置已保存。关窗会打开退出确认。在同一个隐藏窗口中，Windows 通知区域接受了真实图标，验收检查隐藏状态并移除了该图标。随后从机器详情打开「运行时能力」，验证重扫、升级和模型测试按钮，确认模型测试后从独立客户端读回已排队的请求。[Windows 原生验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/machine_management_ui_test.rs)
+
+工作机进程验收启动独立监督程序，检查重复启动返回同一 PID、后台保留、重启更换 PID、取消后台后停止。另一次重启中断了已经启动的 Python 子进程，核心记录为已取消。本机合成安装器依次安装和升级版本，连接测试验证随机回包、错误回包及登录错误。Windows Shell 快捷方式在临时目录创建，读取回显的配置与数据路径后删除。实际账户开机目录和供应商账号留给带账号的部署环境点验。[真实进程验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/tests/machine_management.rs) · [快捷方式验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/src/service/startup.rs)
+
+## 组织状态与空间类型工作流
+
+隐藏的 Windows 原生窗口通过表单新建“质量复核”，填写英文译名，打开“列表默认折叠”，再将其设为 Bug 工作流第一项和默认值。任务表单依序列出该类型的三个状态，切换英文后，筛选器与看板列显示“Quality check”。列表原先收起任务，点分组后可以展开。窗口预览迁入“待处理”并确认删除，独立客户端读到任务状态和默认值已更新。[原生窗口回归](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/status_ui_test.rs) · [多身份团队服务回归](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-status-workflows.py)
+
 ## 两个成员窗口与组织默认设置
 
 两个隐藏的 Windows 原生窗口使用独立身份连接同一团队服务。两名成员通过目录和搜索打开同一私聊，一端发出的消息自动出现在另一端。切断其中一端的连接后，该端清空会话正文；在另一端发送一条新消息，恢复连接后原窗口补齐消息且只出现一次。撤销成员的空间权限后，其旧窗口自动退出该空间，后退和搜索也无法重新打开这段对话。[双窗口验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/live_navigation_test.rs)
@@ -116,6 +126,10 @@ Windows 隐藏 D3D 窗口使用独立临时资料，打开分拣模块与待分�
 ## Windows 对话指令和文档引用
 
 独立本机测试工作区打开隐藏的原生 D3D 窗口，经 Windows 辅助功能树定位任务指令、管理、文档引用和 PNG 保存入口。测试向编辑器派发 Tab 后确认仅插入命令，派发 Esc 后确认输入框仍在，再发送并核对后端消息。工作机报告结果后，从详情发送审阅确认，任务保持原状态。PNG 在测试目录写出并核对文件签名。测试未接外部商业 Runtime。[原生测试](https://github.com/Hubujiu/ShipForge/blob/v0.11.0/crates/shipforge-desktop/src/conversation_ui_test.rs)
+
+## 邮件通知与管理权转让
+
+Windows 原生窗口用已验证的临时成员登录，在其独立团队服务产生一条邮件动态。从邮件里的桌面链接打开后，能在窗口中读取对应的任务标题，并从邮件设置进入投递记录。另一项原生窗口测试通过组织设置向第二位成员授予所有者权限。核心回归还验证了子空间仅可转给已加入的成员，使用过期版本会被拒绝，原所有者离开后任务仍可访问。[原生窗口](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/live_navigation_test.rs) · [管理权回归](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/organization_settings.rs)
 
 ## Windows 运行调度、目录与诊断
 

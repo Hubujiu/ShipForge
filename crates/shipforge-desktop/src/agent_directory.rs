@@ -433,7 +433,7 @@ impl Workbench {
         }
         panel = panel.child(self.personal_handler_buttons(&settings, cx));
         if settings.kind == "agent" && settings.space == self.loc.space {
-            panel = panel.child(self.bot_toolbar(cx));
+            panel = panel.child(self.bot_toolbar(Some(&settings.id), cx));
         }
         if let Some(data) = info {
             panel = panel.child(
