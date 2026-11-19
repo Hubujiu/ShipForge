@@ -16,6 +16,9 @@ uuid.workspace = true
 [target.'cfg(windows)'.dependencies]
 windows = { version = "=0.61.3", features = ["Data_Xml_Dom", "UI_Notifications"] }
 [target.'cfg(windows)'.dev-dependencies]
+tiny_http.workspace = true
+ureq.workspace = true
+url.workspace = true
 raw-window-handle = "0.6"
 tempfile.workspace = true
 [build-dependencies]

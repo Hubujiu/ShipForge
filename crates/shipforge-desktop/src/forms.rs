@@ -68,9 +68,12 @@ const TRIGGERS: &[(&str, &str)] = &[
 ];
 #[derive(Clone)]
 pub enum Mode {
+    Library(crate::app::market_ui::LibraryForm),
+    Identity(crate::app::identity_ui::IdentityForm),
     Inbox(crate::app::inbox_ui::InboxForm),
     Directory(crate::app::agent_directory::DirectoryForm),
     Work(crate::app::workspace_ui::WorkForm),
+    Conversation(crate::app::conversation_ui::CommandForm),
     Review(crate::app::review_ui::ReviewForm),
     BindChat(Record),
     ChatRow(Record),
@@ -151,8 +154,11 @@ impl Mode {
     pub fn heading(&self) -> String {
         use Mode::*;
         match self {
+            Identity(f) => f.title().into(),
             Directory(f) => f.title().into(),
+            Library(f) => f.title().into(),
             Work(f) => f.title(),
+            Conversation(f) => f.title().into(),
             Review(f) => f.title().into(),
             Inbox(crate::app::inbox_ui::InboxForm::Followers(_, names)) if !names.is_empty() => {
                 format!("{} · {names}", crate::locale::label("更改关注者"))
@@ -212,8 +218,11 @@ impl Mode {
     }
     pub fn submit_label(&self) -> &'static str {
         match self {
+            Self::Identity(f) => f.submit(),
             Self::Directory(_) => "确认",
+            Self::Library(f) => f.submit_label(),
             Self::Work(f) => f.submit_label(),
+            Self::Conversation(f) => f.submit(),
             Self::Review(_) => "确认",
             Self::Inbox(f) => f.submit_label(),
             Self::BindChat(_) => "查找",
@@ -505,6 +514,12 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             body,
             item("leader_id", "队长 Agent", Ref("agent"), ""),
             item("members", "小队成员", Many("agent"), ""),
+            item(
+                "share_task_directory",
+                "同机成员共用任务目录",
+                Bool,
+                "false",
+            ),
             visibility,
         ],
         "skill" => vec![
@@ -552,6 +567,8 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                     ("pingcode", "PingCode"),
                     ("gitlab", "GitLab"),
                     ("linear", "Linear"),
+                    ("clickup", "ClickUp"),
+                    ("ones", "ONES"),
                     ("asana", "Asana"),
                     ("teams", "Microsoft Teams"),
                     ("discord", "Discord"),
@@ -604,7 +621,14 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
                 "opensource",
             ),
             item("zentao_version", "禅道版本号（可选）", Text, ""),
-            item("enterprise_id", "PingCode 企业 ID", Text, ""),
+            item("enterprise_id", "供应商企业、团队或工作区 ID", Text, ""),
+            item("ones_url", "ONES 租户地址", Text, ""),
+            item(
+                "cloud_auth",
+                "云平台凭据方式",
+                Choice(&[("key", "个人 API Key"), ("oauth", "OAuth")]),
+                "key",
+            ),
             item(
                 "pingcode_auth",
                 "PingCode 凭据方式",
@@ -729,8 +753,15 @@ pub fn workflow_name(op: &str) -> &'static str {
         "pingcode.credential" => "连接 PingCode 企业",
         "zentao.preview" => "预览禅道导入",
         "pingcode.preview" => "预览 PingCode 导入",
+        "linear.accounts" | "clickup.accounts" | "ones.accounts" => "读取可访问的供应商账号",
+        "linear.credential" | "clickup.credential" | "ones.credential" => "绑定或轮换供应商凭据",
+        "linear.projects" | "ones.projects" => "发现可访问项目",
+        "clickup.projects" => "发现 ClickUp 列表",
+        "linear.preview" | "clickup.preview" | "ones.preview" => "预览供应商任务",
+        "linear.authorize" | "clickup.authorize" => "生成 OAuth 授权地址",
         "imports.push" => "回写关联工作项",
         "imports.synchronize" => "立即同步工作项",
+        "imports.sync_control" => "暂停或恢复同步",
         "imports.push_history" => "查看工作项回写记录",
         "zoho.credential" => "保存或更新 Zoho 凭据",
         "tapd.credential" => "配置 TAPD 凭据",
@@ -758,8 +789,11 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
     use Format::*;
     use Mode::*;
     match mode {
+        Identity(f) => f.specs(),
         Directory(f) => f.specs(),
+        Library(f) => f.specs(),
         Work(f) => f.specs(),
+        Conversation(f) => f.specs(),
         Review(f) => f.specs(),
         Inbox(f) => f.specs(),
         BindChat(_) => vec![item("query", "搜索任务标题或编号", Text, "")],
@@ -992,7 +1026,8 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
                 item("event_id", "GitLab 或 Jira 上游投递 ID", Text, ""),
             ],
             "zoho.preview" => vec![item("full", "重新检查全部缺陷", Bool, "false")],
-            "zentao.preview" | "pingcode.preview" => vec![item(
+            "zentao.preview" | "pingcode.preview" | "linear.preview" | "clickup.preview"
+            | "ones.preview" => vec![item(
                 "import_mode",
                 "导入方式",
                 Choice(&[
@@ -1027,9 +1062,45 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
                 item("access_token", "PingCode 访问令牌", Secret, ""),
                 item("clear", "移除本机凭据", Bool, "false"),
             ],
+            "linear.authorize" | "clickup.authorize" => vec![
+                item("client_id", "OAuth Client ID", Text, ""),
+                item("redirect_uri", "已注册的 OAuth 回调地址", Text, ""),
+                item("write", "申请写入权限", Bool, "false"),
+            ],
+            "imports.sync_control" => vec![item(
+                "action",
+                "同步操作",
+                Choice(&[("pause", "暂停同步"), ("resume", "恢复同步")]),
+                if record.fields.get("sync_paused") == Some(&json!(true)) {
+                    "resume"
+                } else {
+                    "pause"
+                },
+            )],
+            "linear.accounts" | "clickup.accounts" | "ones.accounts" | "linear.credential"
+            | "clickup.credential" | "ones.credential" => {
+                let mut fields = vec![item("access_token", "供应商访问令牌", Secret, "")];
+                if record.field("cloud_auth") == "oauth" {
+                    fields.extend([
+                        item("code", "供应商 OAuth 授权码", Secret, ""),
+                        item("state", "OAuth 回调 state", Secret, ""),
+                        item("client_secret", "OAuth Client Secret", Secret, ""),
+                    ]);
+                }
+                if op.ends_with(".credential") {
+                    fields.extend([
+                        item("account_id", "选中的供应商账号 ID", Text, ""),
+                        item("clear", "移除本机凭据", Bool, "false"),
+                    ]);
+                }
+                fields
+            }
             "imports.push" => {
                 let mut specs = vec![item("task_id", "已关联的任务", Ref("task"), "")];
-                if record.field("provider") == "pingcode" {
+                if matches!(
+                    record.field("provider"),
+                    "pingcode" | "linear" | "clickup" | "ones"
+                ) {
                     specs.extend([
                         item(
                             "intent",
@@ -1531,8 +1602,14 @@ pub fn connector_field_visible(key: &str, provider: &str) -> bool {
         "project_key" => provider == "jira",
         "portal_id" | "zoho_project" => provider == "zoho",
         "instance_url" | "scope_kind" | "zentao_edition" | "zentao_version" => provider == "zentao",
-        "enterprise_id" | "pingcode_auth" => provider == "pingcode",
-        "remote_scope" | "vendor_write" => matches!(provider, "zentao" | "pingcode"),
+        "enterprise_id" => matches!(provider, "pingcode" | "linear" | "clickup" | "ones"),
+        "pingcode_auth" => provider == "pingcode",
+        "ones_url" => provider == "ones",
+        "cloud_auth" => matches!(provider, "linear" | "clickup"),
+        "remote_scope" | "vendor_write" => matches!(
+            provider,
+            "zentao" | "pingcode" | "linear" | "clickup" | "ones"
+        ),
         "company_id" | "tapd_auth" | "tapd_workspace" => provider == "tapd",
         "product_id" | "default_task_type" | "bugly_outbound" => provider == "bugly",
         "workspace_id" | "channel_id" | "app_id" | "bot_id" | "outbound" | "slack_assignment" => {

@@ -16,7 +16,9 @@ struct Previous {
 }
 
 fn prepare(c: &Context<'_>, r: &Record, q: &Value) -> Result<Value> {
-    if r.fields["vendor_write"] != true {
+    if r.fields["vendor_write"] != true
+        || cloud::supported(&r.fields) && r.fields["sync_paused"] == true
+    {
         return Err(forbidden(
             "enable writeback on this project connector first",
         ));
@@ -63,12 +65,24 @@ fn prepare(c: &Context<'_>, r: &Record, q: &Value) -> Result<Value> {
             }
             let target = r.fields["mapping"]["write_status"][required(&row.fields, "status")?]
                 .as_str()
-                .filter(|s| compact_id(s) && *s != "." && *s != "..")
+                .filter(|s| {
+                    if provider == "clickup" {
+                        !s.trim().is_empty()
+                            && s.chars().count() <= 160
+                            && !s.chars().any(char::is_control)
+                    } else {
+                        compact_id(s) && *s != "." && *s != ".."
+                    }
+                })
                 .ok_or_else(|| invalid("configure a write_status mapping for this task status"))?;
             if provider == "zentao" && !matches!(target, "active" | "resolved" | "closed") {
                 return Err(invalid("ZenTao target must be active, resolved or closed"));
             }
             plan["target"] = json!(target);
+            if provider == "ones" {
+                plan["workflow"] =
+                    r.fields["mapping"]["write_workflow"][required(&row.fields, "status")?].clone();
+            }
             if target == "resolved" && provider == "zentao" {
                 plan["resolution"] = json!(
                     r.fields["mapping"]["resolution"]
@@ -83,7 +97,7 @@ fn prepare(c: &Context<'_>, r: &Record, q: &Value) -> Result<Value> {
             }
             format!("status:{}:{target}", row.rev)
         }
-        "comment" if provider == "pingcode" => {
+        "comment" if provider == "pingcode" || cloud::supported(&r.fields) => {
             let comment = c.readable("comment", required(q, "comment_id")?)?;
             if comment.fields["task"] != task
                 || comment.fields["visibility"] == "private"
@@ -129,7 +143,9 @@ fn prepare(c: &Context<'_>, r: &Record, q: &Value) -> Result<Value> {
 }
 
 pub(super) fn execute(c: &Context<'_>, r: &Record, op: &str, q: &Value) -> Result<Value> {
-    if !matches!(r.fields["provider"].as_str(), Some("zentao" | "pingcode")) {
+    if !cloud::supported(&r.fields)
+        && !matches!(r.fields["provider"].as_str(), Some("zentao" | "pingcode"))
+    {
         return Err(invalid("writeback is unavailable for this connector"));
     }
     if op == "imports.prepare_push" {

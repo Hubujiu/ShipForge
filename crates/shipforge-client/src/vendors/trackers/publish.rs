@@ -1,8 +1,8 @@
 use super::*;
 
-struct PublicationError {
-    state: &'static str,
-    message: String,
+pub(super) struct PublicationError {
+    pub(super) state: &'static str,
+    pub(super) message: String,
 }
 impl From<String> for PublicationError {
     fn from(message: String) -> Self {
@@ -146,6 +146,14 @@ fn send(api: &Api, b: &Value, plan: &Value) -> std::result::Result<String, Publi
 }
 
 pub(super) fn run(client: &mut Client, q: &Value, api: &Api, binding: &Value) -> Result<Value> {
+    with_lease(client, q, |plan| send(api, binding, plan))
+}
+
+pub(super) fn with_lease(
+    client: &mut Client,
+    q: &Value,
+    send: impl FnOnce(&Value) -> std::result::Result<String, PublicationError>,
+) -> Result<Value> {
     let mut claim = scoped(q, "imports.prepare_push");
     for key in ["task_id", "intent", "comment_id", "confirm_comment"] {
         if let Some(v) = q.get(key) {
@@ -156,7 +164,7 @@ pub(super) fn run(client: &mut Client, q: &Value, api: &Api, binding: &Value) ->
     if receipt["state"] == "sent" {
         return Ok(receipt);
     }
-    let outcome = send(api, binding, &receipt["plan"]);
+    let outcome = send(&receipt["plan"]);
     let mut finish = scoped(q, "imports.finish_push");
     finish["delivery"] = receipt["delivery"].clone();
     finish["lease"] = receipt["lease"].clone();

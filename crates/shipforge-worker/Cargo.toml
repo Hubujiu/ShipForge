@@ -7,11 +7,13 @@ license = "MIT"
 description = "ShipForge local machine agent host and integration adapters"
 
 [dependencies]
+dunce.workspace = true
 base64 = "0.22"
 shipforge-client = { path = "../shipforge-client" }
 clap = { version = "4.6", features = ["derive"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tempfile.workspace = true
 sha2 = "0.11"
 ureq = { version = "3.5", default-features = false, features = ["rustls", "json"] }
 uuid = { version = "1", features=["v4"] }
@@ -20,5 +22,4 @@ uuid = { version = "1", features=["v4"] }
 libc = "0.2"
 
 [dev-dependencies]
-tempfile = "3"
 tiny_http.workspace = true

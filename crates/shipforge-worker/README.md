@@ -18,6 +18,8 @@
 
 ## 配置外部 Runtime
 
+小队管理者可以开启 `share_task_directory`，使同一任务的队长、成员和汇总在同一机器及绑定仓库中复用独立工作树。每次执行的技能文件可从标准输入 `fields.skill_directories` 的 `entry_file` / `directory` 读取。可在机器配置设置 `"skill_roots":{"review":["D:/Team/Skills"]}`，允许已注册的 `review` Runtime 从指定目录发现技能。工作机也识别绑定项目中的 `.agent/skills` 等目录。 [技能发现与共享目录](../../docs/skills-market.md)
+
 `init --config <文件> --program <exe> --runtime <名称> --arg <固定参数> --workspace <绝对目录>` 可以创建机器配置，每个固定参数使用一个 `--arg`。已有配置请编辑 JSON，重启 Worker 后生效。示例中的 `code-review.exe` 和 `mcp-docs.exe` 代表操作者自行安装的程序。
 
 ```json
@@ -106,3 +108,5 @@ GitHub 连接器的字段为 `{"provider":"github","repository":"OWNER/REPO","en
 ```
 
 外部数据通过 `connector.ingest` 传入 `id`（连接器）、`external_id`、`event_id`、`source_version`、`title`、`description` 和 `closed`。修订号应使用可按字典序比较的同格式 UTC 时间或补零编号。系统按连接器和外部 ID 映射任务，逐字段合并独立变更。同一字段在两端同时修改时返回 `action: "conflict"`，可由管理员明确指定 `resolve: "source"` 或 `"local"`。命中空间分拣来源与类型要求的外部任务会进入分拣台。GitLab 等十一种专用输入由服务端和 CLI 的 `provider.ingest` 处理。[入站供应商对照](../shipforge-core/PROVIDERS.md)
+
+在已配置的 Runtime 对象中，`slash_commands` 可列出该程序实际支持的命令，例如 `["/plan", "/help"]`。工作机会随 `machine.register` 上报该列表。缺省表示机器尚未报告，空数组表示已报告且没有内置命令。工作区只向有权使用 Agent 或小队的成员显示适用条目。[对话指令](../../docs/conversation-commands.md)

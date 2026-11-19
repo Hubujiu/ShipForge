@@ -9,7 +9,7 @@ ShipForge 把工单事件和普通用户文字消息转换成当前空间的任�
 | `feishu` 或 `lark` | v2 `im.message.receive_v1` 用户文字消息 | 会话 ID + 消息 ID | `header.event_id` | `fields.chat_id` |
 | `slack` | Events API 的普通 `message` 回调 | 工作区 ID + 频道 ID + 消息时间戳 | 信封 `event_id` | `fields.workspace_id`、`fields.channel_id` |
 | `telegram` | Bot API 的私聊、群组或超级群组普通用户文字消息 | 聊天 ID + 消息编号 | `update_id` | `fields.chat_id` |
-| `linear` | `type=Issue` 的创建与更新，提取 Markdown 描述与工作流状态 | Issue UUID | relay 把 `Linear-Delivery` 传作 `event_id` | `fields.organization_id`、`fields.team_id` |
+| `linear` | `type=Issue` 的创建与更新。绑定项目后通知工作机按原项目增量拉取 | Issue UUID | relay 把 `Linear-Delivery` 传作 `event_id` | `fields.organization_id`、`fields.team_id`，已绑定项目另核验 `enterprise_id` 和 `remote_scope` |
 | `asana` | 官方 GET Task 响应，或单条已签名变更事件配对 GET Task 响应 | 任务 GID | relay 提供每次投递或快照的稳定 `event_id` | `fields.workspace_id`、`fields.project_id` |
 | `teams` | Teams Bot Framework `msteams` 用户 `message` Activity | 对话 ID + Activity ID | 自动按对话和 Activity 去重 | `fields.tenant_id`、`fields.chat_id` |
 | `discord` | Gateway `MESSAGE_CREATE` 的用户普通消息和文字回复 | 频道 ID + 消息 Snowflake | 消息 Snowflake | `fields.guild_id`、`fields.channel_id` |
@@ -122,6 +122,9 @@ GitHub 使用 `X-GitHub-Delivery`，GitLab 使用 `X-Gitlab-Event-UUID`。在 CL
 | TAPD | 公司或个人身份的项目发现，需求和缺陷分页历史导入、立即检测和按批次回滚 | 公司 API 账号或个人访问令牌。[接入步骤及实时同步边界](../../docs/vendor-imports.md) |
 | 禅道 | REST v1 产品和项目发现，研发和用户需求、执行任务、缺陷导入，单次或定时增量以及缺陷原生状态回写 | 指定实例的账号和密码。[支持版本、范围及故障恢复](../../docs/tracker-integrations.md) |
 | PingCode | v2 企业身份核对、项目与工作项分页、按修改时间同步、批次回滚、状态及任务评论发布 | 访问令牌、应用凭据或用户授权码。[作用域、映射和回执](../../docs/tracker-integrations.md) |
+| Linear | GraphQL 项目与 Issue、状态 ID、依赖读入、增量和新评论回写 | 个人 Key 或 OAuth PKCE。[接入、回执与回滚](../../docs/cloud-trackers.md) |
+| ClickUp | 工作区→Space→Folder/List、多个处理人、分页与毫秒增量、状态和新评论回写 | 个人令牌或 OAuth。[层级、映射及限制](../../docs/cloud-trackers.md) |
+| ONES | 区域租户的团队项目、按工作项类型分页比较，明确的工作流转换与评论 | 个人 Bearer Key 与团队权限。[作用域与流转](../../docs/cloud-trackers.md) |
 | 禅道、PingCode、Teambition 或兼容 Jira 的自建接口 | 文件字段映射导入，或 `connector.ingest` 按外部工单持续更新 | 事件订阅和载荷转换，各平台账号与回写 |
 | CNB、Gitee 及其他代码托管服务 | 由 relay 映射工单到 `connector.ingest`，或使用文件导入 | 提取平台工单并提供对象标识、投递标识和版本 |
 | 个人微信、QQ | 由 relay 映射文字消息到 `connector.ingest` | 来源鉴权、事件转换、机器人配置及回复 |

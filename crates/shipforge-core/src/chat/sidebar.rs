@@ -39,6 +39,7 @@ pub(super) fn organize(c: &Context<'_>, room: &Record, q: &Value) -> Result<Valu
 }
 pub(crate) fn new_message(c: &Context<'_>, message: &Record) -> Result<()> {
     let chat = required(&message.fields, "chat")?;
+    crate::conversation_tools::reviews::new_message(c, chat)?;
     let mut stmt =
         c.db.prepare_cached(
             "SELECT actor FROM chat_sidebar WHERE space=? AND chat=? AND undo IS NOT NULL",

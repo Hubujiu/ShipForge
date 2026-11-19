@@ -14,6 +14,10 @@ type Result<T> = std::result::Result<T, String>;
 struct Account {
     id: String,
     actor: Option<String>,
+    #[serde(default)]
+    email_account: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    display: Option<String>,
     connection: Connection,
     #[serde(default)]
     needs_login: bool,
@@ -67,6 +71,8 @@ impl Book {
                         id,
                         connection,
                         actor: None,
+                        email_account: false,
+                        display: None,
                         needs_login: false,
                         place: None,
                     }],
@@ -120,10 +126,15 @@ pub(crate) fn save(
     dir: &Path,
     url: &str,
     token: &str,
-    actor: &str,
+    who: &Value,
     expected: Option<&str>,
 ) -> Result<()> {
     let connection = Connection::new(url, token)?;
+    let actor = who["actor"]
+        .as_str()
+        .ok_or("server: missing account identity")?;
+    let email_account = who["email_account"] == true;
+    let display = who["display"].as_str().map(str::to_owned);
     Book::edit(dir, |book| {
         let same = |a: &Account| {
             a.connection.url == url
@@ -152,6 +163,8 @@ pub(crate) fn save(
                 a.place = None;
             }
             a.actor = Some(actor.to_string());
+            a.email_account = email_account;
+            a.display = display.clone();
             a.needs_login = false;
             a.connection = connection;
             a.id.clone()
@@ -161,6 +174,8 @@ pub(crate) fn save(
                 id: id.clone(),
                 connection,
                 actor: Some(actor.to_string()),
+                email_account,
+                display,
                 needs_login: false,
                 place: None,
             });
@@ -176,7 +191,7 @@ pub(crate) fn list(dir: &Path) -> Result<Value> {
         .accounts
         .iter()
         .map(|a| {
-            json!({"id":a.id,"actor":a.actor,"url":a.connection.url,
+            json!({"id":a.id,"actor":a.actor,"url":a.connection.url,"email_account":a.email_account,"display":a.display,
         "active":book.active.as_deref()==Some(&a.id),"needs_login":a.needs_login})
         })
         .collect();
@@ -234,6 +249,7 @@ fn expired(dir: &Path, account: &Account) -> Result<()> {
     Book::edit(dir, |book| {
         let index = same_credential(book, account)?;
         book.accounts[index].needs_login = true;
+        book.accounts[index].display = None;
         if book.active.as_ref() == Some(&account.id) {
             book.active = None;
         }
@@ -314,6 +330,8 @@ pub(crate) fn switch(dir: &Path, id: &str) -> Result<(Client, Value)> {
     Book::edit(dir, |book| {
         let index = same_credential(book, account)?;
         book.accounts[index].actor = Some(actor.to_string());
+        book.accounts[index].email_account = identity["email_account"] == true;
+        book.accounts[index].display = identity["display"].as_str().map(str::to_owned);
         book.active = Some(id.to_string());
         Ok(())
     })?;

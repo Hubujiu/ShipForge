@@ -225,6 +225,280 @@
     {
       "if": {
         "properties": {
+          "op": {
+            "const": "catalog.detail"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "catalog.publish"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "kind",
+          "sources",
+          "title"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "catalog.update"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "catalog.uninstall"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "catalog.instantiate"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "skill.bind"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "agent"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "skill.discover"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "runtime"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "skill.machine_import"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "runtime",
+          "source_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "skill.sources"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "runtime"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "skill.jobs"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "machine_key"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "skill.finish"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "machine_id",
+          "machine_key",
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "catalog.publish"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "audience": {
+            "enum": [
+              "space",
+              "organization"
+            ]
+          },
+          "category": {
+            "enum": [
+              "engineering",
+              "office",
+              "knowledge",
+              "data",
+              "content",
+              "other"
+            ]
+          },
+          "expected_version": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "sources": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array",
+            "uniqueItems": true
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "skill.import"
+          }
+        }
+      },
+      "then": {
+        "oneOf": [
+          {
+            "required": [
+              "files"
+            ]
+          },
+          {
+            "required": [
+              "packages"
+            ]
+          },
+          {
+            "required": [
+              "path"
+            ]
+          },
+          {
+            "required": [
+              "url"
+            ]
+          }
+        ],
+        "properties": {
+          "files": {
+            "items": {
+              "properties": {
+                "path": {
+                  "type": "string"
+                },
+                "text": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "path",
+                "text"
+              ],
+              "type": "object"
+            },
+            "maxItems": 96,
+            "minItems": 1,
+            "type": "array"
+          },
+          "packages": {
+            "maxItems": 16,
+            "minItems": 1,
+            "type": "array"
+          },
+          "path": {
+            "type": "string"
+          },
+          "url": {
+            "format": "uri",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "kind": {
             "const": "agent"
           },
@@ -667,6 +941,23 @@
         "properties": {
           "op": {
             "enum": [
+              "imports.sync_control"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "action"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
               "imports.finish_push"
             ]
           }
@@ -714,6 +1005,36 @@
           "lease",
           "success"
         ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "crew"
+          },
+          "op": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "properties": {
+              "share_task_directory": {
+                "default": false,
+                "type": "boolean"
+              }
+            }
+          }
+        }
       }
     },
     {
@@ -2594,6 +2915,351 @@
     {
       "if": {
         "properties": {
+          "op": {
+            "enum": [
+              "document.share",
+              "chat.slash",
+              "chat.complete",
+              "task.review.state",
+              "shortcut.delete"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {},
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "document.open",
+              "document.preview"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "link": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "link"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "document.embeds"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "document",
+              "task",
+              "comment"
+            ]
+          }
+        },
+        "required": [
+          "kind",
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "shortcut.history"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "task": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "shortcut.run"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "task": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "task",
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "shortcut.organize"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "order": {
+            "items": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "type": "array",
+            "uniqueItems": true
+          },
+          "pinned": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "shortcut.save"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "handler_id": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "handler_kind": {
+            "enum": [
+              "agent",
+              "crew"
+            ]
+          },
+          "prompt": {
+            "maxLength": 65536,
+            "type": "string"
+          },
+          "title": {
+            "maxLength": 100,
+            "minLength": 1,
+            "type": "string"
+          },
+          "visibility": {
+            "enum": [
+              "private",
+              "space"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "chat.slash.send"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "body"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "task.review"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "body": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "run": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "chat.share.image"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "share": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "share"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "chat.share.create"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "include_questions": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "run.report"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "needs_review": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "machine.register"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "slash_commands": {
+            "additionalProperties": {
+              "items": {
+                "maxLength": 101,
+                "type": "string"
+              },
+              "maxItems": 200,
+              "type": "array"
+            },
+            "maxProperties": 64,
+            "type": [
+              "object",
+              "null"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "shortcut.save"
+          }
+        }
+      },
+      "then": {
+        "anyOf": [
+          {
+            "required": [
+              "id"
+            ]
+          },
+          {
+            "required": [
+              "title",
+              "handler_id"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
           "kind": {
             "enum": [
               "task",
@@ -3347,6 +4013,49 @@
       "if": {
         "properties": {
           "op": {
+            "enum": [
+              "linear.credential",
+              "linear.accounts",
+              "linear.projects",
+              "linear.preview",
+              "linear.authorize",
+              "clickup.credential",
+              "clickup.accounts",
+              "clickup.projects",
+              "clickup.preview",
+              "clickup.authorize",
+              "ones.credential",
+              "ones.accounts",
+              "ones.projects",
+              "ones.preview"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "import_mode": {
+            "enum": [
+              "history",
+              "changes",
+              "refresh"
+            ]
+          },
+          "page_size": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "const": "access.issue"
           }
         }
@@ -3741,6 +4450,116 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "profiles.login.start"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "url",
+          "email"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "profiles.login.finish"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "profiles.close.finish"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "confirmation"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "access.account.update"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "expected_rev"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "access.account.close"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "device",
+          "confirmation"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "profiles.close.finish",
+              "access.account.close"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "confirmation": {
+            "const": "注销"
+          },
+          "dissolve": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "profiles.verification"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
     }
   ],
   "properties": {
@@ -4049,6 +4868,7 @@
         "imports.stage",
         "imports.commit",
         "imports.prepare_push",
+        "imports.sync_control",
         "imports.finish_push",
         "imports.rollback",
         "bugly.rotate",
@@ -4115,6 +4935,18 @@
         "agent.resolve",
         "catalog.list",
         "catalog.install",
+        "catalog.detail",
+        "catalog.publish",
+        "catalog.update",
+        "catalog.uninstall",
+        "catalog.instantiate",
+        "skill.import",
+        "skill.bind",
+        "skill.sources",
+        "skill.discover",
+        "skill.machine_import",
+        "skill.jobs",
+        "skill.finish",
         "tool.authorize",
         "machine.register",
         "machine.heartbeat",
@@ -4133,6 +4965,22 @@
         "automation.tick",
         "connector.ingest",
         "connector.export",
+        "document.share",
+        "document.open",
+        "document.preview",
+        "document.embeds",
+        "chat.slash",
+        "shortcut.catalog",
+        "shortcut.history",
+        "task.review.state",
+        "chat.share.image",
+        "chat.slash.send",
+        "shortcut.save",
+        "shortcut.delete",
+        "shortcut.organize",
+        "shortcut.run",
+        "task.review",
+        "chat.complete",
         "access.whoami",
         "access.issue",
         "access.list",
@@ -4164,7 +5012,33 @@
         "pingcode.projects",
         "pingcode.preview",
         "imports.push",
-        "imports.synchronize"
+        "imports.synchronize",
+        "linear.credential",
+        "linear.accounts",
+        "linear.projects",
+        "linear.preview",
+        "linear.authorize",
+        "clickup.credential",
+        "clickup.accounts",
+        "clickup.projects",
+        "clickup.preview",
+        "clickup.authorize",
+        "ones.credential",
+        "ones.accounts",
+        "ones.projects",
+        "ones.preview",
+        "profiles.login.start",
+        "profiles.login.finish",
+        "profiles.close.start",
+        "profiles.close.finish",
+        "profiles.verification",
+        "profiles.logout",
+        "access.account.profile",
+        "access.account.update",
+        "access.account.impact",
+        "access.account.verify",
+        "access.account.close",
+        "access.account.logout"
       ],
       "type": "string"
     },

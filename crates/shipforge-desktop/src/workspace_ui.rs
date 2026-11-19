@@ -668,7 +668,8 @@ impl Workbench {
                             11.,
                             MUTED,
                         ))
-                        .child(text(body.to_owned(), 13., INK));
+                        .child(text(body.to_owned(), 13., INK))
+                        .child(self.document_embeds_panel(r, cx));
                     if let Some(url) = vcs
                         .and_then(|v| v["url"].as_str())
                         .filter(|url| url.starts_with("https://"))

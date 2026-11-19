@@ -141,7 +141,7 @@ pub(super) fn ordered(c: &Context<'_>, room: &Record) -> Result<Vec<Record>> {
     }
     Ok(result)
 }
-fn handler<'a>(c: &Context<'_>, room: &'a Record) -> Result<(&'a str, &'a str)> {
+pub(crate) fn handler<'a>(c: &Context<'_>, room: &'a Record) -> Result<(&'a str, &'a str)> {
     if super::group(room) {
         return Err(invalid("select an Agent conversation"));
     }
@@ -346,7 +346,10 @@ fn queue(c: &Context<'_>, room: &Record, body: &str, convert: bool) -> Result<(R
         || ordered(c, room)?
             .iter()
             .any(|m| m.fields["visibility"] == "private" || m.fields["inherited"] == true);
-    let fields = json!({"instruction":body,"chat_id":room.id,"chat_message":message.id,"chat_order":creation_seq(c,"message",&message.id)?,"task_id":bound(room),"visibility":if private{json!("private")}else{room.fields["visibility"].clone()},"chat_conversion":convert});
+    let mut fields = json!({"instruction":body,"chat_id":room.id,"chat_message":message.id,"chat_order":creation_seq(c,"message",&message.id)?,"task_id":bound(room),"visibility":if private{json!("private")}else{room.fields["visibility"].clone()},"chat_conversion":convert});
+    if let Some(task) = bound(room) {
+        fields["task"] = worker::task_context(c, &c.readable("task", task)?)?;
+    }
     let run = worker::enqueue(
         c,
         &format!("conversation:{}", message.id),

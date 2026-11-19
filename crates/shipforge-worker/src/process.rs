@@ -7,6 +7,8 @@ use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
 use uuid::Uuid;
+mod crew_workspace;
+mod run_skills;
 
 struct WorkingDir {
     path: PathBuf,
@@ -16,9 +18,9 @@ struct WorkingDir {
 fn git_at(source: &Path, args: &[&str], destination: &Path) -> Result<()> {
     let out = Command::new(program_path(Path::new("git"))?)
         .arg("-C")
-        .arg(source)
+        .arg(dunce::simplified(source))
         .args(args)
-        .arg(destination)
+        .arg(dunce::simplified(destination))
         .arg("HEAD")
         .stdout(Stdio::null())
         .output()
@@ -54,6 +56,9 @@ fn directory(
                 .map_err(|e| format!("approved directory {}: {e}", p.display()))
         })
         .transpose()?;
+    if !run["fields"]["crew_workspace"].is_null() {
+        return crew_workspace::open(cfg, run, state, source.as_deref(), pulse, timeout);
+    }
     if settings["directory_mode"] == "direct" {
         if !cfg.allow_direct {
             return Err("direct directory execution is disabled by machine configuration".into());
@@ -285,6 +290,7 @@ pub fn execute(
     let canonical = workspace.path.canonicalize().map_err(|e| e.to_string())?;
     let until = began + timeout;
     let mut context = run.clone();
+    let _skills = run_skills::stage(state, &mut context)?;
     for round in 0..=4 {
         if pulse()? {
             return Err("cancelled".into());

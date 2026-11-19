@@ -606,6 +606,9 @@ impl Workbench {
                 Mode::Download(_, file) => {
                     Some(file["filename"].as_str().unwrap_or("attachment").to_owned())
                 }
+                Mode::Conversation(crate::app::conversation_ui::CommandForm::Image(_)) => {
+                    Some("ShipForge-conversation.png".into())
+                }
                 Mode::Export => Some("shipforge-workspace.json".to_owned()),
                 _ => None,
             };
@@ -636,6 +639,11 @@ impl Workbench {
         let width = if mode.automation() { 860. } else { 620. };
         let width = f32::min(width, (max_w - 40.).max(340.));
         let mut body = col().w_full().gap(px(12.)).px(px(21.)).py(px(14.));
+        if let Mode::Identity(f) = &mode
+            && let Some(instructions) = f.instructions()
+        {
+            body = body.child(text(instructions, 14., INK));
+        }
         if let Mode::Output { content, .. } = &mode {
             body = body.child(text(content.clone(), 13., INK)).child(
                 outlined(self.button(
@@ -849,6 +857,13 @@ impl Workbench {
                 panel = panel.child(text(format!("{}   {}", t.code(), t.title), 12., MUTED));
             }
             body = body.child(panel);
+        }
+        if matches!(mode, Mode::Message(_)) {
+            body = body.child(self.slash_panel(cx));
+        }
+        if let Mode::Conversation(crate::app::conversation_ui::CommandForm::Shortcuts(task)) = &mode
+        {
+            body = body.child(self.shortcut_panel(task, cx));
         }
         if let Mode::ChatRow(room) = &mode {
             body = body.child(self.chat_row_actions(room, cx));
@@ -1074,6 +1089,20 @@ impl Render for Workbench {
             .line_height(relative(1.5))
             .bg(rgb(BG))
             .capture_key_down(cx.listener(Self::key))
+            .capture_action(cx.listener(
+                |this, _: &gpui_kit::component::input::IndentInline, w, cx| {
+                    if !this.slash_key("tab", w, cx) {
+                        cx.propagate();
+                    }
+                },
+            ))
+            .capture_action(
+                cx.listener(|this, _: &gpui_kit::component::input::Escape, w, cx| {
+                    if !this.slash_key("escape", w, cx) {
+                        cx.propagate();
+                    }
+                }),
+            )
             .capture_action(cx.listener(Self::personal_enter))
             .child(
                 col().size_full().child(chrome).child(

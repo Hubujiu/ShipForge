@@ -50,6 +50,7 @@ const WRITES: &[&str] = &[
     "imports.stage",
     "imports.commit",
     "imports.prepare_push",
+    "imports.sync_control",
     "imports.finish_push",
     "imports.rollback",
     "bugly.rotate",
@@ -182,11 +183,15 @@ pub(crate) fn operation_names() -> Vec<&'static str> {
         .iter()
         .chain(WRITES)
         .chain(worker::OPS)
+        .chain(crate::conversation_tools::READS)
+        .chain(crate::conversation_tools::WRITES)
         .copied()
         .collect()
 }
 pub fn is_read_only(op: &str) -> bool {
-    READS.contains(&op) || worker::READ_OPS.contains(&op)
+    READS.contains(&op)
+        || worker::READ_OPS.contains(&op)
+        || crate::conversation_tools::READS.contains(&op)
 }
 
 /// JSON Schema for the versioned operation envelope. Operation-specific data is checked by core.
@@ -238,6 +243,7 @@ pub fn schema() -> Value {
     crate::task_commands::assignees::schema(&mut schema);
     crate::task_fields::schema(&mut schema);
     crate::inbox::schema(&mut schema);
+    crate::conversation_tools::schema(&mut schema);
     crate::triage::schema(&mut schema);
     schema["allOf"].as_array_mut().unwrap().extend([json!({"if":{"properties":{"op":{"const":"task.move"}}},"then":{"required":["id","target"],"properties":{"target":{"type":"string","minLength":1}}}}),json!({"if":{"properties":{"op":{"enum":["task.conversation","task.command"]}}},"then":{"required":["id"]}})]);
     schema

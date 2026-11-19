@@ -107,6 +107,7 @@ fn write_inner(
     if op == "delete" {
         let r = old.as_ref().ok_or_else(|| invalid("missing record"))?;
         validate_delete(c, r)?;
+        crate::conversation_tools::reviews::forget(c, kind, &r.id)?;
         if kind == "task" {
             crate::triage::forget(c, &r.id)?;
         }
@@ -131,6 +132,14 @@ fn write_inner(
         return Ok(as_value(r.clone()));
     }
     let mut patch = fields_object(q.get("fields"))?;
+    if kind == "skill" {
+        crate::skill_package::edit(old.as_ref(), &mut patch)?;
+    }
+    if kind == "task" && patch.remove("awaiting_review").is_some() && !from_source {
+        return Err(invalid(
+            "review state is derived from a successful Agent report",
+        ));
+    }
     if matches!(kind, "agent" | "crew") {
         crate::agents::protect(q, old.as_ref())?;
     }

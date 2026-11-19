@@ -245,6 +245,7 @@ pub(crate) fn execute(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
         && !row.fields["email"]
             .as_str()
             .is_some_and(|mail| mail.eq_ignore_ascii_case(c.actor))
+        && !crate::identity::verified_address(c, row.fields["email"].as_str().unwrap_or(""))?
     {
         return Err(unavailable());
     }

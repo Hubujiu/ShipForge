@@ -11,6 +11,7 @@ use std::collections::BTreeMap;
 pub(crate) use variants::{effective, resource};
 pub(crate) fn init(db: &Connection) -> Result<()> {
     db.execute_batch("CREATE TABLE IF NOT EXISTS agent_grants(space TEXT,agent TEXT,actor TEXT,permission TEXT NOT NULL,PRIMARY KEY(space,agent,actor));
+        CREATE TABLE IF NOT EXISTS crew_workspaces(space TEXT NOT NULL, crew TEXT NOT NULL, task TEXT NOT NULL, audience TEXT NOT NULL, token TEXT NOT NULL UNIQUE, PRIMARY KEY(space,crew,task,audience));
         CREATE TABLE IF NOT EXISTS agent_personal(space TEXT,kind TEXT,id TEXT,actor TEXT,pinned INTEGER NOT NULL,favorite INTEGER NOT NULL,PRIMARY KEY(space,kind,id,actor));").map_err(storage)
 }
 pub(crate) fn handles(op: &str) -> bool {
@@ -253,6 +254,11 @@ pub(crate) fn validate(c: &Context<'_>, old: Option<&Record>, row: &Record) -> R
     match row.kind.as_str() {
         "agent" => variants::validate(c, old, row)?,
         "crew" => {
+            if f.get("share_task_directory")
+                .is_some_and(|v| !v.is_boolean())
+            {
+                return Err(invalid("share_task_directory must be boolean"));
+            }
             for id in f["members"]
                 .as_array()
                 .into_iter()
@@ -702,6 +708,7 @@ pub(crate) fn replay(c: &Context<'_>, q: &Value, result: &Value) -> Result<()> {
 }
 pub(crate) fn schema(s: &mut Value) {
     let rules = s["allOf"].as_array_mut().unwrap();
+    rules.push(json!({"if":{"properties":{"op":{"enum":["create","update"]},"kind":{"const":"crew"}},"required":["kind"]},"then":{"properties":{"fields":{"properties":{"share_task_directory":{"type":"boolean","default":false}}}}}}));
     rules.push(json!({"if":{"properties":{"op":{"enum":["agent.settings","agent.history","agent.archive","agent.restore","agent.variant","agent.override","agent.organize","agent.access","crew.exclusive"]}}},"then":{"required":["id"]}}));
     for (op, keys) in [
         ("agent.variant", vec!["target_space"]),

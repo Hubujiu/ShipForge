@@ -5,6 +5,22 @@ use url::{Host, Url};
 mod tapd;
 mod trackers;
 mod vault;
+pub(crate) const CLOUD_OPERATIONS: &[&str] = &[
+    "linear.credential",
+    "linear.accounts",
+    "linear.projects",
+    "linear.preview",
+    "linear.authorize",
+    "clickup.credential",
+    "clickup.accounts",
+    "clickup.projects",
+    "clickup.preview",
+    "clickup.authorize",
+    "ones.credential",
+    "ones.accounts",
+    "ones.projects",
+    "ones.preview",
+];
 
 type Result<T> = std::result::Result<T, String>;
 
@@ -358,7 +374,8 @@ fn deliver(client: &mut Client, q: &Value) -> Result<Value> {
 
 pub(super) fn execute(client: &mut Client, q: &Value) -> Result<Value> {
     if q["op"].as_str().is_some_and(|s| {
-        s.starts_with("zentao.")
+        CLOUD_OPERATIONS.contains(&s)
+            || s.starts_with("zentao.")
             || s.starts_with("pingcode.")
             || matches!(s, "imports.push" | "imports.synchronize")
     }) {

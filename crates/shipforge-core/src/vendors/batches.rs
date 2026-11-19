@@ -25,7 +25,7 @@ pub(super) fn has_ownership(c: &Context<'_>, id: &str) -> Result<bool> {
 fn project_field(r: &Record) -> &'static str {
     match r.fields["provider"].as_str() {
         Some("tapd") => "tapd_workspace",
-        Some("zentao" | "pingcode") => "remote_scope",
+        Some("zentao" | "pingcode" | "linear" | "clickup" | "ones") => "remote_scope",
         _ => "zoho_project",
     }
 }
@@ -39,6 +39,7 @@ fn bound(c: &Context<'_>, r: &Record) -> Result<(String, String)> {
             required(&r.fields, "scope_kind")?
         ),
         Some("pingcode") => format!("pingcode|{}", required(&r.fields, "enterprise_id")?),
+        Some("linear" | "clickup" | "ones") => cloud::namespace(&r.fields)?,
         _ => required(&r.fields, "portal_id")?.to_owned(),
     };
     let project = required(&r.fields, project_field(r))?.to_owned();
@@ -77,15 +78,21 @@ fn advance(c: &Context<'_>, r: &Record) -> Result<()> {
 pub(super) fn binding(c: &Context<'_>, r: &Record, verify_scope: bool) -> Result<Value> {
     let since:Option<i64>=c.db.query_row("SELECT CASE WHEN COUNT(modified)=COUNT(*) THEN MAX(modified) END FROM sf_import_item WHERE space=? AND connector=?",params![c.space,r.id],|v|v.get(0)).map_err(storage)?;
     if verify_scope
+        && (!cloud::supported(&r.fields)
+            || r.fields["enterprise_id"]
+                .as_str()
+                .is_some_and(|v| !v.is_empty()))
         && r.fields[project_field(r)]
             .as_str()
             .is_some_and(|p| !p.is_empty())
     {
         bound(c, r)?;
     }
-    Ok(
-        json!({"organization":c.org_id()?,"provider":r.fields["provider"],"portal_id":r.fields["portal_id"],"tapd_auth":r.fields["tapd_auth"],"company_id":r.fields["company_id"],"project":r.fields[project_field(r)],"revision":r.rev,"checkpoint":checkpoint(c,r)?,"since":since.map(|ms|ms.saturating_sub(1)),"modified_after":since.and_then(|ms|chrono::DateTime::from_timestamp_millis(ms.saturating_sub(1000))).map(|d|d.format("%Y-%m-%d %H:%M:%S").to_string()),"instance_url":r.fields["instance_url"],"scope_kind":r.fields["scope_kind"],"enterprise_id":r.fields["enterprise_id"],"pingcode_auth":r.fields["pingcode_auth"]}),
-    )
+    let mut binding = json!({"organization":c.org_id()?,"provider":r.fields["provider"],"portal_id":r.fields["portal_id"],"tapd_auth":r.fields["tapd_auth"],"company_id":r.fields["company_id"],"project":r.fields[project_field(r)],"revision":r.rev,"checkpoint":checkpoint(c,r)?,"since":since.map(|ms|ms.saturating_sub(1)),"modified_after":since.and_then(|ms|chrono::DateTime::from_timestamp_millis(ms.saturating_sub(1000))).map(|d|d.format("%Y-%m-%d %H:%M:%S").to_string()),"instance_url":r.fields["instance_url"],"scope_kind":r.fields["scope_kind"],"enterprise_id":r.fields["enterprise_id"],"pingcode_auth":r.fields["pingcode_auth"],"sync_paused":r.fields["sync_paused"]==true,"cloud_auth":r.fields["cloud_auth"],"ones_url":r.fields["ones_url"]});
+    if r.fields["provider"] == "linear" && signals::uses_project(&r.fields) {
+        binding["signal_revision"] = json!(signals::latest(c, r)?);
+    }
+    Ok(binding)
 }
 
 struct Mapping {
@@ -93,19 +100,52 @@ struct Mapping {
     birth: i64,
     base: Value,
     modified: Option<i64>,
+    adopting: bool,
 }
 
 fn mapping(c: &Context<'_>, r: &Record, external: &str) -> Result<Option<Mapping>> {
     let row:Option<(String,i64,String,Option<i64>)>=c.db.query_row("SELECT task,birth,base,modified FROM sf_import_item WHERE space=? AND connector=? AND external=?",params![c.space,r.id,external],|v|Ok((v.get(0)?,v.get(1)?,v.get(2)?,v.get(3)?))).optional().map_err(storage)?;
-    row.map(|(task, birth, base, modified)| {
-        Ok(Mapping {
+    if let Some((task, birth, base, modified)) = row {
+        return Ok(Some(Mapping {
             task,
             birth,
             base: serde_json::from_str(&base).map_err(storage)?,
             modified,
-        })
-    })
-    .transpose()
+            adopting: false,
+        }));
+    }
+    if r.fields["provider"] != "linear" {
+        return Ok(None);
+    }
+    let Some(issue) = external.strip_prefix("workitem:") else {
+        return Ok(None);
+    };
+    let legacy:Option<(String,String,String)>=c.db.query_row(
+        "SELECT o.task,o.base,(SELECT snapshot FROM event_log WHERE space=o.space AND kind='task' AND id=o.task AND action='create' ORDER BY seq LIMIT 1) FROM sf_connector_objects o WHERE o.space=? AND o.connector=? AND o.external=?",
+        params![c.space,r.id,format!("linear:{issue}")],|row|Ok((row.get(0)?,row.get(1)?,row.get(2)?))).optional().map_err(storage)?;
+    let Some((task, base, initial)) = legacy else {
+        return Ok(None);
+    };
+    let before: Record = serde_json::from_str(&initial).map_err(storage)?;
+    let source: Value = serde_json::from_str(&base).map_err(storage)?;
+    let mut base = before.fields;
+    for key in ["title", "description", "assignees", "source_assignees"] {
+        if let Some(value) = source.get(key) {
+            base[key] = value.clone();
+        }
+    }
+    if source["closed"] == true {
+        base["status"] = json!("done");
+    } else if base["status"] == "done" {
+        base["status"] = json!("todo");
+    }
+    Ok(Some(Mapping {
+        task,
+        birth: before.rev,
+        base,
+        modified: None,
+        adopting: true,
+    }))
 }
 
 pub(super) fn owned(
@@ -119,8 +159,27 @@ pub(super) fn owned(
     if deleted {
         return Ok(None);
     }
-    Ok(c.find("task", id)?
-        .filter(|t| t.fields["connector"] == r.id && t.fields["external_id"] == external))
+    let Some(task) = c
+        .find("task", id)?
+        .filter(|t| t.fields["connector"] == r.id)
+    else {
+        return Ok(None);
+    };
+    if task.fields["external_id"] == external {
+        return Ok(Some(task));
+    }
+    if r.fields["provider"] == "linear"
+        && let Some(issue) = external.strip_prefix("workitem:")
+    {
+        let legacy = format!("linear:{issue}");
+        if task.fields["external_id"] == legacy {
+            let original:bool=c.db.query_row("SELECT EXISTS(SELECT 1 FROM sf_connector_objects WHERE space=? AND connector=? AND external=? AND task=?)",params![c.space,r.id,legacy,id],|row|row.get(0)).map_err(storage)?;
+            if original {
+                return Ok(Some(task));
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn apply(c: &Context<'_>, r: &Record, batch: &str, row: &Value, write: bool) -> Result<Value> {
@@ -156,6 +215,9 @@ fn apply(c: &Context<'_>, r: &Record, batch: &str, row: &Value, write: bool) -> 
             }
             true
         });
+        if original.adopting {
+            patch.insert("external_provider".into(), json!("linear"));
+        }
         let action = if !conflicts.is_empty() {
             "conflict"
         } else if patch.is_empty() {
@@ -164,6 +226,10 @@ fn apply(c: &Context<'_>, r: &Record, batch: &str, row: &Value, write: bool) -> 
             "updated"
         };
         if write {
+            if original.adopting {
+                c.db.execute("INSERT INTO sf_import_item(space,connector,external,task,birth,owner_batch,base,modified) VALUES(?,?,?,?,?,?,?,NULL)",
+                    params![c.space,r.id,external,local.id,original.birth,format!("adopt:{batch}"),original.base.to_string()]).map_err(storage)?;
+            }
             if !patch.is_empty() {
                 let title = patch.remove("title").unwrap_or_else(|| json!(local.title));
                 domain::write_import(
@@ -226,6 +292,9 @@ fn summarize(
 }
 
 pub(super) fn stage(c: &Context<'_>, r: &Record, q: &Value) -> Result<Value> {
+    if q["poll"] == true && cloud::supported(&r.fields) && r.fields["sync_paused"] == true {
+        return Ok(json!({"state":"paused","batch":null}));
+    }
     let (portal, project) = bound(c, r)?;
     if q["project"] != project
         || q["binding_rev"].as_i64() != Some(r.rev)
@@ -238,12 +307,16 @@ pub(super) fn stage(c: &Context<'_>, r: &Record, q: &Value) -> Result<Value> {
     }
     let rows = match r.fields["provider"].as_str() {
         Some("tapd") => tapd::normalize(c, r, q)?,
+        Some("linear" | "clickup" | "ones") => cloud::normalize(c, r, q)?,
         Some("zentao" | "pingcode") => trackers::normalize(c, r, q)?,
         _ => zoho::normalize(c, r, &q["issues"])?,
     };
     let batch = Uuid::new_v4().to_string();
     let mut summary = summarize(c, r, &batch, &rows, false)?;
-    if q["poll"] == true && matches!(r.fields["provider"].as_str(), Some("zentao" | "pingcode")) {
+    if q["poll"] == true
+        && (cloud::supported(&r.fields)
+            || matches!(r.fields["provider"].as_str(), Some("zentao" | "pingcode")))
+    {
         let blocked = summary["counts"]["conflict"] != 0 || summary["counts"]["detached"] != 0;
         if blocked || (summary["counts"]["created"] == 0 && summary["counts"]["updated"] == 0) {
             summary["batch"] = Value::Null;
@@ -277,6 +350,9 @@ pub(super) fn commit(c: &Context<'_>, r: &Record, id: &str) -> Result<Value> {
     c.db.execute("INSERT OR IGNORE INTO sf_import_binding(org,portal,project,space,connector) VALUES(?,?,?,?,?)",params![c.org_id()?,portal,project,c.space,r.id]).map_err(storage)?;
     let rows: Vec<Value> = serde_json::from_str(&rows).map_err(storage)?;
     let mut result = summarize(c, r, id, &rows, true)?;
+    if cloud::supported(&r.fields) {
+        result["relations"] = cloud::connect_relations(c, r)?;
+    }
     result["state"] = json!("completed");
     finish(c, id, "completed", &result)?;
     advance(c, r)?;
@@ -319,6 +395,7 @@ pub(super) fn rollback(c: &Context<'_>, r: &Record, id: &str) -> Result<Value> {
         return Ok(result);
     }
     let mut deleted = 0;
+    let mut released_existing = 0;
     if state == "completed" {
         let mut stmt=c.db.prepare("SELECT task,birth,external FROM sf_import_item WHERE space=? AND connector=? AND owner_batch=?").map_err(storage)?;
         let items = stmt
@@ -346,6 +423,14 @@ pub(super) fn rollback(c: &Context<'_>, r: &Record, id: &str) -> Result<Value> {
             params![c.space, r.id, id],
         )
         .map_err(storage)?;
+        if r.fields["provider"] == "linear" {
+            released_existing =
+                c.db.execute(
+                    "DELETE FROM sf_import_item WHERE space=? AND connector=? AND owner_batch=?",
+                    params![c.space, r.id, format!("adopt:{id}")],
+                )
+                .map_err(storage)?;
+        }
         advance(c, r)?;
         if !has_ownership(c, &r.id)? {
             release(c, r)?;
@@ -358,6 +443,13 @@ pub(super) fn rollback(c: &Context<'_>, r: &Record, id: &str) -> Result<Value> {
     };
     result["state"] = json!(state);
     result["deleted"] = json!(deleted);
+    if released_existing > 0 {
+        result["released_existing"] = json!(released_existing);
+    }
+    if (deleted > 0 || released_existing > 0) && cloud::supported(&r.fields) {
+        cloud::sync_control(c, r, "pause")?;
+        result["sync_paused"] = json!(true);
+    }
     finish(c, id, state, &result)?;
     Ok(result)
 }

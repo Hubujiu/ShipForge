@@ -1,8 +1,22 @@
 # ShipForge 命令行与 JSON 协议
 
+| 平台 | 查找账号 | 授权与轮换凭据 | 发现项目或 List | 预览导入 |
+| --- | --- | --- | --- | --- |
+| Linear | `linear.accounts` | `linear.authorize`、`linear.credential` | `linear.projects` | `linear.preview` |
+| ClickUp | `clickup.accounts` | `clickup.authorize`、`clickup.credential` | `clickup.projects` | `clickup.preview` |
+| ONES | `ones.accounts` | `ones.credential` | `ones.projects` | `ones.preview` |
+
+以上操作由集成管理员使用。Linear 和 ClickUp 支持带 state 的浏览器授权，三家平台均可使用个人凭据。`imports.sync_control` 暂停或恢复工作机轮询，`imports.push` 发布已映射的状态或一条本地公开评论。[工作区层级、凭据、字段与回写示例](cloud-trackers.md)
+
+`profiles.verification` 读取本机发起、在十分钟内有效的邮箱验证状态。安装版从邮件网页的「打开 ShipForge 桌面版」链接恢复同一验证表单。
+
+邮箱登录或注册使用 `profiles.login.start` 和 `profiles.login.finish`。读取或修改资料用 `access.account.profile`、`access.account.update`。通过 `access.account.impact` 预览组织及共享机器影响。用 `profiles.close.start` 与 `profiles.close.finish` 在验证邮箱后注销账号，服务端操作为 `access.account.verify` 与 `access.account.close`。退出当前会话可用 `profiles.logout`，服务端对应 `access.account.logout`。[邮件配置与数据处理](account-lifecycle.md)
+
 禅道与 PingCode 连接器分别使用 `zentao.credential`、`zentao.projects`、`zentao.preview` 和 `pingcode.credential`、`pingcode.projects`、`pingcode.preview`。用 `imports.commit` 确认预览，`imports.synchronize` 增量拉取并应用，`imports.history` 和 `imports.rollback` 管理批次。启用回写的连接器可通过 `imports.push` 发布已映射状态，或向 PingCode 发布本地评论。`imports.push_history` 查看回执。自建投递端可用 `imports.prepare_push` 和 `imports.finish_push` 操作回写租约。持续同步由工作机 `tracker-sync --watch` 执行。[配置、认证、JSON 示例与故障恢复](tracker-integrations.md)
 
 ## Agent 目录、小队与分身
+
+在「市场」可按分类、名称或说明浏览技能包与 Agent 模板。用 `catalog.list`、`catalog.detail` 浏览，`catalog.publish` 发布团队版本，`catalog.install`、`catalog.update`、`catalog.uninstall` 管理空间安装状态，`catalog.instantiate` 创建独立 Agent。空间技能使用 `skill.import` 和 `skill.bind`。从机器依次调用 `skill.discover`、`skill.sources`、`skill.machine_import`。工作机通过 `skill.jobs` 和 `skill.finish` 处理离线积压。小队的 `fields.share_task_directory` 决定后续任务是否在同机复用工作树。 [技能、发布与共享目录示例](skills-market.md)
 
 `agent.directory` 返回当前成员有权使用的 Agent。传 `kind:"crew"` 查看小队，`scope:"organization"` 合并已加入的同组织空间，`query` 搜索名称或描述。`view` 可选 `all`、`mine`、`shared`、`private`、`favorite` 或 `archived`。「我的」按创建人筛选。在 Windows 的「Agents」或「小队」页可切换同样的筛选，并在当前空间和全部可访问空间间切换。设置和执行都使用记录的空间与 ID，可区分同名 Agent。
 
@@ -187,3 +201,7 @@ Slack 连接器管理员可用 `update` 设置布尔值 `fields.slack_assignment
 ## 专项时间线与分拣投递
 
 `project.timeline` 通过 `basis` 查看任务开始日、截止日或计划区间。`triage.settings` 读取配置，`triage.configure` 设置责任与规则，`triage.submit` 投递任务，`triage.queue` 查询按进入时间排序的审核队列。`triage` 支持接受、拒绝、重复、搁置及恢复，`triage.batch` 原子执行多项接受、拒绝或搁置。`customer_request.convert` 将有权编辑的客户请求转成任务。`task.share` 返回任务编号及链接，`task.open` 按接收者的身份打开。[操作示例与权限](triage-planning.md)
+
+## 对话指令、审阅与文档引用
+
+使用 `chat.slash` 查当前运行环境的命令，`chat.slash.send` 发送。任务快捷指令由 `shortcut.catalog`、`shortcut.save`、`shortcut.organize`、`shortcut.run`、`shortcut.history` 和 `shortcut.delete` 管理。用 `task.review.state` 查看当前待审轮次，`task.review` 发送确认。单独的 `chat.complete` 将会话及绑定任务标为完成。用 `shipforge share-image <分享码或链接> <新文件.png>` 或 `chat.share.image` 保存消息快照。文档的 `document.share`、`document.open`、`document.preview` 和 `document.embeds` 均按当前查看者权限读取。[请求示例、Windows 入口与权限](conversation-commands.md)

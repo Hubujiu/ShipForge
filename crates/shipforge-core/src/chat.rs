@@ -1,4 +1,14 @@
+mod share_image;
 mod shares;
+pub use share_image::render as render_share_png;
+pub(crate) fn share_image(c: &Context<'_>, q: &Value) -> Result<Value> {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    let snapshot = shares::read(c.db, required(q, "share")?, Some(c.actor))?;
+    let bytes = render_share_png(&snapshot)?;
+    Ok(
+        json!({"filename":"ShipForge-conversation.png","media_type":"image/png","bytes":bytes.len(),"sha256":crate::attachments::hash(&bytes),"content_base64":STANDARD.encode(bytes)}),
+    )
+}
 mod sidebar;
 mod workflows;
 use crate::{Context, Record, Result, conflict, forbidden, invalid, required, storage};
@@ -7,7 +17,7 @@ use serde_json::{Value, json};
 pub(crate) use shares::read as read_share;
 pub use shares::share_text;
 pub(crate) use sidebar::new_message;
-pub(crate) use workflows::manager_transcript;
+pub(crate) use workflows::{handler, manager_transcript};
 pub(crate) fn history_owner(c: &Context<'_>, room: &Record) -> Result<Option<String>> {
     let (id, dissolved) = owner(c, room)?;
     Ok((!dissolved && !group(room) && task_visible(c, room)).then_some(id))
@@ -196,6 +206,7 @@ fn info(c: &Context<'_>, room: &Record) -> Result<Value> {
     let is_owner = c.actor == leader;
     let (muted, ignore_all) = settings(c, &room.id, c.actor)?;
     let mut value = json!({"id":room.id,"owner":leader,"is_owner":is_owner,"group":group(room),"muted":muted,"ignore_all":ignore_all});
+    value["completed"] = json!(crate::conversation_tools::reviews::completed(c, &room.id)?);
     if group(room) || is_owner {
         let mut members = people(c, &room.id, "member")?;
         members.retain(|s| s != &leader);

@@ -4,9 +4,12 @@ mod actions;
 mod agents;
 mod attachments;
 mod chat;
+mod conversation_tools;
 mod defaults;
 mod discussions;
+pub use conversation_tools::documents::parts as document_link_parts;
 mod domain;
+mod identity;
 mod im;
 mod inbox;
 mod invitations;
@@ -21,6 +24,7 @@ mod protocol;
 mod providers;
 mod query;
 mod saved_views;
+pub mod skill_package;
 mod spaces;
 mod tags;
 mod task_commands;
@@ -37,6 +41,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::path::Path;
 
+pub use chat::render_share_png;
 pub use chat::share_text;
 pub use protocol::{is_read_only, schema};
 pub use vendors::{bugly_authorization, zentao_installation};
@@ -174,6 +179,7 @@ impl Store {
             actor,
             space,
         };
+        identity::ensure_active(&tx, actor)?;
         if !matches!(
             op,
             "space.list"
@@ -187,6 +193,9 @@ impl Store {
                 | "chat.share.read"
                 | "view.open"
                 | "task.open"
+                | "document.open"
+                | "document.preview"
+                | "chat.share.image"
                 | "triage.submit"
                 | "triage.settings"
                 | "triage.configure"
@@ -263,6 +272,7 @@ impl Store {
             {
                 triage::execute(&c, op, &request)
             }
+            op if conversation_tools::handles(op) => conversation_tools::execute(&c, op, &request),
             "project.timeline" => project_timeline::timeline(&c, &request),
             "task.type.preview" => task_fields::preview_switch(&c, &request),
             "task_type.bindings.preview" => task_fields::preview_bindings(&c, &request),
@@ -349,6 +359,7 @@ fn current_following(c: &Context<'_>, result: &mut Value) -> Result<()> {
             ..*c
         };
         let threads = crate::im::options(&scope, id)?;
+        let waiting = conversation_tools::reviews::awaiting(&scope, id)?;
         let follows: bool =
             c.db.query_row(
                 "SELECT EXISTS(SELECT 1 FROM followers WHERE space=? AND actor=? AND task=?)",
@@ -357,6 +368,7 @@ fn current_following(c: &Context<'_>, result: &mut Value) -> Result<()> {
             )
             .map_err(storage)?;
         result["fields"]["following"] = json!(follows);
+        result["fields"]["awaiting_review"] = json!(waiting);
         if threads.as_array().is_some_and(|v| !v.is_empty()) {
             result["fields"]["im_threads"] = threads;
         } else if let Some(fields) = result["fields"].as_object_mut() {

@@ -7,6 +7,8 @@ license = "MIT"
 
 [dependencies]
 base64 = "0.22.1"
+image = { version = "=0.25.10", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
+resvg = { version = "=0.46.0" }
 ring = "0.17"
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "serde"] }
 chrono-tz = "0.10"

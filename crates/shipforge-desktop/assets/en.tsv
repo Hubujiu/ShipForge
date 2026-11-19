@@ -966,6 +966,26 @@ TAPD 个人访问令牌	TAPD personal access token
 旗舰版	Ultimate
 禅道版本号（可选）	ZenTao version (optional)
 PingCode 企业 ID	PingCode enterprise ID
+供应商企业、团队或工作区 ID	Provider organization, team or workspace ID
+ONES 租户地址	ONES tenant URL
+云平台凭据方式	Cloud credential type
+个人 API Key	Personal API key
+读取可访问的供应商账号	Discover accessible provider accounts
+绑定或轮换供应商凭据	Connect or rotate credentials
+发现可访问项目	Discover accessible projects
+发现 ClickUp 列表	Discover ClickUp Lists
+预览供应商任务	Preview provider tasks
+生成 OAuth 授权地址	Generate OAuth authorization URL
+已注册的 OAuth 回调地址	Registered OAuth callback URL
+申请写入权限	Request write access
+供应商访问令牌	Provider access token
+供应商 OAuth 授权码	Provider OAuth authorization code
+OAuth 回调 state	OAuth callback state
+选中的供应商账号 ID	Selected provider account ID
+暂停或恢复同步	Pause or resume sync
+同步操作	Sync action
+暂停同步	Pause sync
+恢复同步	Resume sync
 PingCode 凭据方式	PingCode credentials
 立即同步工作项	Synchronize linked work items
 用户授权码	User authorization code
@@ -1117,3 +1137,91 @@ Agent 已完成工作	Agent run completed
 需要浏览器订阅	Browser subscription required
 需要邮件投递服务	Mail delivery service required
 需要外部通知服务	External notification service required
+使用邮箱登录或注册	Sign in or register with email
+验证邮箱	Verify email
+个人资料	Profile
+永久注销账号	Permanently close account
+获取验证邮件	Send verification email
+完成登录	Finish signing in
+团队服务地址	Team server URL
+头像地址	Avatar URL
+个人简介	Biography
+一并解散仅由我拥有的多人组织	Dissolve the organizations with other members that I solely own
+输入「注销」确认	Type 注销 to confirm
+已验证邮箱	Verified email
+退出当前账号	Sign out of this account
+个人资料已保存	Profile saved
+账号已注销	Account closed
+已登录	Signed in
+邮箱	Email
+设备配对码	Device pairing code
+解散单人组织	Dissolve single-member organization
+解散多人组织	Dissolve organization with other members
+退出组织	Leave organization
+请先处理共享机器权限	Resolve shared machine access first
+打开验证邮件，在浏览器输入设备配对码，然后返回此处完成操作。	Open the email, enter the device pairing code in your browser, then return here to finish.
+注销将清除个人资料并退出所有组织，无法恢复。	Closing this account permanently clears your profile and removes you from all organizations.
+同机成员共用任务目录	Share a task directory on the same machine
+关闭同机共享任务目录	Turn off shared task directories
+开启同机共享任务目录	Share task directories on this machine
+已更新小队目录设置	Crew workspace setting updated
+全部分类	All categories
+工程研发	Engineering
+办公效率	Productivity
+知识管理	Knowledge management
+数据分析	Data analysis
+内容创作	Content creation
+搜索市场	Search marketplace
+导入技能文件	Import a skill file
+导入技能文件夹	Import a skill folder
+从 URL 导入技能	Import a skill from URL
+绑定空间技能	Bind a space skill
+从机器发现技能	Find skills on a machine
+选择机器技能	Choose a machine skill
+发布市场版本	Publish a marketplace release
+从模板创建 Agent	Create agent from template
+绑定 Agent（可选）	Bind to agent (optional)
+选择 SKILL.md、.skill 或 ZIP	Choose SKILL.md, a .skill file or ZIP
+选择包含技能的文件夹	Choose a folder containing skills
+GitHub 文件或 Gist 原始 HTTPS 地址	Public GitHub file or raw Gist HTTPS URL
+空间技能	Space skills
+绑定此技能	Bind this skill
+新 Agent 名称（可选）	New agent name (optional)
+选择机器	Choose machine
+请求机器扫描	Request machine scan
+查看扫描结果	View scan results
+按名称或描述筛选	Filter by name or description
+发现的技能	Discovered skill
+市场条目名称	Marketplace listing name
+条目说明	Listing description
+发布范围	Publication audience
+模板来源 Agent	Agent to publish as a template
+收录技能	Skills in this release
+空间连接器	Space connectors
+查看详情	View details
+更新已安装技能	Update installed skills
+技能已更新	Skill updated
+卸载技能	Uninstall skills
+发布新版本	Publish new version
+已安装	Installed
+没有匹配的市场条目	No matching marketplace entries
+机器技能队列	Machine skill queue
+机器离线，已排队，机器上线后处理。	Machine offline. The request is queued until the machine reconnects.
+已排队。可在查看扫描结果中检查进度。	Request queued. Check progress in the machine skill importer.
+已导入	Imported
+已关联	Linked
+已跳过	Skipped
+已存在	Already present
+处理结果	Results
+市场条目详情	Marketplace details
+没有匹配的机器技能	No matching machine skills
+机器技能	Machine skills
+添加技能	Add skill
+手动创建技能	Create a skill
+技能来源	Skill source
+技能名称	Skill name
+请输入名称和技能指令	Enter a name and skill instructions
+查看导入进度	View import progress
+暂无记录	No records
+分类	Category
+发布	Publish

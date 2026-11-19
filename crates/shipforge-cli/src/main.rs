@@ -74,6 +74,11 @@ enum Command {
         #[arg(long)]
         media_type: Option<String>,
     },
+    /// Save a frozen conversation share as a PNG at a new local path.
+    ShareImage {
+        share: String,
+        path: PathBuf,
+    },
     /// Download one attachment to a new local file.
     Download {
         kind: String,
@@ -237,6 +242,19 @@ fn execute(cli: Cli) -> Result<Value, String> {
                 request["media_type"] = json!(mime);
             }
             request
+        }
+        Command::ShareImage { share, path } => {
+            let key = share
+                .trim_end_matches('/')
+                .rsplit('/')
+                .next()
+                .unwrap_or(&share);
+            let mut response = Client::from_dir(cli.data_dir.as_deref())?
+                .execute(json!({"op":"chat.share.image","share":key}))?;
+            shipforge_client::save_attachment(&path, &response)?;
+            response.as_object_mut().unwrap().remove("content_base64");
+            response["path"] = json!(path);
+            return Ok(response);
         }
         Command::Download {
             kind,

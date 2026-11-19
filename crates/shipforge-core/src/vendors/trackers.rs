@@ -204,6 +204,8 @@ pub(super) fn normalize(c: &Context<'_>, r: &Record, q: &Value) -> Result<Vec<Va
         }
         let state_id = if zen {
             source_label(&row["status"])
+        } else if r.fields["provider"] == "clickup" && row["state"]["id"].is_null() {
+            required(&row["state"], "name")?.to_owned()
         } else {
             source_id(&row["state"])
         };
@@ -220,10 +222,17 @@ pub(super) fn normalize(c: &Context<'_>, r: &Record, q: &Value) -> Result<Vec<Va
         let map = &r.fields["mapping"];
         let status = map["status"][&state_id]
             .as_str()
-            .or(map["status"][status_name].as_str())
+            .or_else(|| {
+                (r.fields["provider"] != "linear")
+                    .then(|| map["status"][status_name].as_str())
+                    .flatten()
+            })
             .unwrap_or(match category {
                 "done" | "closed" | "resolved" | "completed" => "done",
-                "doing" | "developing" | "in_progress" | "progressing" => "in_progress",
+                "doing" | "developing" | "in_progress" | "progressing" | "started"
+                | "inProgress" => "in_progress",
+                "backlog" => "backlog",
+                "triage" => "triage",
                 "cancel" | "cancelled" | "canceled" => "cancelled",
                 _ => "todo",
             });
@@ -262,6 +271,17 @@ pub(super) fn normalize(c: &Context<'_>, r: &Record, q: &Value) -> Result<Vec<Va
                 "bug" => "bug",
                 "task" => "task",
                 _ => "requirement",
+            }
+        } else if r.fields["provider"] == "ones" {
+            match row["type"]["name"]
+                .as_str()
+                .unwrap_or_default()
+                .to_lowercase()
+                .as_str()
+            {
+                "bug" | "defect" | "缺陷" => "bug",
+                "story" | "requirement" | "需求" | "用户故事" => "requirement",
+                _ => &default_type,
             }
         } else {
             &default_type

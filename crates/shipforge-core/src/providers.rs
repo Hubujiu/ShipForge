@@ -67,6 +67,9 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, preview: bool) -> Result<Value
     if event.description.len() > 1_048_576 {
         return Err(invalid("external description exceeds 1 MiB"));
     }
+    if provider == "linear" && crate::vendors::uses_project(f) {
+        return crate::vendors::linear_relay(c, &connector, p, delivery, preview);
+    }
     let mut mapped = json!({"id":id,"provider":provider,"external_id":event.object,"event_id":delivery,"source_version":format!("{:020}",event.micros),"title":event.title,"description":event.description,"closed":event.closed});
     crate::task_commands::source_members::provider(c, provider, p, f, &mut mapped)?;
     let origin = crate::im::origin(provider, p)?;

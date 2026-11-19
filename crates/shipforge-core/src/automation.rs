@@ -112,35 +112,6 @@ pub(super) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
 }
 pub(super) fn dispatch(c: &Context<'_>, q: &Value) -> Result<Value> {
     match q["op"].as_str() {
-        Some("catalog.list") => Ok(catalog()),
-        Some("catalog.install") => {
-            let id = req(q, "id")?;
-            let catalog = catalog();
-            let entry = catalog
-                .as_array()
-                .unwrap()
-                .iter()
-                .find(|r| r["id"] == id)
-                .ok_or("unknown catalog template")?;
-            let mut fields = entry["fields"].clone();
-            fields["template_id"] = json!(id);
-            if entry["kind"] == "agent"
-                && let Some(runtime) = q["runtime"].as_str()
-            {
-                fields["runtime"] = json!(runtime);
-            }
-            let installed_id = format!("template-{id}");
-            if let Some(existing) = c.find(req(entry, "kind")?, &installed_id)? {
-                if existing.fields["template_id"] != id || !c.visible(&existing)? {
-                    return Err("template ID conflicts with an existing record".into());
-                }
-                return encoded(existing);
-            }
-            crate::write_request(
-                c,
-                &json!({"op":"create","kind":entry["kind"],"id":installed_id,"title":entry["title"],"fields":fields}),
-            )
-        }
         Some("tool.authorize") => {
             let agent = req(q, "id")?;
             let tool = req(q, "tool_id")?;
@@ -483,7 +454,7 @@ pub(super) fn notify(c: &Context<'_>, run: &Record) -> Result<()> {
     Ok(())
 }
 
-fn catalog() -> Value {
+pub(super) fn catalog() -> Value {
     json!([
         {"id":"change-summary","kind":"skill","title":"变更摘要","description":"把讨论和产物整理为可核对的交付说明。","fields":{"version":"1","instructions":"逐项说明已完成的变化、验证方式、产物位置和需要人工确认的问题。仅引用实际观察到的结果。"}},
         {"id":"acceptance-check","kind":"skill","title":"验收检查","description":"将任务描述整理成带验证结果的检查清单。","fields":{"version":"1","instructions":"从任务描述提取验收条件。逐项列出依据和实际结果，把尚未验证的项目单列。"}},
@@ -499,6 +470,11 @@ fn mapped_task(c: &Context<'_>, record: &Record) -> Result<Value> {
 fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {
     c.require_admin()?;
     let connector = read(c, "connector", req(q, "id")?)?;
+    if crate::vendors::uses_project(&connector.fields) {
+        return Err(crate::invalid(
+            "use the bound project's native tracker sync or provider event",
+        ));
+    }
     if connector.fields["enabled"] == false {
         return Err("connector is disabled".into());
     }

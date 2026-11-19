@@ -9,6 +9,8 @@ pub type Result<T> = std::result::Result<T, String>;
 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Runtime {
+    #[serde(default)]
+    pub slash_commands: Option<Vec<String>>,
     pub program: PathBuf,
     #[serde(default)]
     pub args: Vec<String>,
@@ -49,6 +51,8 @@ pub struct Config {
     #[serde(default)]
     pub profiles: BTreeMap<String, PathBuf>,
     pub runtimes: BTreeMap<String, Runtime>,
+    #[serde(default)]
+    pub skill_roots: BTreeMap<String, Vec<PathBuf>>,
     #[serde(default)]
     pub approved_tools: BTreeMap<String, ToolSpec>,
 }
@@ -98,6 +102,7 @@ impl Config {
             .workspace
             .iter()
             .chain(config.profiles.values())
+            .chain(config.skill_roots.values().flatten())
             .any(|p| !p.is_absolute())
         {
             return Err("approved workspace and profile paths must be absolute".into());
@@ -121,6 +126,7 @@ impl Config {
             runtimes.insert(
                 runtime.to_owned(),
                 Runtime {
+                    slash_commands: None,
                     program,
                     args,
                     inherit_env: Vec::new(),
@@ -135,6 +141,7 @@ impl Config {
             runtimes.insert(
                 "inspect-context".into(),
                 Runtime {
+                    slash_commands: None,
                     program: std::env::current_exe().map_err(|e| e.to_string())?,
                     args: vec!["inspect-context".into()],
                     inherit_env: Vec::new(),
@@ -155,12 +162,13 @@ impl Config {
             profiles: BTreeMap::new(),
             runtimes,
             approved_tools: BTreeMap::new(),
+            skill_roots: BTreeMap::new(),
         };
         let data = serde_json::to_vec_pretty(&cfg).map_err(|e| e.to_string())?;
         write_new(file, &data)
     }
 }
-fn write_new(path: &Path, data: &[u8]) -> Result<()> {
+pub(crate) fn write_new(path: &Path, data: &[u8]) -> Result<()> {
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
