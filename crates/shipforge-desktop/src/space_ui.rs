@@ -270,6 +270,19 @@ impl Workbench {
                     UiAction::Edit(space.clone()),
                 ));
             }
+            if !archived
+                && flag(space, "triage_enabled")
+                && (flag(space, "can_join")
+                    || flag(space, "joined") && !flag(space, "can_edit_content"))
+            {
+                line = line.child(action(
+                    "intake",
+                    "提交到分拣台",
+                    UiAction::Form(Mode::Review(super::review_ui::ReviewForm::Submit(
+                        id.clone(),
+                    ))),
+                ));
+            }
             if flag(space, "can_leave") {
                 line = line.child(action(
                     "leave",

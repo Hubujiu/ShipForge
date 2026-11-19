@@ -405,6 +405,7 @@ impl Page {
     }
 }
 pub const STATUSES: &[(&str, &str, u32)] = &[
+    ("duplicate", "重复", 0x878a93),
     ("triage", "待分拣", 0xa88bd3),
     ("backlog", "待规划", 0x9a9dab),
     ("todo", "待开始", 0x858b99),

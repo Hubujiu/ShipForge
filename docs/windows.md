@@ -4,6 +4,8 @@
 
 ## 安装和第一条任务
 
+日常处理提醒可打开左栏收件箱，按分区或空间找到任务，回复后回到同一列表。专项时间线、分拣队列和供应商工单的操作分别见对应手册。[收件箱与通知](inbox.md) · [专项与分拣](triage-planning.md) · [禅道与 PingCode](tracker-integrations.md)
+
 1. 从 GitHub Release 下载当前版本的 Windows x64 安装程序（文件名以 `-windows-x64-setup.exe` 结尾），安装后在开始菜单打开 ShipForge。也可以将同一版本 ZIP 解压到可写目录，双击 `shipforge-desktop.exe`。[发布页](https://github.com/Hubujiu/ShipForge/releases)
 2. 在「空间任务」点击「新建任务」，填写标题并保存。点击任务打开详情，可调整状态、负责人、描述，或添加评论。从列表切回看板能看到同一条任务。
 3. 在程序目录打开 PowerShell，执行下面的命令。在同一个 Windows 用户下，桌面与 CLI 默认共用工作区。使用 `--data-dir` 可以另建独立的本地工作区。

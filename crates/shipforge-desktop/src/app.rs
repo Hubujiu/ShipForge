@@ -7,12 +7,18 @@ use crate::{
 use gpui_kit::{prelude::*, *};
 #[path = "account_ui.rs"]
 mod account_ui;
+#[path = "agent_directory.rs"]
+pub(crate) mod agent_directory;
 #[path = "chat_actions.rs"]
 pub(crate) mod chat_actions;
+#[path = "inbox_ui.rs"]
+pub(crate) mod inbox_ui;
 #[path = "onboarding.rs"]
 pub(crate) mod onboarding;
 #[path = "personal.rs"]
 pub(crate) mod personal;
+#[path = "review_ui.rs"]
+pub(crate) mod review_ui;
 #[path = "space_ui.rs"]
 pub(crate) mod space_ui;
 #[path = "workspace_ui.rs"]
@@ -53,7 +59,10 @@ impl Default for Location {
 }
 #[derive(Clone)]
 pub enum UiAction {
+    Inbox(inbox_ui::Action),
+    Directory(agent_directory::Action),
     Work(workspace_ui::Action),
+    Review(review_ui::Action),
     Chat(chat_actions::Action),
     Space(space_ui::Action),
     CopyInvitation(String),
@@ -111,7 +120,11 @@ pub enum UiAction {
     NewPersonalToken(bool),
 }
 enum After {
+    Inbox(inbox_ui::Reply),
+    DirectoryOpen,
+    DirectoryTranscript,
     Work(workspace_ui::Response),
+    Review(review_ui::Response),
     OrganizedChat,
     OpenChat,
     SpacePreview(Record),
@@ -151,7 +164,11 @@ struct Pending {
     write: bool,
 }
 pub struct Workbench {
+    pub inbox: inbox_ui::State,
+    pub agent_query: String,
+    pub agent_every_space: bool,
     pub work: workspace_ui::State,
+    pub review: review_ui::State,
     pub guide: onboarding::Guide,
     pub personal: crate::personal::Personal,
     pub loc: Location,
@@ -206,7 +223,11 @@ impl Workbench {
         let root_focus = cx.focus_handle();
         root_focus.focus(window, cx);
         let app = Self {
+            agent_query: String::new(),
+            agent_every_space: false,
             work: workspace_ui::State::default(),
+            review: review_ui::State::default(),
+            inbox: Default::default(),
             guide: onboarding::Guide::default(),
             personal: crate::personal::Personal::default(),
             directory: dir.clone(),
@@ -326,6 +347,7 @@ impl Workbench {
         !matches!(self.role.as_str(), "viewer" | "read") && !self.current_archived()
     }
     pub fn notify_text(&mut self, s: impl Into<String>) {
+        self.inbox.banner = None;
         self.chat_undo = None;
         let message = s.into();
         self.notice = Some((crate::locale::label(&message).to_owned(), Instant::now()));
@@ -393,6 +415,12 @@ impl Workbench {
             Page::Spaces | Page::Organizations => kinds.push("organization"),
             Page::Artifacts => kinds.push("artifact"),
             Page::Agents | Page::Crews | Page::Automations | Page::Tools => {
+                if self.loc.page == Page::Agents {
+                    kinds.extend(["agent_directory", "agent_archived"]);
+                }
+                if self.loc.page == Page::Crews {
+                    kinds.extend(["crew_directory", "crew_archived"]);
+                }
                 kinds.extend(["agent", "crew", "machine", "skill", "tool"])
             }
             _ => {}
@@ -415,7 +443,19 @@ impl Workbench {
                     "task_type",
                 ]),
                 "chat" => kinds.extend(["message", "run", "artifact", "agent", "task"]),
-                "agent" => kinds.extend(["run", "skill", "tool", "machine", "agent"]),
+                "agent" | "crew" => {
+                    kinds.extend([
+                        "skill",
+                        "tool",
+                        "machine",
+                        "agent",
+                        "crew",
+                        "agent_settings",
+                    ]);
+                    if self.drawer_tab == "runs" {
+                        kinds.push("agent_history");
+                    }
+                }
                 "automation" => kinds.extend(["run", "agent", "crew"]),
                 "project" | "iteration" => kinds.push("task"),
                 "machine" => kinds.push("run"),
@@ -423,6 +463,14 @@ impl Workbench {
             }
         }
         if self.form.is_some() {
+            if self
+                .form
+                .as_ref()
+                .is_some_and(|f| matches!(f.mode, Mode::Inbox(inbox_ui::InboxForm::Followers(..))))
+                && matches!(self.role.as_str(), "admin" | "owner")
+            {
+                kinds.push("member_invitation");
+            }
             kinds.extend([
                 "tag",
                 "tag_group",
@@ -455,6 +503,12 @@ impl Workbench {
         kinds.sort_unstable();
         kinds.dedup();
         let _ = self.backend.sender.send(Request::Read {
+            handler: self
+                .loc
+                .selected
+                .as_ref()
+                .filter(|r| matches!(r.kind.as_str(), "agent" | "crew"))
+                .map(|r| (r.kind.clone(), r.id.clone())),
             chat: self
                 .loc
                 .selected
@@ -466,6 +520,8 @@ impl Workbench {
             kinds: kinds.into_iter().map(str::to_owned).collect(),
         });
         self.poll_at = Instant::now() + Duration::from_secs(5);
+        self.review_refresh();
+        self.inbox_refresh();
         self.send(
             json!({"op":"onboarding.get","space":self.loc.space}),
             After::Guide,
@@ -546,6 +602,7 @@ impl Workbench {
                     Ok((mode, session)) => {
                         self.restore_session(&session);
                         self.guide = onboarding::Guide::default();
+                        self.review = review_ui::State::default();
                         self.mode = mode;
                         self.access_identity = Value::Null;
                         self.tokens.clear();
@@ -640,6 +697,27 @@ impl Workbench {
                         match result {
                             Ok(value) => self.reply(p.after, value, w, cx),
                             Err(error) => match p.after {
+                                After::Inbox(inbox_ui::Reply::List(generation))
+                                    if generation == self.generation =>
+                                {
+                                    self.inbox.clear_rows();
+                                    self.error = Some(error);
+                                }
+                                After::Inbox(inbox_ui::Reply::Feed(_)) => {
+                                    if self.inbox.banner.take().is_some() {
+                                        self.notice = None;
+                                    }
+                                }
+                                After::Review(
+                                    review_ui::Response::Settings | review_ui::Response::Queue(_),
+                                ) => {
+                                    self.review.clear_queue();
+                                    self.error = Some(error);
+                                }
+                                After::Review(review_ui::Response::Timeline(..)) => {
+                                    self.review.timeline = Value::Null;
+                                    self.error = Some(error);
+                                }
                                 After::Guide => self.guide.failed(error),
                                 After::Personal => {
                                     if p.write {
@@ -750,6 +828,37 @@ impl Workbench {
             return;
         }
         match after {
+            After::Inbox(reply) => self.inbox_reply(reply, value, w, cx),
+            After::DirectoryOpen => {
+                self.close_form(w, cx);
+                if let Ok(row) = serde_json::from_value(value) {
+                    self.open_handler(row);
+                }
+            }
+            After::DirectoryTranscript => {
+                let content = value["messages"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|m| {
+                        format!(
+                            "{}\n{}",
+                            m["author"].as_str().unwrap_or(""),
+                            m["body"].as_str().unwrap_or("")
+                        )
+                    })
+                    .collect::<Vec<_>>()
+                    .join("\n\n");
+                self.open_form(
+                    Mode::Output {
+                        heading: value["title"].as_str().unwrap_or("运行历史").into(),
+                        content,
+                    },
+                    w,
+                    cx,
+                );
+            }
+            After::Review(r) => self.review_response(r, value, w, cx),
             After::Work(r) => self.work_reply(r, value, w, cx),
             After::OrganizedChat => self.chat_organized(&value, w, cx),
             After::OpenChat => {
@@ -929,6 +1038,7 @@ impl Workbench {
                     .and_then(Value::as_str)
                     .unwrap_or("owner")
                     .into();
+                self.inbox_ready();
                 self.role = value
                     .get("role")
                     .and_then(Value::as_str)
@@ -1200,6 +1310,7 @@ impl Workbench {
                     });
                 }
             }
+            Mode::Review(f) => value = f.prefill(),
             Mode::Work(workspace_ui::WorkForm::SaveAs(view)) => {
                 value.insert("title".into(), json!(format!("{} 副本", view.title)));
             }
@@ -1291,7 +1402,7 @@ impl Workbench {
         }
         if self.pos > 0
             && self.history[self.pos - 1].page == self.loc.page
-            && self.history[self.pos - 1].space == self.loc.space
+            && (self.loc.page == Page::Inbox || self.history[self.pos - 1].space == self.loc.space)
         {
             self.history(false);
         } else {
@@ -1308,7 +1419,10 @@ impl Workbench {
             return;
         }
         match action {
+            Directory(a) => self.directory_action(a, w, cx),
+            Review(a) => self.review_action(a, w, cx),
             Work(a) => self.work_action(a, w, cx),
+            Inbox(a) => self.inbox_action(a, w, cx),
             Chat(action) => self.chat_action(action, w, cx),
             Space(action) => self.space_action(action, w, cx),
             CopyInvitation(id) => self.send(
@@ -1794,7 +1908,10 @@ cx);
                 self.close_form(w, cx);
                 self.guide_action(onboarding::Action::Start("connect_machine"), w, cx);
             }
+            Mode::Directory(f) => self.directory_submit(f, values, w, cx)?,
+            Mode::Review(f) => self.review_submit(f, values, w, cx)?,
             Mode::Work(f) => self.work_submit(f, values, w, cx)?,
+            Mode::Inbox(f) => self.inbox_submit(f, values, w, cx)?,
             Mode::BulkTags => {
                 let mut cmd = Value::Object(values);
                 cmd["op"] = json!("tag.apply");
@@ -1883,6 +2000,20 @@ cx);
                     cmd["expected_rev"] = json!(r.rev);
                     if k == "space" {
                         cmd["space"] = json!(r.id);
+                        if r.fields.get("triage_enabled") == Some(&json!(true))
+                            && cmd["fields"]["triage_enabled"] == false
+                        {
+                            cmd["confirm"] = json!(true);
+                            self.open_form(
+                                Mode::Confirm {
+                                    label: "关闭分拣并将等待任务移至待规划".into(),
+                                    command: cmd,
+                                },
+                                w,
+                                cx,
+                            );
+                            return Ok(());
+                        }
                     }
                 } else if k == "space" {
                     let organization = cmd["fields"]["organization"]
@@ -1989,6 +2120,8 @@ cx);
                     Some("space.restore" | "space.leave")
                 ) {
                     After::SpaceMembership
+                } else if command["op"] == "customer_request.convert" {
+                    After::Review(review_ui::Response::Opened)
                 } else {
                     After::Notice("操作已完成".into())
                 };
@@ -2157,6 +2290,15 @@ cx);
                         | "connector.export"
                         | "provider.preview"
                         | "zoho.projects"
+                        | "zentao.credential"
+                        | "zentao.projects"
+                        | "zentao.preview"
+                        | "pingcode.credential"
+                        | "pingcode.projects"
+                        | "pingcode.preview"
+                        | "imports.push"
+                        | "imports.push_history"
+                        | "imports.synchronize"
                         | "zoho.preview"
                         | "imports.commit"
                         | "imports.history"
@@ -2304,6 +2446,18 @@ cx);
                 ("guest".into(), "访客".into()),
                 ("external".into(), "外部集成".into()),
             ],
+            "$project_owners" => {
+                let mut rows = from("member")
+                    .into_iter()
+                    .map(|(id, name)| (format!("member/{id}"), name))
+                    .collect::<Vec<_>>();
+                rows.extend(
+                    from("agent")
+                        .into_iter()
+                        .map(|(id, name)| (format!("agent/{id}"), format!("Agent · {name}"))),
+                );
+                rows
+            }
             "$executors" => self.executor_choices(),
             "$handlers" | "$agents" => {
                 let mut v = if source == "$handlers" {
@@ -2475,6 +2629,13 @@ cx);
             } else {
                 None
             }
+        } else if !mods.control
+            && !mods.alt
+            && !mods.platform
+            && !mods.shift
+            && let Some(review) = self.review_keys(key)
+        {
+            Some(review)
         } else if mods.control && key == "n" && self.loc.page.creatable() {
             Some(UiAction::Create(self.loc.page.info().kind.into()))
         } else if mods.alt && key == "left" {
@@ -2504,17 +2665,26 @@ fn overlay_options(defaults: &mut Vec<(String, String)>, records: Vec<(String, S
 }
 
 #[cfg(all(test, windows))]
+#[path = "agent_directory_ui_test.rs"]
+mod agent_directory_ui_test;
+#[cfg(all(test, windows))]
 #[path = "chat_ui_test.rs"]
 mod chat_ui_test;
 #[cfg(all(test, windows))]
 #[path = "onboarding_ui.rs"]
 pub(crate) mod onboarding_ui;
 #[cfg(all(test, windows))]
+#[path = "review_ui_test.rs"]
+mod review_ui_test;
+#[cfg(all(test, windows))]
 #[path = "space_ui_test.rs"]
 mod space_ui_test;
 #[cfg(all(test, windows))]
 #[path = "tag_ui.rs"]
 mod tag_ui;
+#[cfg(all(test, windows))]
+#[path = "tracker_ui_test.rs"]
+mod tracker_ui_test;
 #[cfg(all(test, windows))]
 #[path = "workspace_ui_test.rs"]
 mod workspace_ui_test;

@@ -50,6 +50,14 @@ pub fn schema() -> Value {
             "tapd.projects",
             "tapd.preview",
             "tapd.credential",
+            "zentao.credential",
+            "zentao.projects",
+            "zentao.preview",
+            "pingcode.credential",
+            "pingcode.projects",
+            "pingcode.preview",
+            "imports.push",
+            "imports.synchronize",
         ] {
             operations.push(json!(name));
         }
@@ -83,6 +91,14 @@ pub fn schema() -> Value {
         ("tapd.projects", vec!["id"]),
         ("tapd.preview", vec!["id"]),
         ("tapd.credential", vec!["id"]),
+        ("zentao.credential", vec!["id"]),
+        ("zentao.projects", vec!["id"]),
+        ("zentao.preview", vec!["id"]),
+        ("pingcode.credential", vec!["id"]),
+        ("pingcode.projects", vec!["id"]),
+        ("pingcode.preview", vec!["id"]),
+        ("imports.push", vec!["id", "task_id"]),
+        ("imports.synchronize", vec!["id"]),
     ] {
         rules.push(json!({"if":{"properties":{"op":{"const":op}}},"then":{"required":required}}));
     }
@@ -279,6 +295,14 @@ impl Client {
                     | "tapd.projects"
                     | "tapd.preview"
                     | "tapd.credential"
+                    | "zentao.credential"
+                    | "zentao.projects"
+                    | "zentao.preview"
+                    | "pingcode.credential"
+                    | "pingcode.projects"
+                    | "pingcode.preview"
+                    | "imports.push"
+                    | "imports.synchronize"
             )
         ) {
             return vendors::execute(self, &request);

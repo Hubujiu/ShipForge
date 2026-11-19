@@ -2,6 +2,45 @@ use super::*;
 use serde_json::Map;
 use std::collections::{HashMap, HashSet};
 
+pub(crate) fn reactions(c: &Context<'_>, q: &Value, write: bool) -> Result<Value> {
+    let comment = c.readable("comment", required(q, "id")?)?;
+    if write {
+        c.require_edit()?;
+        let symbol = required(q, "emoji")?.trim();
+        if symbol.is_empty() || symbol.chars().count() > 32 || symbol.chars().any(char::is_control)
+        {
+            return Err(invalid("enter a reaction up to 32 characters"));
+        }
+        let enabled = q["enabled"]
+            .as_bool()
+            .ok_or_else(|| invalid("enabled must be a boolean"))?;
+        if enabled {
+            let count=c.db.execute("INSERT OR IGNORE INTO comment_reactions(space,comment,actor,emoji)VALUES(?1,?2,?3,?4)",params![c.space,comment.id,c.actor,symbol]).map_err(storage)?;
+            if count == 1
+                && let Some(actor) = comment.fields["creator"]
+                    .as_str()
+                    .filter(|id| *id != c.actor)
+                && comment.fields["authored_by_agent"].is_null()
+            {
+                let task = c.readable("task", required(&comment.fields, "task")?)?;
+                crate::inbox::task_notice(
+                    c,
+                    &task,
+                    actor,
+                    "reaction",
+                    Some(("comment", &comment.id)),
+                    false,
+                )?;
+            }
+        } else {
+            c.db.execute("DELETE FROM comment_reactions WHERE space=?1 AND comment=?2 AND actor=?3 AND emoji=?4",params![c.space,comment.id,c.actor,symbol]).map_err(storage)?;
+        }
+    }
+    let mut stmt=c.db.prepare("SELECT emoji,COUNT(*),MAX(actor=?3) FROM comment_reactions WHERE space=?1 AND comment=?2 GROUP BY emoji ORDER BY COUNT(*) DESC,emoji").map_err(storage)?;
+    let rows=stmt.query_map(params![c.space,comment.id,c.actor],|r|Ok(json!({"emoji":r.get::<_,String>(0)?,"count":r.get::<_,i64>(1)?,"mine":r.get::<_,bool>(2)?}))).map_err(storage)?.collect::<rusqlite::Result<Vec<_>>>().map_err(storage)?;
+    Ok(json!({"comment":comment.id,"reactions":rows}))
+}
+
 pub(crate) fn protect(
     c: &Context<'_>,
     patch: &mut Map<String, Value>,
@@ -15,6 +54,7 @@ pub(crate) fn protect(
         "resolved_by",
         "resolved_by_agent",
         "authored_by_agent",
+        "reactions",
     ] {
         if patch.contains_key(key) && !import {
             return Err(invalid(

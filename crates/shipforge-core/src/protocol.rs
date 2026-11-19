@@ -36,8 +36,21 @@ pub(crate) const KINDS: &[&str] = &[
     "note",
 ];
 const WRITES: &[&str] = &[
+    "inbox.configure",
+    "inbox.bulk",
+    "inbox.open",
+    "followers.change",
+    "agent.archive",
+    "agent.restore",
+    "agent.variant",
+    "agent.override",
+    "agent.access",
+    "agent.organize",
+    "crew.exclusive",
     "imports.stage",
     "imports.commit",
+    "imports.prepare_push",
+    "imports.finish_push",
     "imports.rollback",
     "bugly.rotate",
     "bugly.revoke",
@@ -68,6 +81,7 @@ const WRITES: &[&str] = &[
     "onboarding.setup",
     "preferences.update",
     "comment.resolve",
+    "comment.react",
     "comment.reopen",
     "view.organize",
     "view.save_as",
@@ -82,6 +96,10 @@ const WRITES: &[&str] = &[
     "iteration.configure",
     "iteration.start",
     "triage",
+    "triage.submit",
+    "triage.configure",
+    "triage.batch",
+    "customer_request.convert",
     "follow",
     "notification.act",
     "document.restore",
@@ -97,8 +115,17 @@ const WRITES: &[&str] = &[
     "attachment.upload",
 ];
 const READS: &[&str] = &[
+    "inbox.settings",
+    "inbox.query",
+    "inbox.feed",
+    "inbox.locate",
+    "followers.list",
+    "agent.directory",
+    "agent.settings",
+    "agent.history",
     "imports.binding",
     "imports.history",
+    "imports.push_history",
     "bugly.outbox",
     "bugly.binding",
     "space.deactivate.preview",
@@ -125,6 +152,7 @@ const READS: &[&str] = &[
     "task.type.preview",
     "task_type.bindings.preview",
     "comment.thread",
+    "comment.reactions",
     "view.catalog",
     "view.preview",
     "view.share",
@@ -136,6 +164,11 @@ const READS: &[&str] = &[
     "iteration.history",
     "task.relations",
     "project.progress",
+    "project.timeline",
+    "triage.settings",
+    "triage.queue",
+    "task.share",
+    "task.open",
     "document.history",
     "export",
     "import.preview",
@@ -166,7 +199,7 @@ pub fn schema() -> Value {
             "kind":{"type":"string","enum":KINDS},
             "space":{"type":"string","default":"default"},"id":{"type":"string","minLength":1},
             "title":{"type":"string","minLength":1},"fields":{"type":"object"},
-            "expected_rev":{"type":"integer","minimum":1},"request_id":{"type":"string","minLength":1,"maxLength":160},
+            "expected_rev":{"type":"integer","minimum":0},"request_id":{"type":"string","minLength":1,"maxLength":160},
             "filter":{"type":"object"},"query":{"type":"string"},"limit":{"type":"integer","minimum":1,"maximum":5000},"offset":{"type":"integer","minimum":0},"as_of":{"type":"string","format":"date"},
             "after":{"type":"integer","minimum":0},"target":{"type":["string","null"]},"version":{"type":"integer","minimum":1},
             "provider":{"type":"string"},"payload":{"type":"object"},"event_id":{"type":"string","minLength":1,"maxLength":256},
@@ -189,6 +222,7 @@ pub fn schema() -> Value {
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"onboarding.display"}}},"then":{"anyOf":[{"required":["sidebar_visible"]},{"required":["sidebar_expanded"]}]}}));
     worker::extend_schema(&mut schema);
     crate::vendors::schema(&mut schema);
+    crate::agents::schema(&mut schema);
     crate::jira::schema(&mut schema);
     crate::invitations::extend_schema(&mut schema);
     crate::iterations::extend_schema(&mut schema);
@@ -203,6 +237,8 @@ pub fn schema() -> Value {
     ]);
     crate::task_commands::assignees::schema(&mut schema);
     crate::task_fields::schema(&mut schema);
+    crate::inbox::schema(&mut schema);
+    crate::triage::schema(&mut schema);
     schema["allOf"].as_array_mut().unwrap().extend([json!({"if":{"properties":{"op":{"const":"task.move"}}},"then":{"required":["id","target"],"properties":{"target":{"type":"string","minLength":1}}}}),json!({"if":{"properties":{"op":{"enum":["task.conversation","task.command"]}}},"then":{"required":["id"]}})]);
     schema
 }

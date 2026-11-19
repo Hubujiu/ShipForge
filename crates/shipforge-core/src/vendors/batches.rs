@@ -23,18 +23,23 @@ pub(super) fn has_ownership(c: &Context<'_>, id: &str) -> Result<bool> {
 }
 
 fn project_field(r: &Record) -> &'static str {
-    if r.fields["provider"] == "tapd" {
-        "tapd_workspace"
-    } else {
-        "zoho_project"
+    match r.fields["provider"].as_str() {
+        Some("tapd") => "tapd_workspace",
+        Some("zentao" | "pingcode") => "remote_scope",
+        _ => "zoho_project",
     }
 }
 
 fn bound(c: &Context<'_>, r: &Record) -> Result<(String, String)> {
-    let portal = if r.fields["provider"] == "tapd" {
-        "tapd".to_owned()
-    } else {
-        required(&r.fields, "portal_id")?.to_owned()
+    let portal = match r.fields["provider"].as_str() {
+        Some("tapd") => "tapd".into(),
+        Some("zentao") => format!(
+            "zentao|{}|{}",
+            trackers::zentao_installation(required(&r.fields, "instance_url")?)?,
+            required(&r.fields, "scope_kind")?
+        ),
+        Some("pingcode") => format!("pingcode|{}", required(&r.fields, "enterprise_id")?),
+        _ => required(&r.fields, "portal_id")?.to_owned(),
     };
     let project = required(&r.fields, project_field(r))?.to_owned();
     let existing: Option<(String, String)> =
@@ -69,16 +74,17 @@ fn advance(c: &Context<'_>, r: &Record) -> Result<()> {
     Ok(())
 }
 
-pub(super) fn binding(c: &Context<'_>, r: &Record) -> Result<Value> {
+pub(super) fn binding(c: &Context<'_>, r: &Record, verify_scope: bool) -> Result<Value> {
     let since:Option<i64>=c.db.query_row("SELECT CASE WHEN COUNT(modified)=COUNT(*) THEN MAX(modified) END FROM sf_import_item WHERE space=? AND connector=?",params![c.space,r.id],|v|v.get(0)).map_err(storage)?;
-    if r.fields[project_field(r)]
-        .as_str()
-        .is_some_and(|p| !p.is_empty())
+    if verify_scope
+        && r.fields[project_field(r)]
+            .as_str()
+            .is_some_and(|p| !p.is_empty())
     {
         bound(c, r)?;
     }
     Ok(
-        json!({"organization":c.org_id()?,"provider":r.fields["provider"],"portal_id":r.fields["portal_id"],"tapd_auth":r.fields["tapd_auth"],"company_id":r.fields["company_id"],"project":r.fields[project_field(r)],"revision":r.rev,"checkpoint":checkpoint(c,r)?,"since":since.map(|ms|ms.saturating_sub(1)),"modified_after":since.and_then(|ms|chrono::DateTime::from_timestamp_millis(ms.saturating_sub(1000))).map(|d|d.format("%Y-%m-%d %H:%M:%S").to_string())}),
+        json!({"organization":c.org_id()?,"provider":r.fields["provider"],"portal_id":r.fields["portal_id"],"tapd_auth":r.fields["tapd_auth"],"company_id":r.fields["company_id"],"project":r.fields[project_field(r)],"revision":r.rev,"checkpoint":checkpoint(c,r)?,"since":since.map(|ms|ms.saturating_sub(1)),"modified_after":since.and_then(|ms|chrono::DateTime::from_timestamp_millis(ms.saturating_sub(1000))).map(|d|d.format("%Y-%m-%d %H:%M:%S").to_string()),"instance_url":r.fields["instance_url"],"scope_kind":r.fields["scope_kind"],"enterprise_id":r.fields["enterprise_id"],"pingcode_auth":r.fields["pingcode_auth"]}),
     )
 }
 
@@ -102,7 +108,7 @@ fn mapping(c: &Context<'_>, r: &Record, external: &str) -> Result<Option<Mapping
     .transpose()
 }
 
-fn owned(
+pub(super) fn owned(
     c: &Context<'_>,
     r: &Record,
     id: &str,
@@ -205,7 +211,13 @@ fn summarize(
     let mut counts = json!({"created":0,"updated":0,"unchanged":0,"conflict":0,"detached":0});
     let mut details = Vec::new();
     for row in rows {
-        let outcome = apply(c, r, batch, row, write)?;
+        let mut outcome = apply(c, r, batch, row, write)?;
+        if let Some(warnings) = row["fields"]["source_warnings"]
+            .as_array()
+            .filter(|w| !w.is_empty())
+        {
+            outcome["warnings"] = json!(warnings);
+        }
         let key = outcome["action"].as_str().unwrap();
         counts[key] = json!(counts[key].as_u64().unwrap() + 1);
         details.push(outcome);
@@ -224,13 +236,21 @@ pub(super) fn stage(c: &Context<'_>, r: &Record, q: &Value) -> Result<Value> {
     if q["issues"].to_string().len() > 7_000_000 {
         return Err(invalid("issue batch exceeds 7 MB"));
     }
-    let rows = if r.fields["provider"] == "tapd" {
-        tapd::normalize(c, r, q)?
-    } else {
-        zoho::normalize(c, r, &q["issues"])?
+    let rows = match r.fields["provider"].as_str() {
+        Some("tapd") => tapd::normalize(c, r, q)?,
+        Some("zentao" | "pingcode") => trackers::normalize(c, r, q)?,
+        _ => zoho::normalize(c, r, &q["issues"])?,
     };
     let batch = Uuid::new_v4().to_string();
     let mut summary = summarize(c, r, &batch, &rows, false)?;
+    if q["poll"] == true && matches!(r.fields["provider"].as_str(), Some("zentao" | "pingcode")) {
+        let blocked = summary["counts"]["conflict"] != 0 || summary["counts"]["detached"] != 0;
+        if blocked || (summary["counts"]["created"] == 0 && summary["counts"]["updated"] == 0) {
+            summary["batch"] = Value::Null;
+            summary["state"] = json!(if blocked { "needs_review" } else { "unchanged" });
+            return Ok(summary);
+        }
+    }
     summary["state"] = json!("preview");
     c.db.execute("INSERT INTO sf_import_batch(id,space,connector,portal,project,config_rev,checkpoint,state,rows,summary,actor,at) VALUES(?,?,?,?,?,?,?,'preview',?,?,?,?)",params![batch,c.space,r.id,portal,project,r.rev,checkpoint(c,r)?,json!(rows).to_string(),summary.to_string(),c.actor,now()]).map_err(storage)?;
     Ok(summary)

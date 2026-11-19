@@ -14,6 +14,14 @@ pub(crate) fn conversation(c: &Context<'_>, q: &Value) -> Result<Value> {
         return Err(invalid("assign this task to an agent or crew first"));
     }
     let handler = required(&task.fields, "assignee")?;
+    conversation_for(c, &task, kind, handler)
+}
+pub(crate) fn conversation_for(
+    c: &Context<'_>,
+    task: &Record,
+    kind: &str,
+    handler: &str,
+) -> Result<Value> {
     c.readable(kind, handler)?;
     let key = params![c.space, c.actor, task.id, kind, handler];
     let chat_id:Option<String>=c.db.query_row("SELECT chat FROM task_conversations WHERE space=?1 AND actor=?2 AND task=?3 AND kind=?4 AND handler=?5",key,|r|r.get(0)).optional().map_err(storage)?;
@@ -45,6 +53,9 @@ pub(crate) fn command(c: &Context<'_>, q: &Value) -> Result<Value> {
 }
 
 pub(crate) fn move_task(c: &Context<'_>, q: &Value) -> Result<Value> {
+    move_with_status(c, q, None)
+}
+pub(crate) fn move_with_status(c: &Context<'_>, q: &Value, status: Option<&str>) -> Result<Value> {
     let old = c.readable("task", required(q, "id")?)?;
     c.authorize_write("task", Some(&old))?;
     domain::check_rev(q, &old)?;
@@ -110,6 +121,9 @@ pub(crate) fn move_task(c: &Context<'_>, q: &Value) -> Result<Value> {
     {
         f["status"] = Value::Null;
     }
+    if let Some(status) = status {
+        f["status"] = json!(status);
+    }
     tasks::validate_task(&target, None, &old.id, &mut f, true)?;
     crate::task_fields::validate_destination(&target, &f)?;
     f["labels"] = retained_labels;
@@ -154,10 +168,12 @@ pub(crate) fn move_task(c: &Context<'_>, q: &Value) -> Result<Value> {
             rev: child.rev + 1,
             ..child.clone()
         })?;
+        c.db.execute("INSERT INTO comment_reactions(space,comment,actor,emoji) SELECT ?1,comment,actor,emoji FROM comment_reactions WHERE space=?2 AND comment=?3",params![target.space,c.space,child.id]).map_err(storage)?;
         c.remove(&child)?;
     }
     c.db.execute("INSERT OR IGNORE INTO followers(space,task,actor) SELECT ?1,task,actor FROM followers WHERE space=?2 AND task=?3",params![target.space,c.space,old.id]).map_err(storage)?;
     tasks::cleanup(c, &old)?;
     c.remove(&old)?;
+    crate::triage::moved(c, &old.id, target.space)?;
     Ok(as_value(moved))
 }

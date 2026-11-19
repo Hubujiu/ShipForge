@@ -85,6 +85,17 @@ enum Action {
         #[arg(long)]
         watch: bool,
     },
+    /// Pull an incremental batch from a ZenTao or PingCode connector on this machine.
+    TrackerSync {
+        #[arg(long, default_value = "default")]
+        space: String,
+        #[arg(long)]
+        connector: String,
+        #[arg(long)]
+        watch: bool,
+        #[arg(long,default_value_t=300,value_parser=clap::value_parser!(u64).range(15..=86400))]
+        interval: u64,
+    },
     /// Import new and changed GitHub issues through an existing github connector.
     GithubSync {
         #[arg(long)]
@@ -175,6 +186,29 @@ fn execute() -> Result<serde_json::Value> {
                     eprintln!("{error}");
                 }
                 std::thread::sleep(std::time::Duration::from_secs(15));
+            }
+        }
+        Action::TrackerSync {
+            space,
+            connector,
+            watch,
+            interval,
+        } => {
+            let mut client = Client::from_env()?;
+            loop {
+                let result = client
+                    .execute(json!({"op":"imports.synchronize","space":space,"id":connector}));
+                if !watch {
+                    return result;
+                }
+                match result {
+                    Ok(data) => println!(
+                        "{}",
+                        json!({"state":data["state"],"batch":data["batch"],"counts":data["counts"]})
+                    ),
+                    Err(error) => eprintln!("{error}"),
+                }
+                std::thread::sleep(std::time::Duration::from_secs(interval));
             }
         }
         Action::GithubSync {

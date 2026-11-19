@@ -27,7 +27,9 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
             check_kind(kind)?;
             let id = required(q, "id")?;
             if kind == "project" {
-                return resolve_project(c, id).map(as_value);
+                let mut project = resolve_project(c, id)?;
+                crate::project_timeline::visible_scope(c, &mut project.fields);
+                return Ok(as_value(project));
             }
             if matches!(kind, "tag" | "tag_group") {
                 return crate::tags::accessible(c, kind, id).map(as_value);
@@ -119,6 +121,9 @@ pub(crate) fn execute(c: &Context<'_>, q: &Value, op: &str) -> Result<Value> {
             let mut matches = Vec::new();
             for kind in kinds {
                 for r in visible_records(c, kind)? {
+                    if matches!(kind, "agent" | "crew") && !crate::agents::discoverable(&r) {
+                        continue;
+                    }
                     if search_matches(&r, &text, &tags) {
                         matches.push(r);
                     }
@@ -195,7 +200,12 @@ pub(crate) fn visible_records(c: &Context<'_>, kind: &str) -> Result<Vec<Record>
             followed.insert(id.map_err(storage)?);
         }
     }
-    for mut row in c.records(kind)? {
+    let candidates = if kind == "notification" {
+        c.own_notifications()?
+    } else {
+        c.records(kind)?
+    };
+    for mut row in candidates {
         if c.visible(&row)? {
             if kind == "task" {
                 row.fields["following"] = json!(followed.contains(&row.id));
@@ -231,6 +241,11 @@ pub(crate) fn visible_records(c: &Context<'_>, kind: &str) -> Result<Vec<Record>
                     rows.push(project);
                 }
             }
+        }
+    }
+    if kind == "project" {
+        for project in &mut rows {
+            crate::project_timeline::visible_scope(c, &mut project.fields);
         }
     }
     Ok(rows)
@@ -328,7 +343,7 @@ fn satisfies(c: &Context<'_>, r: &Record, filter: Option<&Value>) -> Result<bool
     }
     Ok(true)
 }
-fn filtered(c: &Context<'_>, kind: &str, q: &Value) -> Result<Vec<Record>> {
+pub(crate) fn filtered(c: &Context<'_>, kind: &str, q: &Value) -> Result<Vec<Record>> {
     let text = q["query"]
         .as_str()
         .unwrap_or_default()
@@ -358,6 +373,9 @@ pub(crate) fn matching_page(
     q: &Value,
 ) -> Result<(Vec<Record>, usize)> {
     let mut rows = filtered(c, kind, q)?;
+    if matches!(kind, "agent" | "crew") {
+        rows.retain(crate::agents::discoverable);
+    }
     let sort = q["sort"].as_str().unwrap_or(
         if matches!(kind, "status" | "task_type" | "relation_type") {
             "order"
@@ -404,7 +422,7 @@ fn count(q: &Value, key: &str, default: usize) -> Result<usize> {
             .ok_or_else(|| invalid(&format!("{key} must be a nonnegative integer")))
     })
 }
-fn paginate<T>(rows: Vec<T>, q: &Value) -> Result<Vec<T>> {
+pub(crate) fn paginate<T>(rows: Vec<T>, q: &Value) -> Result<Vec<T>> {
     let offset = count(q, "offset", 0)?;
     let limit = count(q, "limit", 500)?;
     if !(1..=5000).contains(&limit) {
@@ -416,7 +434,10 @@ pub(crate) fn unfinished(c: &Context<'_>, id: &str) -> Result<Vec<Record>> {
     let mut pending = Vec::new();
     for task in visible_records(c, "task")? {
         if task.fields["iteration"] == id
-            && !matches!(c.status_category(&task)?.as_str(), "done" | "cancelled")
+            && !matches!(
+                c.status_category(&task)?.as_str(),
+                "done" | "cancelled" | "duplicate"
+            )
         {
             pending.push(task);
         }
@@ -564,7 +585,7 @@ fn dashboard(c: &Context<'_>, q: &Value) -> Result<Value> {
         if category == "done" {
             completed += 1;
         }
-        if !matches!(category.as_str(), "done" | "cancelled")
+        if !matches!(category.as_str(), "done" | "cancelled" | "duplicate")
             && let Some(date) = r.fields["due_date"]
                 .as_str()
                 .and_then(|s| NaiveDate::parse_from_str(s, "%Y-%m-%d").ok())
@@ -612,8 +633,8 @@ fn related(c: &Context<'_>, id: &str) -> Result<Value> {
     }
     Ok(json!(output))
 }
-fn project_progress(c: &Context<'_>, id: &str) -> Result<Value> {
-    let project = resolve_project(c, id)?;
+pub(crate) fn project_progress(c: &Context<'_>, id: &str) -> Result<Value> {
+    let mut project = resolve_project(c, id)?;
     let mut tasks = Vec::new();
     let mut done = 0;
     for space in c.all_spaces()? {
@@ -646,6 +667,7 @@ fn project_progress(c: &Context<'_>, id: &str) -> Result<Value> {
             }
         }
     }
+    crate::project_timeline::visible_scope(c, &mut project.fields);
     Ok(json!({"project":project,"total":tasks.len(),"completed":done,"tasks":tasks}))
 }
 fn events(c: &Context<'_>, q: &Value) -> Result<Value> {

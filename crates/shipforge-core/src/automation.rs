@@ -83,6 +83,7 @@ pub(super) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
     }
     read(c, kind, handler)?;
     if enabled {
+        crate::agents::usable(c, kind, handler, None)?;
         req(f, "instruction")?;
     }
     for contact in array_ids(&f["notify"])? {
@@ -147,12 +148,12 @@ pub(super) fn dispatch(c: &Context<'_>, q: &Value) -> Result<Value> {
             if !array_ids(&config["tools"])?.contains(&tool) {
                 return Err("forbidden: tool is not granted to this agent".into());
             }
-            let t = read(c, "tool", tool)?;
+            let t = crate::agents::resource(c, &config, "tools", "tool", tool)?;
             if t.fields["enabled"] == false {
                 return Err("forbidden: tool has been disabled".into());
             }
             if let Some(doc) = t.fields["document"].as_str() {
-                let d = read(c, "document", doc)?;
+                let d = crate::agents::resource(c, &config, "tools", "document", doc)?;
                 return Ok(
                     json!({"tool":t.id,"type":"document","document":d.id,"title":d.title,"body":d.fields["body"],"rev":d.rev}),
                 );
@@ -280,6 +281,16 @@ pub(super) fn changed(c: &Context<'_>, before: Option<&Record>, item: &Record) -
         if engine.require_edit().is_err() || !engine.visible(&task)? || !engine.visible(&rule)? {
             continue;
         }
+        if crate::agents::usable(
+            &engine,
+            rule.fields["handler_kind"].as_str().unwrap_or("agent"),
+            req(&rule.fields, "handler_id")?,
+            None,
+        )
+        .is_err()
+        {
+            continue;
+        }
         for (idx, t) in enabled_triggers(&rule) {
             if t["type"] != trigger_kind {
                 continue;
@@ -364,7 +375,15 @@ fn tick_at(c: &Context<'_>, timestamp: i64) -> Result<Value> {
             space: c.space,
             actor: owner,
         };
-        if engine.require_edit().is_err() {
+        if engine.require_edit().is_err()
+            || crate::agents::usable(
+                &engine,
+                rule.fields["handler_kind"].as_str().unwrap_or("agent"),
+                req(&rule.fields, "handler_id")?,
+                None,
+            )
+            .is_err()
+        {
             continue;
         }
         for (idx, key, schedule) in schedules(&rule)? {
@@ -406,6 +425,9 @@ fn tick_at(c: &Context<'_>, timestamp: i64) -> Result<Value> {
     Ok(json!({"runs":results}))
 }
 pub(super) fn notify(c: &Context<'_>, run: &Record) -> Result<()> {
+    if run.fields["automation_id"].is_null() && run.fields["task_id"].is_string() {
+        return crate::inbox::task_run(c, run);
+    }
     let mut recipients = Vec::new();
     if let Some(id) = run.fields["automation_id"].as_str() {
         if let Some(rule) = c.find("automation", id)? {
@@ -424,7 +446,17 @@ pub(super) fn notify(c: &Context<'_>, run: &Record) -> Result<()> {
             space: c.space,
             actor: &recipient,
         };
-        if receiver.role().is_err() || !receiver.visible(run)? {
+        let event = if run.fields["automation_id"].is_string() {
+            "automation_result"
+        } else if run.fields["status"] == "failed" {
+            "run_failed"
+        } else {
+            "run_done"
+        };
+        if receiver.role().is_err()
+            || !receiver.visible(run)?
+            || !crate::inbox::channel_enabled(c, &recipient, event)?
+        {
             continue;
         }
         let group = run.fields["automation_id"]
@@ -433,7 +465,8 @@ pub(super) fn notify(c: &Context<'_>, run: &Record) -> Result<()> {
             .unwrap_or(&run.id);
         let id = format!("run-{}", digest(&format!("{recipient}:{group}")));
         let mut fields = json!({"recipient":recipient,"run":run.id,"task":run.fields["task_id"],"automation":run.fields["automation_id"],"state":"inbox","importance":if run.fields["status"]=="done"{"other"}else{"important"},"status":run.fields["status"],"subject":group,"count":1,"read":false});
-        if let Some(old) = c.find("notification", &id)? {
+        fields["event"] = json!(event);
+        let notice = if let Some(old) = c.find("notification", &id)? {
             fields["count"] = json!(old.fields["count"].as_i64().unwrap_or(1) + 1);
             if old.fields["state"] == "snoozed"
                 && old.fields["until"].as_i64().is_some_and(|t| t > now())
@@ -441,10 +474,11 @@ pub(super) fn notify(c: &Context<'_>, run: &Record) -> Result<()> {
                 fields["state"] = json!("snoozed");
                 fields["until"] = old.fields["until"].clone();
             }
-            c.update(&old, &run.title, fields)?;
+            c.update(&old, &run.title, fields)?
         } else {
-            c.create("notification", Some(&id), &run.title, fields)?;
-        }
+            c.create("notification", Some(&id), &run.title, fields)?
+        };
+        crate::inbox::notify_record(c, &notice, event, Some(("run", &run.id)))?;
     }
     Ok(())
 }
@@ -459,7 +493,7 @@ fn catalog() -> Value {
 }
 fn mapped_task(c: &Context<'_>, record: &Record) -> Result<Value> {
     Ok(
-        json!({"title":record.title,"description":record.fields["description"].as_str().unwrap_or_default(),"closed":matches!(c.status_category(record)?.as_str(),"done"|"cancelled"|"completed"|"canceled")}),
+        json!({"title":record.title,"description":record.fields["description"].as_str().unwrap_or_default(),"closed":matches!(c.status_category(record)?.as_str(),"done"|"cancelled"|"duplicate"|"completed"|"canceled")}),
     )
 }
 fn ingest(c: &Context<'_>, q: &Value) -> Result<Value> {

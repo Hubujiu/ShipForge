@@ -22,8 +22,16 @@ pub(crate) fn validate_task(
                 .filter(|r| !r.is_empty());
             let chosen = workflow
                 .filter(|r| !r.iter().any(|v| v == &default))
-                .and_then(|r| r.first())
-                .and_then(Value::as_str)
+                .and_then(|ls| {
+                    ls.iter()
+                        .filter_map(Value::as_str)
+                        .find(|id| {
+                            c.category_for(id).is_ok_and(|v| {
+                                !matches!(v.as_str(), "triage" | "duplicate" | "cancelled" | "done")
+                            })
+                        })
+                        .or_else(|| ls.first().and_then(Value::as_str))
+                })
                 .unwrap_or(&default);
             f["status"] = json!(chosen);
         }
@@ -63,13 +71,19 @@ pub(crate) fn validate_task(
         return Err(invalid("unknown task type"));
     }
     let space = c.get("space", c.space)?;
-    let guest = c.role()? == "guest";
+    let role = match c.role() {
+        Ok(role) => role,
+        Err(_) if crate::triage::intake::outside(c)? => "outsider".into(),
+        Err(e) => return Err(e),
+    };
+    let guest = role == "guest";
+    let intake = guest || role == "outsider";
     if guest {
         f["source"] = json!("guest");
     }
     let external = matches!(
         f["source"].as_str(),
-        Some("external" | "integration" | "guest")
+        Some("external" | "integration" | "guest" | "customer_request")
     ) || f["external_id"].is_string();
     let inbox = space.fields["triage_enabled"] == true;
     let channel = if guest { "guest" } else { "external" };
@@ -79,7 +93,7 @@ pub(crate) fn validate_task(
     let type_allowed = space.fields["triage_types"]
         .as_array()
         .is_none_or(|types| types.iter().any(|s| s == &task_type));
-    if guest && !(inbox && source_allowed && type_allowed) {
+    if intake && !(inbox && source_allowed && type_allowed) {
         return Err(forbidden(
             "this submission source or task type is outside triage",
         ));
@@ -89,13 +103,13 @@ pub(crate) fn validate_task(
         .and_then(|r| r.fields["statuses"].as_array());
     let terminal = matches!(
         c.category_for(required(f, "status")?)?.as_str(),
-        "done" | "cancelled"
+        "done" | "cancelled" | "duplicate"
     );
     if old.is_none()
         && inbox
         && source_allowed
         && type_allowed
-        && (guest || external && !historical && !terminal)
+        && (intake || external && !historical && !terminal)
     {
         let candidate = match allowed.filter(|list| !list.is_empty()) {
             None => Some("triage".into()),
@@ -107,7 +121,7 @@ pub(crate) fn validate_task(
         };
         if let Some(status) = candidate {
             f["status"] = json!(status);
-        } else if guest {
+        } else if intake {
             return Err(forbidden("guest submission requires a triage workflow"));
         }
     }
@@ -116,7 +130,9 @@ pub(crate) fn validate_task(
     if category == "triage" && !inbox {
         return Err(invalid("triage is disabled for this space"));
     }
-    if allowed.is_some_and(|states| !states.is_empty() && !states.iter().any(|v| v == status)) {
+    if !(category == "duplicate" && f["triage_decision"] == "duplicate")
+        && allowed.is_some_and(|states| !states.is_empty() && !states.iter().any(|v| v == status))
+    {
         return Err(invalid("status is outside this task type's workflow"));
     }
     if !matches!(
@@ -128,7 +144,7 @@ pub(crate) fn validate_task(
     let in_triage = category == "triage"
         || old.map(|r| c.status_category(r)).transpose()?.as_deref() == Some("triage");
     if in_triage
-        && ((!matches!(category.as_str(), "triage" | "cancelled") && old.is_some())
+        && ((!matches!(category.as_str(), "triage" | "cancelled" | "duplicate") && old.is_some())
             || !f["iteration"].is_null())
         && space.fields["triage_priority_required"] == true
         && f["priority"] == "none"
@@ -137,8 +153,11 @@ pub(crate) fn validate_task(
             "set a priority before accepting or planning this task",
         ));
     }
-    if guest
+    if intake
         && (old.is_some()
+            || f["owner"] != c.actor
+            || !f["executor"].is_null()
+            || !f["parent"].is_null()
             || category != "triage"
             || !f["assignee"].is_null()
             || !f["iteration"].is_null()
@@ -149,7 +168,11 @@ pub(crate) fn validate_task(
         ));
     }
     let owner = required(f, "owner")?;
-    if owner != "owner" && c.find("member", owner)?.is_none() {
+    if owner != "owner"
+        && old.is_none_or(|t| t.fields["owner"] != owner)
+        && !(role == "outsider" && owner == c.actor)
+        && c.find("member", owner)?.is_none()
+    {
         let principal = Context {
             db: c.db,
             actor: owner,
@@ -166,6 +189,9 @@ pub(crate) fn validate_task(
             && old.is_none_or(|r| r.fields["assignee"] != actor || r.fields["assignee_kind"] != k)
         {
             c.readable(k, actor)?;
+            if matches!(k, "agent" | "crew") {
+                crate::agents::usable(c, k, actor, None)?;
+            }
         }
     } else if !f["assignee"].is_null() {
         return Err(invalid("assignee must be an id or null"));
@@ -193,9 +219,7 @@ pub(crate) fn validate_task(
     } else if !f["parent"].is_null() {
         return Err(invalid("parent must be a task identifier"));
     }
-    if !f["due_date"].is_null() {
-        valid_date(&f["due_date"])?;
-    }
+    crate::project_timeline::dates(f)?;
     f["labels"] = crate::tags::normalize(
         c,
         old.map(|r| &r.fields["labels"]).unwrap_or(&Value::Null),
@@ -231,6 +255,16 @@ pub(crate) fn validate_task(
                     .as_array()
                     .is_some_and(|o| o.contains(v)),
                 "text" => v.is_string(),
+                "member" => v
+                    .as_str()
+                    .is_some_and(|id| c.readable("member", id).is_ok()),
+                "members" => v.as_array().is_some_and(|ids| {
+                    let mut seen = std::collections::BTreeSet::new();
+                    ids.iter().all(|v| {
+                        v.as_str()
+                            .is_some_and(|id| seen.insert(id) && c.readable("member", id).is_ok())
+                    })
+                }),
                 _ => false,
             };
             if !good {
@@ -417,6 +451,11 @@ pub(crate) fn cleanup(c: &Context<'_>, r: &Record) -> Result<()> {
             }
         }
         "task" => {
+            c.db.execute(
+                "DELETE FROM follower_objects WHERE space=?1 AND task=?2",
+                rusqlite::params![c.space, r.id],
+            )
+            .map_err(storage)?;
             for kind in ["relation", "comment", "notification", "artifact"] {
                 for child in c.records(kind)? {
                     if ["from", "to", "task"]

@@ -1,12 +1,14 @@
 //! The transactional workspace operations used by every ShipForge client.
 mod access;
 mod actions;
+mod agents;
 mod attachments;
 mod chat;
 mod defaults;
 mod discussions;
 mod domain;
 mod im;
+mod inbox;
 mod invitations;
 mod iterations;
 mod jira;
@@ -14,6 +16,7 @@ pub mod onboarding;
 mod persistence;
 pub mod personal_tokens;
 pub mod preferences;
+mod project_timeline;
 mod protocol;
 mod providers;
 mod query;
@@ -24,6 +27,7 @@ mod task_commands;
 mod task_fields;
 mod tasks;
 mod transfer;
+mod triage;
 mod vcs;
 mod vendors;
 mod worker;
@@ -35,11 +39,15 @@ use std::path::Path;
 
 pub use chat::share_text;
 pub use protocol::{is_read_only, schema};
-pub use vendors::bugly_authorization;
+pub use vendors::{bugly_authorization, zentao_installation};
 pub fn machine_is_online(fields: &Value) -> bool {
     worker::machine_is_online_at(fields, now())
 }
 pub use saved_views::view_link_parts;
+pub fn inbox_link_parts(link: &str) -> Result<(String, String, String)> {
+    saved_views::resource_link_parts(link, "shipforge://inbox/")
+}
+pub use triage::intake::parts as task_link_parts;
 
 pub type Result<T> = std::result::Result<T, String>;
 
@@ -178,6 +186,10 @@ impl Store {
                 | "invitation.accept"
                 | "chat.share.read"
                 | "view.open"
+                | "task.open"
+                | "triage.submit"
+                | "triage.settings"
+                | "triage.configure"
                 | "jira.read"
                 | "jira.write"
         ) {
@@ -194,6 +206,7 @@ impl Store {
             && !op.starts_with("imports.")
             && !op.starts_with("bugly.")
             && !op.starts_with("im.")
+            && !matches!(op, "inbox.open" | "followers.change")
             && !op.starts_with("invitation.");
         let key = if cache {
             request
@@ -229,6 +242,7 @@ impl Store {
                 // Replays must still pass current resource permissions.
                 let mut value: Value = serde_json::from_str(&result).map_err(storage)?;
                 c.authorize_replay(&request, &value)?;
+                triage::redact(&c, &mut value)?;
                 current_following(&c, &mut value)?;
                 return Ok(value);
             }
@@ -242,7 +256,14 @@ impl Store {
                 vendors::execute(&c, &request, op)
             }
             op if op.starts_with("invitation.") => invitations::execute(&c, op, &request),
+            op if agents::handles(op) => agents::execute(&c, op, &request),
             "schema" => Ok(schema()),
+            op if op.starts_with("triage.")
+                || matches!(op, "task.share" | "task.open" | "customer_request.convert") =>
+            {
+                triage::execute(&c, op, &request)
+            }
+            "project.timeline" => project_timeline::timeline(&c, &request),
             "task.type.preview" => task_fields::preview_switch(&c, &request),
             "task_type.bindings.preview" => task_fields::preview_bindings(&c, &request),
             "comment.thread" => discussions::thread(&c, &request),
@@ -258,6 +279,9 @@ impl Store {
             "task.conversation" => task_commands::conversation(&c, &request),
             "task.assign" => task_commands::assignees::assign(&c, &request),
             "task.command" => task_commands::command(&c, &request),
+            "comment.reactions" | "comment.react" => {
+                discussions::reactions(&c, &request, op == "comment.react")
+            }
             "task.move" => task_commands::move_task(&c, &request),
             "onboarding.catalog" => Ok(json!(onboarding::groups())),
             "onboarding.get" => onboarding::get(&c),
@@ -271,6 +295,9 @@ impl Store {
             "attachment.download" => attachments::download(&c, &request),
             "provider.ingest" | "provider.preview" => providers::execute(&c, &request, read),
             op if op.starts_with("im.") => im::execute(&c, &request),
+            op if op.starts_with("inbox.") || op.starts_with("followers.") => {
+                inbox::execute(&c, &request, op)
+            }
             op if op.starts_with("chat.") => chat::execute(&c, &request, op),
             "create" | "update" | "delete" => write_request(&c, &request),
             "list" | "get" | "search" | "events" | "space.list" | "organization.list"
@@ -297,6 +324,12 @@ impl Store {
             )
             .map_err(storage)?;
         }
+        if matches!(
+            op,
+            "get" | "list" | "space.list" | "update" | "search" | "task.open" | "triage"
+        ) {
+            triage::redact(&c, &mut result)?;
+        }
         current_following(&c, &mut result)?;
         if request["kind"] == "chat" && matches!(op, "get" | "list") {
             chat::annotate(&c, &mut result)?;
@@ -311,7 +344,11 @@ fn current_following(c: &Context<'_>, result: &mut Value) -> Result<()> {
         && result["fields"].is_object()
         && let Some(id) = result["id"].as_str()
     {
-        let threads = crate::im::options(c, id)?;
+        let scope = Context {
+            space: result["space"].as_str().unwrap_or(c.space),
+            ..*c
+        };
+        let threads = crate::im::options(&scope, id)?;
         let follows: bool =
             c.db.query_row(
                 "SELECT EXISTS(SELECT 1 FROM followers WHERE space=? AND actor=? AND task=?)",

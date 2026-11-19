@@ -208,7 +208,7 @@ pub(crate) fn query(c: &Context<'_>, base: &Value, q: &Value) -> Result<Value> {
     }
 }
 
-fn workspace(c: &Context<'_>) -> Result<String> {
+pub(crate) fn workspace(c: &Context<'_>) -> Result<String> {
     c.db.query_row(
         "SELECT reference FROM view_workspace WHERE singleton=1",
         [],
@@ -217,8 +217,11 @@ fn workspace(c: &Context<'_>) -> Result<String> {
     .map_err(storage)
 }
 pub fn view_link_parts(link: &str) -> Result<(String, String, String)> {
+    resource_link_parts(link, "shipforge://view/")
+}
+pub(crate) fn resource_link_parts(link: &str, prefix: &str) -> Result<(String, String, String)> {
     let parts: Vec<_> = link
-        .strip_prefix("shipforge://view/")
+        .strip_prefix(prefix)
         .ok_or_else(|| invalid("invalid saved view link"))?
         .split('/')
         .collect();

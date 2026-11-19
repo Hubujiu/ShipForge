@@ -107,6 +107,12 @@ impl Context<'_> {
         if r.kind == "chat" {
             return crate::chat::can_read(self, r);
         }
+        if r.kind == "run" && !crate::agents::run_source_visible(self, r)? {
+            return Ok(false);
+        }
+        if matches!(r.kind.as_str(), "agent" | "crew") {
+            return crate::agents::visible(self, r);
+        }
         if r.kind == "comment" && !crate::discussions::ancestry_visible(self, r)? {
             return Ok(false);
         }
@@ -148,6 +154,7 @@ impl Context<'_> {
             "message" => &[("chat", "chat")],
             "notification" => &[
                 ("task", "task"),
+                ("run", "run"),
                 ("run_id", "run"),
                 ("chat", "chat"),
                 ("message", "message"),
@@ -192,6 +199,9 @@ impl Context<'_> {
         }
         if let Some(room) = existing.filter(|r| r.kind == "chat") {
             crate::chat::can_edit(self, room)?;
+        }
+        if let Some(handler) = existing.filter(|r| matches!(r.kind.as_str(), "agent" | "crew")) {
+            crate::agents::require_manage(self, handler)?;
         }
         if let Some(view) = existing.filter(|r| r.kind == "view") {
             crate::saved_views::can_edit(self, view)?;
@@ -239,6 +249,48 @@ impl Context<'_> {
     }
     pub(crate) fn authorize_replay(&self, q: &Value, result: &Value) -> Result<()> {
         let op = required(q, "op")?;
+        if crate::agents::handles(op) {
+            return crate::agents::replay(self, q, result);
+        }
+        if op == "customer_request.convert" {
+            self.require_edit()?;
+            crate::spaces::require_module(self, "customer_requests")?;
+            self.readable("customer_request", required(q, "id")?)?;
+            if result["submitted"] == true {
+                return Ok(());
+            }
+            let dest = Context {
+                space: required(result, "space")?,
+                ..*self
+            };
+            dest.role()?;
+            dest.readable("task", required(result, "id")?)?;
+            return Ok(());
+        }
+        if op == "triage.submit" {
+            if crate::triage::intake::outside(self)?
+                || matches!(
+                    self.role()?.as_str(),
+                    "member" | "editor" | "admin" | "owner" | "guest"
+                )
+            {
+                return Ok(());
+            }
+            return Err(forbidden("space submission is unavailable"));
+        }
+        if op == "triage.configure" {
+            if self.role().is_ok() && matches!(self.metadata_role()?.as_str(), "owner" | "admin") {
+                return Ok(());
+            }
+            return Err(forbidden("queue settings are unavailable"));
+        }
+        if op == "triage.batch" {
+            self.require_edit()?;
+            for id in crate::domain::strings(&q["tasks"], "tasks")? {
+                self.readable("task", id)?;
+            }
+            return Ok(());
+        }
         if op == "view.organize" {
             self.readable("view", required(q, "id")?)?;
             return Ok(());
@@ -351,6 +403,28 @@ impl Context<'_> {
             return Ok(());
         }
         let prior = serde_json::from_value::<Record>(result.clone()).ok();
+        if matches!(op, "create" | "update")
+            && let Some(row) = prior
+                .as_ref()
+                .filter(|r| r.kind == "task" && r.space != self.space)
+        {
+            if op == "create" {
+                self.authorize_write("task", None)?;
+            } else {
+                self.require_edit()?;
+            }
+            let target = Context {
+                space: &row.space,
+                ..*self
+            };
+            target.role()?;
+            target.readable("task", &row.id)?;
+            return if target.visible(row)? {
+                Ok(())
+            } else {
+                Err(forbidden("routed task unavailable"))
+            };
+        }
         if let Some(row) = prior.as_ref() {
             if !self.visible(row)? {
                 return Err(forbidden("record is unavailable"));
@@ -364,7 +438,7 @@ impl Context<'_> {
             }
         }
         match op {
-            "preferences.update" | "onboarding.display" => {}
+            "preferences.update" | "onboarding.display" | "inbox.configure" | "inbox.bulk" => {}
             "tag.apply" => {
                 self.require_edit()?;
                 for id in crate::domain::strings(&q["tasks"], "tasks")? {
@@ -390,6 +464,10 @@ impl Context<'_> {
             }
             "notification.act" => {
                 self.readable("notification", required(q, "id")?)?;
+            }
+            "comment.react" => {
+                self.require_edit()?;
+                self.readable("comment", required(q, "id")?)?;
             }
             "create" | "update" | "delete" => {
                 let r = prior

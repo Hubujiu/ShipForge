@@ -165,7 +165,17 @@ impl Remote {
         let needs_live_access = matches!(op.as_str(), "get" | "list" | "search")
             && (matches!(
                 request["kind"].as_str(),
-                Some("chat" | "message" | "notification" | "artifact" | "run" | "view" | "comment")
+                Some(
+                    "chat"
+                        | "message"
+                        | "notification"
+                        | "artifact"
+                        | "run"
+                        | "view"
+                        | "comment"
+                        | "agent"
+                        | "crew"
+                )
             ) || (op == "search" && request["kind"].as_str().is_none()));
         let cacheable = !needs_live_access
             && matches!(

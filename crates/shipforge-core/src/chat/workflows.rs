@@ -42,6 +42,58 @@ fn dependencies(c: &Context<'_>, row: &Record) -> Result<Vec<String>> {
     }
     Ok(messages)
 }
+pub(crate) fn manager_transcript(c: &Context<'_>, room: &Record) -> Result<Vec<Value>> {
+    fn permitted(c: &Context<'_>, room: &Record, message: &Record) -> Result<bool> {
+        let mut queue = vec![message.clone()];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(row) = queue.pop() {
+            if !seen.insert(row.id.clone()) {
+                continue;
+            }
+            if row.fields["chat"] != room.id {
+                if !c.visible(&row)? {
+                    return Ok(false);
+                }
+                continue;
+            }
+            if !super::retained(c, &row, &room.id)? {
+                return Ok(false);
+            }
+            if row.fields["visibility"] == "private"
+                && row.fields["author_kind"] != "agent"
+                && row.fields["creator"] != c.actor
+                && row.fields["owner"] != c.actor
+            {
+                return Ok(false);
+            }
+            if let Some(id) = row.fields["run"].as_str()
+                && let Some(run) = c.find("run", id)?
+                && !crate::agents::run_source_visible(c, &run)?
+            {
+                return Ok(false);
+            }
+            for id in dependencies(c, &row)? {
+                let Some(source) = c.find("message", &id)? else {
+                    return Ok(false);
+                };
+                queue.push(source);
+            }
+        }
+        Ok(true)
+    }
+    let mut stmt=c.db.prepare_cached("SELECT r.id FROM records r JOIN event_log e ON r.space=e.space AND r.kind=e.kind AND r.id=e.id AND e.action='create' WHERE r.space=? AND r.kind='message' AND json_extract(r.fields,'$.chat')=? ORDER BY e.seq").map_err(storage)?;
+    let mut messages = Vec::new();
+    for id in stmt
+        .query_map(params![c.space, room.id], |r| r.get::<_, String>(0))
+        .map_err(storage)?
+    {
+        let row = c.get("message", &id.map_err(storage)?)?;
+        if permitted(c, room, &row)? {
+            messages.push(json!({"author":row.fields["author"].as_str().or(row.fields["creator"].as_str()),"body":row.fields["body"],"at":row.created_at}));
+        }
+    }
+    Ok(messages)
+}
 fn verify_sources(c: &Context<'_>, row: &Record, sharing: bool) -> Result<bool> {
     let mut pending = dependencies(c, row)?;
     let mut seen = std::collections::HashSet::new();
@@ -102,7 +154,7 @@ fn handler<'a>(c: &Context<'_>, room: &'a Record) -> Result<(&'a str, &'a str)> 
         .or(room.fields["agent"].as_str())
         .filter(|s| !s.is_empty())
         .ok_or_else(|| invalid("an Agent or crew conversation is required"))?;
-    c.readable(kind, id)?;
+    crate::agents::usable(c, kind, id, None)?;
     Ok((kind, id))
 }
 fn bound(room: &Record) -> Option<&str> {

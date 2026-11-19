@@ -1111,6 +1111,18 @@ impl Render for Workbench {
                     .bg(rgb(INK))
                     .child(icon("check", 13.).text_color(white()))
                     .child(text(message.clone(), 13., 0xffffff))
+                    .when_some(self.inbox.banner.clone(), |b, link| {
+                        b.child(
+                            self.button(
+                                "open-inbox-banner",
+                                "打开通知",
+                                UiAction::Inbox(crate::app::inbox_ui::Action::Link(link)),
+                                cx,
+                            )
+                            .bg(white())
+                            .child(crate::locale::label("打开通知")),
+                        )
+                    })
                     .when(
                         self.chat_undo
                             .as_ref()

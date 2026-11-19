@@ -7,6 +7,11 @@ use serde_json::{Value, json};
 pub(crate) use shares::read as read_share;
 pub use shares::share_text;
 pub(crate) use sidebar::new_message;
+pub(crate) use workflows::manager_transcript;
+pub(crate) fn history_owner(c: &Context<'_>, room: &Record) -> Result<Option<String>> {
+    let (id, dissolved) = owner(c, room)?;
+    Ok((!dissolved && !group(room) && task_visible(c, room)).then_some(id))
+}
 pub(crate) use workflows::{
     apply_conversion, check_binding, check_inherited, claim_still_visible, content_context,
     may_share_inherited,
@@ -517,7 +522,12 @@ pub(crate) fn notify(c: &Context<'_>, message: &Record) -> Result<()> {
         if !direct && (muted || (everyone && ignore_all)) {
             continue;
         }
-        c.create("notification",None,&room.title,json!({"recipient":recipient,"chat":room.id,"message":message.id,"read":false,"state":"inbox","important":direct,"mention":direct,"mention_all":everyone,"creator":c.actor}))?;
+        let event = if direct { "chat_mention" } else { "chat" };
+        if !crate::inbox::channel_enabled(c, &recipient, event)? {
+            continue;
+        }
+        let notice=c.create("notification",None,&room.title,json!({"recipient":recipient,"chat":room.id,"message":message.id,"read":false,"state":"inbox","important":direct,"importance":if direct{"important"}else{"other"},"event":event,"mention":direct,"mention_all":everyone,"creator":c.actor}))?;
+        crate::inbox::notify_record(c, &notice, event, Some(("message", &message.id)))?;
     }
     Ok(())
 }

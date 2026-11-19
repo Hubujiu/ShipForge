@@ -22,6 +22,7 @@ pub enum Request {
         stop: bool,
     },
     Read {
+        handler: Option<(String, String)>,
         chat: Option<String>,
         generation: u64,
         space: String,
@@ -115,6 +116,7 @@ impl Backend {
                             let _ = events.send(Event::Reply { ticket, result });
                         }
                         Request::Read {
+                            handler,
                             chat,
                             generation,
                             space,
@@ -127,6 +129,10 @@ impl Backend {
                                     json!({"op":"catalog.list","space":space})
                                 } else if kind=="message" && let Some(id)=chat.as_ref(){
                                     json!({"op":"chat.history","space":space,"id":id})
+                                } else if matches!(kind.as_str(),"agent_settings"|"agent_history") && let Some((k,id))=&handler{
+                                    json!({"op":if kind=="agent_settings"{"agent.settings"}else{"agent.history"},"space":space,"kind":k,"id":id})
+                                } else if matches!(kind.as_str(),"agent_directory"|"agent_archived"|"crew_directory"|"crew_archived"){
+                                    json!({"op":"agent.directory","kind":if kind.starts_with("crew"){"crew"}else{"agent"},"scope":"organization","space":space,"view":if kind.ends_with("archived"){"archived"}else{"all"}})
                                 } else if kind == "chat_sidebar" {
                                     json!({"op":"chat.sidebar","space":space})
                                 } else if kind == "chat_invitation" {
@@ -145,7 +151,11 @@ impl Backend {
                                     json!({"op":"list","kind":kind,"space":space})
                                 };
                                 let result = execute(&mut client, command).and_then(|value| {
-                                    let value = if kind == "iteration_settings" {
+                                    let value = if kind=="agent_settings" && let Some((_,id))=&handler{
+                                        json!([{"kind":"agent_settings","id":id,"space":space,"fields":value}])
+                                    }else if kind=="agent_history"{
+                                        json!(value.as_array().into_iter().flatten().enumerate().map(|(i,v)|json!({"kind":"agent_history","id":i.to_string(),"space":space,"title":v["title"],"fields":v})).collect::<Vec<_>>())
+                                    }else if kind == "iteration_settings" {
                                         json!([value])
                                     } else {
                                         value
@@ -155,6 +165,7 @@ impl Backend {
                                 });
                                 match result {
                                     Ok(mut records) => {
+                                        if let Some((k,id))=&handler && k==&kind && !records.iter().any(|r|&r.id==id) && let Ok(record)=execute(&mut client,json!({"op":"get","kind":k,"space":space,"id":id})) && let Ok(record)=serde_json::from_value(record){records.push(record);}
                                         if kind=="chat" && let Some(id)=chat.as_ref() && !records.iter().any(|r|&r.id==id)
                                             && let Ok(room)=execute(&mut client,json!({"op":"get","kind":"chat","space":space,"id":id}))
                                             && let Ok(room)=serde_json::from_value(room){records.push(room);}

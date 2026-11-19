@@ -1,8 +1,34 @@
 # ShipForge 命令行与 JSON 协议
 
+禅道与 PingCode 连接器分别使用 `zentao.credential`、`zentao.projects`、`zentao.preview` 和 `pingcode.credential`、`pingcode.projects`、`pingcode.preview`。用 `imports.commit` 确认预览，`imports.synchronize` 增量拉取并应用，`imports.history` 和 `imports.rollback` 管理批次。启用回写的连接器可通过 `imports.push` 发布已映射状态，或向 PingCode 发布本地评论。`imports.push_history` 查看回执。自建投递端可用 `imports.prepare_push` 和 `imports.finish_push` 操作回写租约。持续同步由工作机 `tracker-sync --watch` 执行。[配置、认证、JSON 示例与故障恢复](tracker-integrations.md)
+
+## Agent 目录、小队与分身
+
+`agent.directory` 返回当前成员有权使用的 Agent。传 `kind:"crew"` 查看小队，`scope:"organization"` 合并已加入的同组织空间，`query` 搜索名称或描述。`view` 可选 `all`、`mine`、`shared`、`private`、`favorite` 或 `archived`。「我的」按创建人筛选。在 Windows 的「Agents」或「小队」页可切换同样的筛选，并在当前空间和全部可访问空间间切换。设置和执行都使用记录的空间与 ID，可区分同名 Agent。
+
+`agent.organize` 的 `action` 可填 `pin`、`unpin`、`favorite` 或 `unfavorite`。收藏同时置顶，取消收藏保留置顶，其他人的列表独立。`agent.settings` 返回权限、有效指令、逐字段配置和工作机报送的累计 Token 数。缺少用量时桌面显示「—」。`agent.history` 按会话聚合运行，任务运行可回到任务，其他独立运行可打开记录。私有 Agent 的运行历史仅对所有者开放。
+
+`agent.access` 以 `actor` 指定空间成员，`permission` 为 `use`、`manage`、`remove` 或 `transfer`。公开 Agent 默认允许空间成员使用，私有 Agent 由所有者邀请。只有所有者可转让，转让后原 Agent 所有者保留管理权限。`agent.archive` 和 `agent.restore` 接受 `kind:"agent"` 或 `kind:"crew"`。归档 Agent 会取消排队并向正在执行的工作发出取消请求。归档小队会停止接收新指派，已开始的执行及历史会话保留。归档列表中可以恢复。任务评论的 `fields.agent_mentions` 接受 Agent ID 数组，提交时会在该任务的对话中排入请求。
+
+`agent.variant` 在 `target_space` 指定的同组织空间创建分身，返回分身的空间与 ID。创建人必须能使用原 Agent 并能编辑目标空间。原 Agent 的 `variant_permission` 默认 `use`，设为 `manage` 可限制创建者。`allow_variant_environment:false` 使其他人创建的分身跳过原 Agent 的环境变量。分身引用原配置和技能，每项可独立覆盖，用 `agent.resolve` 检查后续运行将采用的配置。`agent.override` 设置 `field` 和 `value`，将值设为 `null` 可恢复继承。技能始终跟随原 Agent。已入队的运行保留当时的配置与技能版本，源权限撤回后也会检查旧快照的访问权。指定源空间机器时，目标空间中需登记同一机器身份，也可以在分身覆盖为目标空间自己的机器。 [HiFox 分身规则](https://help.hifox.com/docs/agent-and-computer/agent-variants)
+
+```json
+{"op":"agent.variant","space":"design","id":"review","target_space":"delivery","title":"发布检查","request_id":"review-for-delivery"}
+{"op":"agent.override","space":"delivery","id":"替换为返回的分身 ID","field":"model","value":"review-model"}
+{"op":"agent.override","space":"delivery","id":"替换为返回的分身 ID","field":"model","value":null}
+```
+
+`crew.exclusive` 接受小队 `id`、成员 `agent` 和布尔值 `exclusive`。管理者可在小队详情操作已加入小队的非队长 Agent。专属成员由该小队委派，空间目录与独立接单选择器隐藏该成员。旧私聊与任务可回看，解除专属后恢复使用原有权限。 [HiFox Agent](https://help.hifox.com/docs/agent-and-computer/agents) · [HiFox 小队](https://help.hifox.com/docs/agent-and-computer/crews)
+
 `shipforge.exe` 与原生桌面使用同一个业务核心。本机模式使用当前用户的 ShipForge Workspace 数据目录，安装时指定的数据目录也会被桌面和 CLI 读取。`--data-dir <目录>` 可为本次命令选择独立配置。连接团队服务后，命令以令牌对应的成员身份执行。在程序目录的 PowerShell 中可用 `.\shipforge.exe` 调用下文的 `shipforge` 命令。[机器与服务部署](windows.md) · [完整请求 schema](protocol.schema.json)
 
 ## 建单、修改和重新打开
+
+### 收件箱、关注与通知渠道
+
+`comment.reactions` 查看可读评论的表情、数量及本人是否已回应，`comment.react` 发送 `id`、`emoji` 和布尔值 `enabled` 添加或撤销本人的回应。
+
+`inbox.query` 按组织内当前可访问的空间汇总个人提醒，支持分区、搜索、包含与排除空间、任务状态及分页。`inbox.locate` 按当前权限读取提醒目标，`inbox.open` 同时标为已读。`notification.act` 处理单条，`inbox.bulk` 只读标记或清理命中当前分区和筛选的提醒。`inbox.settings` 返回个人渠道、事件和已存选择；`inbox.configure` 更新开关或恢复默认。`inbox.feed` 返回新增桌面通知和游标。`followers.list` 列出可见关注者，`followers.change` 添加或移除单个成员、Agent 或邀请对象。[筛选与投递示例](inbox.md)
 
 TAPD 的 `tapd.credential` 保存当前身份的凭据，`tapd.projects` 发现可见项目，`tapd.preview` 的 `import_mode` 可选 `history`、`changes` 或 `refresh`。使用 `imports.commit` 确认当前预览。[TAPD 权限和模式](vendor-imports.md)
 
@@ -58,7 +84,7 @@ $task = (.\shipforge.exe --data-dir $workspace create task '发布前检查' | C
 | `iteration.timeline` | `{"op":"iteration.timeline","owner":"@me"}` 返回本人负责的可见迭代。可省略负责人或传其他成员 ID。可用 `as_of` 指定展示日期，默认取空间迭代时区的今天。返回按开始日期倒序排列，`fields.planning` 包含起止日期、阶段、可见任务数、完成数和容量。开启估算时包括点数。 |
 | `iteration.settings`、`iteration.configure` | 读取空间的迭代设置与修订号。空间管理员传 `fields` 局部更新 `mode`、IANA 时区、起始日、周期、冷却、未来期数及三项自动加入规则。支持 `expected_rev`。[配置字段与日期边界](iterations.md) |
 | `iteration.start`、`iteration.history` | 前者用迭代 `id` 启动未开始的手动迭代，或由管理员提前启动自动节奏的下一期。后者读结项时冻结的范围，结果按成员的任务访问权限过滤。 |
-| `iteration.preview`、`iteration.close`、`triage` | 用迭代 ID 预览及结项。结项的 `target` 为接收未完成任务的开放迭代 ID，省略或传 `null` 退回待规划。分拣用任务 ID 和 `decision`，可取 `accept`、`defer`、`reject` 或 `duplicate`。重复项的 `target` 为原任务 ID。 |
+| `iteration.preview`、`iteration.close`、`triage` | 用迭代 ID 预览及结项。结项的 `target` 为接收未完成任务的开放迭代 ID，省略或传 `null` 退回待规划。分拣用任务 ID 和 `decision`，可取 `accept`、`defer`、`restore`、`reject` 或 `duplicate`。搁置需未来的毫秒时间戳 `until`。重复项的 `target` 接受任务 ID、编号或同组织任务链接。 |
 | `follow`、`notification.act` | 指定任务 ID 和布尔值 `enabled` 切换关注。处理本人的提醒时指定通知 ID 和 `action`，可取 `read`、`unread`、`clear`、`restore` 或 `snooze`。稍后提醒的 `until` 为未来的 Unix 毫秒时间戳。 |
 | `preferences.get`、`preferences.update` | 读取或更改当前账号的桌面主题、窗口外边框颜色、语言、任务会话偏好、发送方式与三个应用快捷键。更新可带 `expected_rev`，并按字段合并。[值域与示例](personal-settings.md) |
 | `task.move`、`task.conversation`、`task.command` | 选择 `id` 指定任务。移动的 `target` 为同组织中有写权限的空间。会话命令打开本人和执行者的任务会话。快捷指令创建关联任务与会话的运行，可传 `instruction` 和幂等 `request_id`。[任务操作](personal-settings.md) |
@@ -156,3 +182,8 @@ Slack 连接器管理员可用 `update` 设置布尔值 `fields.slack_assignment
 `create` 和 `update` 支持相同的 `fields.assignees` 和 `fields.executor`。旧版 `assignee_kind`、`assignee` 仍可写入相应一项。可用 `{"op":"list","kind":"task","filter":{"assignees":"@me"}}` 查询本人负责的任务。
 
 导入及外部同步会保留多人成员。GitLab Issue、Jira、Linear、Asana 连接器可设置 `fields.assignee_map`，以外部账号标识为键、空间成员 ID 为值。尚未映射的外部标识保存在 `fields.source_assignees` 并显示在详情中。同步中各方同时更改人员会返回 `conflict`，可用同一事件和 `resolve: "local"` 或 `"source"` 明确处理。[HiFox 任务说明](https://help.hifox.com/docs/space/tasks)
+
+
+## 专项时间线与分拣投递
+
+`project.timeline` 通过 `basis` 查看任务开始日、截止日或计划区间。`triage.settings` 读取配置，`triage.configure` 设置责任与规则，`triage.submit` 投递任务，`triage.queue` 查询按进入时间排序的审核队列。`triage` 支持接受、拒绝、重复、搁置及恢复，`triage.batch` 原子执行多项接受、拒绝或搁置。`customer_request.convert` 将有权编辑的客户请求转成任务。`task.share` 返回任务编号及链接，`task.open` 按接收者的身份打开。[操作示例与权限](triage-planning.md)

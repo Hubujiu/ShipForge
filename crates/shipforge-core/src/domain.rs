@@ -10,6 +10,7 @@ pub(crate) const BASE_STATUS: &[&str] = &[
     "in_progress",
     "done",
     "cancelled",
+    "duplicate",
 ];
 pub(crate) fn check_kind(kind: &str) -> Result<()> {
     if protocol::KINDS.contains(&kind) {
@@ -47,25 +48,39 @@ pub(crate) fn write(c: &Context<'_>, q: &Value) -> Result<Value> {
     write_mode(c, q, true)
 }
 pub(crate) fn write_mode(c: &Context<'_>, q: &Value, notify: bool) -> Result<Value> {
-    write_inner(c, q, notify, None, false, None)
+    write_inner(c, q, notify, None, Origin::Member)
 }
 pub(crate) fn write_import(c: &Context<'_>, q: &Value, notify: bool) -> Result<Value> {
-    write_inner(c, q, notify, None, true, None)
+    write_inner(c, q, notify, None, Origin::Source)
 }
 pub(crate) fn write_with_files(c: &Context<'_>, q: &Value, files: Value) -> Result<Value> {
-    write_inner(c, q, true, Some(files), false, None)
+    write_inner(c, q, true, Some(files), Origin::Member)
 }
 pub(crate) fn write_agent_comment(c: &Context<'_>, q: &Value, agent: &str) -> Result<Value> {
-    write_inner(c, q, true, None, false, Some(agent))
+    write_inner(c, q, true, None, Origin::Agent(agent))
+}
+pub(crate) fn write_submission(c: &Context<'_>, q: &Value) -> Result<Value> {
+    write_inner(c, q, true, None, Origin::Submission)
+}
+pub(crate) fn write_review(c: &Context<'_>, q: &Value) -> Result<Value> {
+    write_inner(c, q, true, None, Origin::Review)
+}
+enum Origin<'a> {
+    Member,
+    Source,
+    Submission,
+    Review,
+    Agent(&'a str),
 }
 fn write_inner(
     c: &Context<'_>,
     q: &Value,
     notify: bool,
     files: Option<Value>,
-    from_source: bool,
-    agent: Option<&str>,
+    origin: Origin<'_>,
 ) -> Result<Value> {
+    let from_source = matches!(origin, Origin::Source);
+    let submission = matches!(origin, Origin::Submission);
     let op = required(q, "op")?;
     let kind = required(q, "kind")?;
     check_kind(kind)?;
@@ -86,10 +101,22 @@ fn write_inner(
         check_rev(q, &row)?;
         Some(row)
     };
-    c.authorize_write(kind, old.as_ref())?;
+    if !(submission && kind == "task" && op == "create" && crate::triage::intake::outside(c)?) {
+        c.authorize_write(kind, old.as_ref())?;
+    }
     if op == "delete" {
         let r = old.as_ref().ok_or_else(|| invalid("missing record"))?;
         validate_delete(c, r)?;
+        if kind == "task" {
+            crate::triage::forget(c, &r.id)?;
+        }
+        if kind == "customer_request" {
+            c.db.execute(
+                "DELETE FROM triage_conversions WHERE space=? AND request=?",
+                params![c.space, r.id],
+            )
+            .map_err(storage)?;
+        }
         if kind == "comment" {
             crate::discussions::delete(c, r)?;
         }
@@ -104,10 +131,13 @@ fn write_inner(
         return Ok(as_value(r.clone()));
     }
     let mut patch = fields_object(q.get("fields"))?;
+    if matches!(kind, "agent" | "crew") {
+        crate::agents::protect(q, old.as_ref())?;
+    }
     match kind {
         "comment" => {
             crate::discussions::protect(c, &mut patch, old.as_ref(), from_source)?;
-            if let Some(agent) = agent {
+            if let Origin::Agent(agent) = origin {
                 patch.insert("authored_by_agent".into(), json!(agent));
             }
         }
@@ -132,9 +162,26 @@ fn write_inner(
         }
     }
     if kind == "space" {
+        if old
+            .as_ref()
+            .is_some_and(|r| r.fields["triage_enabled"] == true)
+            && patch.get("triage_enabled") == Some(&json!(false))
+            && q["confirm"] != true
+        {
+            return Err(conflict(
+                "confirm moving pending tasks to backlog before disabling triage",
+            ));
+        }
+        crate::triage::protect_space(&patch)?;
         crate::spaces::check_fields(&patch)?;
     }
     if kind == "customer_request" {
+        if ["converted_task", "converted_space"]
+            .iter()
+            .any(|key| patch.contains_key(*key))
+        {
+            return Err(invalid("use customer_request.convert to link a task"));
+        }
         crate::spaces::require_module(c, "customer_requests")?;
     }
     if kind == "task" {
@@ -144,6 +191,23 @@ fn write_inner(
         return Err(invalid(
             "conversation controls are managed by chat operations",
         ));
+    }
+    if kind == "task" && !matches!(origin, Origin::Review) {
+        for key in [
+            "triage_decision",
+            "triage_entered_at",
+            "triage_duplicate_of",
+            "triage_applied_rules",
+            "triage_rule_failed",
+            "triage_snoozed",
+            "deferred_until",
+        ] {
+            if from_source {
+                patch.remove(key);
+            } else if patch.contains_key(key) {
+                return Err(invalid("use a triage operation to update queue metadata"));
+            }
+        }
     }
     if kind == "task" && patch.contains_key("following") {
         return Err(invalid("use follow to change your own following status"));
@@ -220,13 +284,22 @@ fn write_inner(
         created_at: at,
         updated_at: at,
     };
+    let explicit_admin_status =
+        !from_source && old.is_none() && kind == "task" && q["fields"]["status"].is_string() && {
+            let org = c.org_id()?;
+            matches!(
+                (Context { space: &org, ..*c }).role().as_deref(),
+                Ok("owner" | "admin")
+            )
+        };
     validate(
         c,
         old.as_ref(),
         &mut row,
         from_source,
-        from_source && q["preserve_source_status"] == true,
+        from_source && q["preserve_source_status"] == true || explicit_admin_status,
     )?;
+    let entered = crate::triage::stamp(c, old.as_ref(), &mut row)?;
     if infer_iteration {
         crate::iterations::auto_assign(c, old.as_ref(), &mut row)?;
     }
@@ -271,6 +344,16 @@ fn write_inner(
             crate::chat::notify(c, &row)?;
         }
     }
+    if entered && notify && !(from_source && q["preserve_source_status"] == true) {
+        let routed = crate::triage::entered(c, &row)?;
+        let target = Context {
+            space: &routed.space,
+            ..*c
+        };
+        if target.role().is_ok() && target.visible(&routed)? {
+            return Ok(as_value(routed));
+        }
+    }
     Ok(as_value(row))
 }
 
@@ -300,6 +383,7 @@ fn create_space(c: &Context<'_>, q: &Value) -> Result<Value> {
         space: &id,
     };
     let mut f = Value::Object(fields_object(q.get("fields"))?);
+    crate::triage::protect_space(f.as_object().unwrap())?;
     crate::spaces::check_fields(f.as_object().unwrap())?;
     f["creator"] = json!(c.actor);
     f["organization"] = if is_org { json!(&id) } else { json!(org_id) };
@@ -341,7 +425,7 @@ fn create_space(c: &Context<'_>, q: &Value) -> Result<Value> {
     }
     Ok(as_value(row))
 }
-fn validate_space(f: &Value) -> Result<()> {
+pub(crate) fn validate_space(f: &Value) -> Result<()> {
     if !matches!(f["visibility"].as_str(), Some("private" | "public")) {
         return Err(invalid("space visibility must be private or public"));
     }
@@ -438,7 +522,7 @@ fn validate(
         "tag" | "tag_group" => return crate::tags::validate(c, old, row),
         "task" => validate_task(c, old, &row.id, f, historical)?,
         "agent" => {
-            if old.is_none() && f["agent_type"].is_null() {
+            if old.is_none() && f["agent_type"].is_null() && !f["parent_id"].is_string() {
                 let space = c.get("space", c.space)?;
                 f["agent_type"] = json!(
                     space.fields["agent_type_default"]
@@ -540,7 +624,7 @@ fn validate(
             if !f["value_type"].is_null()
                 && !matches!(
                     f["value_type"].as_str(),
-                    Some("text" | "number" | "boolean" | "date" | "select")
+                    Some("text" | "number" | "boolean" | "date" | "select" | "member" | "members")
                 )
             {
                 return Err(invalid("unknown custom field value_type"));
@@ -550,6 +634,7 @@ fn validate(
             }
         }
         "project" => {
+            crate::project_timeline::validate(c, old, f)?;
             let org = c.org_id()?;
             f["organization"] = json!(org);
             if let Some(spaces) = f.get("spaces") {
@@ -645,6 +730,9 @@ fn validate(
                 return Err(invalid("a message cannot change its conversation"));
             }
             crate::chat::validate_mentions(c, &room, f)?;
+            if old.is_none() {
+                crate::agents::chat_available(c, &room)?;
+            }
             validate_body(f, &row.title)?;
         }
         "artifact" => {

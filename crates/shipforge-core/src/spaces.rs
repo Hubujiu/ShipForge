@@ -50,6 +50,10 @@ pub(crate) fn guarded(op: &str) -> bool {
             | "space.pin"
             | "chat.organize"
             | "preferences.update"
+            | "inbox.configure"
+            | "inbox.bulk"
+            | "inbox.open"
+            | "notification.act"
             | "onboarding.display"
             | "invitation.accept"
     )
@@ -192,7 +196,10 @@ fn membership(c: &Context<'_>, join: bool) -> Result<Value> {
 fn unfinished(c: &Context<'_>) -> Result<Vec<Record>> {
     let mut work = Vec::new();
     for task in c.records("task")? {
-        if !matches!(c.status_category(&task)?.as_str(), "done" | "cancelled") {
+        if !matches!(
+            c.status_category(&task)?.as_str(),
+            "done" | "cancelled" | "duplicate"
+        ) {
             work.push(task);
         }
     }
