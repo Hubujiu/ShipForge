@@ -98,7 +98,12 @@ impl Author {
         (result, sources)
     }
 
-    pub(super) fn resolve(&self, requester: &Context<'_>, agent: &Record) -> Result<Value> {
+    pub(super) fn resolve(
+        &self,
+        requester: &Context<'_>,
+        agent: &Record,
+        trigger: Option<&str>,
+    ) -> Result<Value> {
         let owner = agent.fields["owner"]
             .as_str()
             .or(agent.fields["creator"].as_str())
@@ -111,16 +116,25 @@ impl Author {
             };
             member.map_or_else(|| label.to_owned(), |name| format!("{name} & {label}"))
         };
+        let triggered_name = || {
+            trigger
+                .map(|actor| member_name(requester, actor))
+                .transpose()
+                .map(Option::flatten)
+        };
         let name = match self.name.as_ref().unwrap_or(&Name::TriggerAndAgent) {
-            Name::Trigger => member_name(requester, requester.actor)?,
-            Name::TriggerAndAgent => Some(with_agent(member_name(requester, requester.actor)?)),
+            Name::Trigger => triggered_name()?,
+            Name::TriggerAndAgent => Some(with_agent(triggered_name()?)),
             Name::Owner => member_name(requester, owner)?,
             Name::OwnerAndAgent => Some(with_agent(member_name(requester, owner)?)),
             Name::Machine => None,
             Name::Manual(value) => Some(value.clone()),
         };
         let email = match self.email.as_ref().unwrap_or(&Email::Machine) {
-            Email::Trigger => member_email(requester, requester.actor)?,
+            Email::Trigger => trigger
+                .map(|actor| member_email(requester, actor))
+                .transpose()?
+                .flatten(),
             Email::Owner => member_email(requester, owner)?,
             Email::Machine => None,
             Email::Manual(value) => Some(value.clone()),

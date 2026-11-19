@@ -82,6 +82,7 @@ pub enum Mode {
     Library(crate::app::market_ui::LibraryForm),
     Forge(crate::app::repository_ui::Form),
     Bot(crate::app::personal_bots_ui::BotForm),
+    Webhook(crate::app::webhook_ui::HookForm),
     Identity(crate::app::identity_ui::IdentityForm),
     Inbox(crate::app::inbox_ui::InboxForm),
     Directory(crate::app::agent_directory::DirectoryForm),
@@ -175,6 +176,7 @@ impl Mode {
             Forge(f) => f.title().into(),
             GitWorkspace(f) => f.title().into(),
             Bot(f) => f.title().into(),
+            Webhook(f) => f.heading().into(),
             Identity(f) => f.title().into(),
             QuickCreate => "快捷新建".into(),
             PeopleFilter => "查找成员与机器".into(),
@@ -271,6 +273,7 @@ impl Mode {
             Self::Forge(f) => f.submit(),
             Self::GitWorkspace(f) => f.submit_label(),
             Self::Bot(f) => f.submit(),
+            Self::Webhook(f) => f.submit(),
             Self::Identity(f) => f.submit(),
             Self::QuickCreate => "关闭",
             Self::PeopleFilter => "查找",
@@ -640,6 +643,13 @@ pub fn record_specs(kind: &str) -> Vec<Spec> {
             title,
             item("instruction", "执行指令", Body, ""),
             item("handler_id", "执行者", Ref("$agents"), ""),
+            item(
+                "run_owner",
+                "状态或评论触发的会话负责人（留空使用触发者）",
+                Ref("member"),
+                "",
+            ),
+            item("project", "关联专项", Ref("project"), ""),
             item("notify", "通知成员", Many("member"), ""),
             item("enabled", "规则状态", Bool, "true"),
         ],
@@ -862,6 +872,7 @@ pub fn workflow_name(op: &str) -> &'static str {
         "iteration.configure" => "空间迭代设置",
         "chat.share.create" => "分享已选消息",
         "chat.manage" => "管理对话成员",
+        "chat.fork.workspace" => "选择分支对话的工作目录",
         "assistant.send" => "给小助手发消息",
         "chat.avatar.set" => "更换群头像",
         "task_assistant.bind" => "绑定空间任务助手",
@@ -917,6 +928,7 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
         Forge(f) => f.specs(),
         GitWorkspace(f) => f.specs(),
         Bot(f) => f.specs(),
+        Webhook(f) => f.specs(),
         Identity(f) => f.specs(),
         QuickCreate => vec![],
         PeopleFilter => vec![item("query", "名称或标识", Text, "")],
@@ -1119,6 +1131,32 @@ fn modal_specs(mode: &Mode) -> Vec<Spec> {
         }
         Download(..) => vec![item("path", "保存到新文件", Text, "")],
         Workflow { op, record } => match *op {
+            "chat.fork.workspace" => {
+                let modes: &'static [(&'static str, &'static str)] =
+                    match (record.fields["ready"] == true, record.fields["git"] == true) {
+                        (true, true) => {
+                            &[("reuse", "复用原对话目录"), ("branch", "在独立工作树继续")]
+                        }
+                        (true, false) => &[("reuse", "复用原对话目录")],
+                        _ => &[("branch", "在独立工作树继续")],
+                    };
+                let mut fields = vec![item("workspace_mode", "工作目录策略", Choice(modes), "")];
+                if record.fields["git"] == true {
+                    fields.push(item("checkout_branch", "基线分支", Text, ""));
+                    if record.fields["targets"]
+                        .as_array()
+                        .is_some_and(|items| !items.is_empty())
+                    {
+                        fields.push(item(
+                            "target_machine_id",
+                            "目标工作机",
+                            Ref("$fork_machines"),
+                            "",
+                        ));
+                    }
+                }
+                fields
+            }
             "assistant.send" => vec![
                 item("body", "消息", Body, ""),
                 item("runtime", "Runtime", Ref("$assistant_runtimes"), ""),
@@ -1688,7 +1726,7 @@ impl Editor {
 #[derive(Clone)]
 pub struct TriggerDraft {
     pub id: u64,
-    original: Map<String, Value>,
+    pub(crate) original: Map<String, Value>,
 }
 pub struct Form {
     pub request_id: uuid::Uuid,

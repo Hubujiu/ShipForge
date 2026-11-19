@@ -1,5 +1,9 @@
 # Windows 原生界面验收
 
+## 对话工作目录与分支
+
+Windows 原生窗口从已有 Agent 消息打开「使用工作目录分叉」，显示独立工作树选项和原生基线分支文本框。保存后用独立 CLI 读回新对话、分支和模式。隔离测试启动两个独立工作机进程和真实 Git 服务，分别验证同目录共享未提交文件、独立 worktree、同一分支对话的后续指令，以及另一工作机只检出远端可访问分支。[原生窗口](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/chat_ui_test.rs) · [工作机验证](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-conversation-workspaces.py)
+
 ## 个人小助手和群头像
 
 Windows x64 隐藏 GPUI 窗口使用独立数据库。首次进入「小助手」后，输入区为空，数据库中的会话数为零。原生文本框发送第一条消息后打开刚创建的会话，再次进入时得到空白编辑器。点击「最近对话」重新打开原会话。群详情的文件选择入口读取合成 PNG，群主窗口显示可访问性角色为 Image 的头像，移除后 CLI 返回空图片。这个用例运行真实窗口、后台命令和文件读取。[Windows 窗口用例](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/assistant_ui_test.rs)
@@ -13,6 +17,8 @@ Windows GPUI 窗口通过辅助功能树打开代理设置，切换模式并检�
 原生收件箱用例通过渠道设置关闭收件箱，从一次真实任务指派生成桌面链接，打开对应任务并检查未读数。多身份测试覆盖他人链接和撤销评论访问后的状态。[原生收件箱](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/inbox_ui_test.rs) · [团队服务](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-inbox.py)
 
 ## 机器存储与模型配置
+
+在真实 Windows GPUI 窗口打开「存储配额与清理策略」，将最低可用空间设为 1 GiB 并启用定时清理。独立客户端读回保存值，辅助功能树中出现「磁盘可用空间过低」。固定测试工作区后，清理按钮消失；取消固定后重新出现。隔离的工作机测试通过本机 Git HTTP 服务产生真实工作树和镜像，并用高于测试盘实际余量的阈值触发提醒。保留工作树时镜像受保护，确认回收工作树后固定状态继续保护镜像。解除固定并启用定时策略后，工作机回收镜像，远程和绑定仓库的引用及文件保持完整。[Windows 原生界面用例](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/storage_ui_test.rs) · [实际工作机与磁盘用例](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-storage-policy.py)
 
 隐藏的原生 Windows D3D 窗口从机器详情进入存储面板。取消清理后保留原有操作历史，选择确认后独立客户端读到绑定同一指纹的清理请求。随后在 Agent 详情读取机器提供的模型和思考深度，配置后通过独立客户端读回。工作机进程在临时 Git 仓库中验证内容改变后的冲突、绑定和恢复保护、只删除选中 worktree，以及子进程运行期间继续统计并拒绝清理。第二组运行用 Python 读取实际 argv 与环境，验证单次覆盖和整段含空格参数。[原生窗口验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/storage_ui_test.rs) · [工作机验收](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/tests/storage_and_launch.rs)
 
@@ -165,6 +171,14 @@ Windows 原生窗口用已验证的临时成员登录，在其独立团队服务
 
 独立测试工作区在隐藏的原生 D3D 窗口打开「机器」，通过 Windows 辅助功能树识别授权目录和本机诊断入口。测试从 Agent 编辑器选择同一机器上的两个目录、切换到共用任务额度，提交后重读数据库验证保存。随后打开已预约任务，在详情触发提前排队，确认横幅消失，再从运行记录读取该次诊断。独立工作机验收用两个实际目录各启动 Python 进程，第三个任务等待目录释放，合成服务返回 429 后得到额度错误和本机 PID 日志。[原生窗口测试](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/runtime_ui_test.rs) · [工作机进程测试](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/tests/native_runtime.rs) · [用户指南](runtime-scheduling.md)
 
+
+## 自动化 Webhook 安全设置
+
+隐藏的 Windows D3D 窗口在已有规则中新增 Webhook，保存后通过辅助功能树定位「复制 URL」。从保存后的触发器进入安全设置，在原生文本框填入 IPv4 网段和 IPv6 地址，勾选两项校验后，独立客户端读回规范化名单。查看签名密钥后返回原编辑器，投递记录显示实际记录的来源地址。确认轮换后收到新 URL，旧入口立即返回 404。[Windows 原生测试](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/webhook_ui_test.rs) · [HTTP 和三身份验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-automation-webhooks.py)
+
+## Windows 自动化运行详情
+
+在临时工作区建立九次独立运行，从真实 Windows 隐藏 D3D 窗口打开规则。辅助功能树能定位暂停和下一页，末页的历史可打开原运行的私有对话并显示发送消息控件。回到规则依次暂停、恢复和归档，第二个客户端从同一数据库读回每次状态。服务端专项另用三个独立身份与本机运行时验证收件箱摘要、原会话续聊和人工审批失败。[原生窗口测试](https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/automation_run_ui_test.rs) · [工作机和 CLI 验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-automation-history.py)
 
 ## 仓库授权与配对
 

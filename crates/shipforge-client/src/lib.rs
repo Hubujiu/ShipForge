@@ -13,6 +13,7 @@ pub use bots::qr_png as png_data_url;
 pub use files::{save_attachment, upload_file};
 pub use identity::link_id as identity_link_id;
 pub use network::{DEVICE_OPS, device_command};
+pub use shipforge_core::git_remote_url;
 pub use shipforge_core::runtime_diagnostics;
 pub use shipforge_core::skill_package;
 pub use vendors::forge::verify_forge_hook;

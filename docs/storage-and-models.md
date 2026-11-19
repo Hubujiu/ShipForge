@@ -18,7 +18,26 @@
 
 预览返回 `entries`、`total_bytes`、`other_bytes`、`pending_reclaim_bytes`、`scanned_at` 和最近的 `jobs`。每次最多列出 2,048 个副本，超出数量计入 `omitted`。返回项可以用 `title`、`category`、`bytes`、`files` 和 `protection` 判断用途。受托执行端用 `machine.storage.take` 获取工作，用 `machine.storage.reserve` 在移动目录前复核快照，然后用 `machine.storage.finish` 提交结果。存储预览使用不透明标识。历史运行中已保存的本机路径供工作机识别旧副本。
 
+## 配额、保留和定时清理
+
+机器所有者在「管理存储空间 → 存储配额与清理策略」设置托管容量上限、最低磁盘可用空间、清理间隔和两种保留期限。新装和升级后的初始状态均为手动清理。容量阈值使用 GiB，填 0 可关闭对应监测。设置容量阈值可启动后台测量，开启「定时安全清理」后才会自动回收。在线工作机从下一次轮询开始采用新策略。[HiFox 机器管理行为说明](https://help.hifox.com/docs/agent-and-computer/computers)
+
+ShipForge 在托管数据达到上限的 90% 或当前磁盘可用容量低于最低值时显示提醒。每次统计都读取工作机数据目录所在卷的实际可用字节。启用阈值监测后，在线工作机按清理间隔和十分钟中的较短值刷新。离线面板保留最近的测量时间。工作机本地时间 00:00 至 07:00 仅更新状态。其余时段，同一轮持续压力给机器所有者发送一条收件箱通知，打开后可查看存储面板。
+
+默认清理间隔为 1,440 分钟，已完成目录和仓库缓存均保留 7 天。符合策略的独立 Git 缓存优先处理，之后从最久未使用的工作目录开始。运行目录最少保留一小时，每轮最多处理 64 项。存储压力可在两次常规清理之间触发资格核验。固定项、仍需续聊的聊天、未结束的任务、活跃租约、待回传结果、未送达的消息和需恢复的失败运行都受保护。Git 工作树含本地文件变动时也会跳过定时清理。
+
+附有工作树、正在使用、含本地提交或尚需核验的引用和标签的托管 Git 镜像保留在机器上。统计页面显示镜像占用。定时清理只会回收已有使用记录、可从远端重建且通过当次指纹和锁定检查的镜像。绑定的原始仓库始终受到保护。
+
+先读取 `machine.storage.preview` 返回的 `policy_rev`，替换下例的版本号。保存后从 `policy`、`health`、`available_bytes`、`policy_eligible_bytes` 和 `jobs` 检查设置和实际结果。
+
+```json
+{"op":"machine.storage.configure","id":"build-box","expected_rev":0,"policy":{"enabled":true,"interval_minutes":360,"retention_days":14,"cache_retention_days":7,"quota_gib":100,"min_free_gib":10}}
+```
+
+`machine.storage.pin` 接受机器 ID、最近快照中的 `workspace` 标识和布尔值 `pinned`。将 `policy.enabled` 设为 `false` 可停止后续定时删除。已经进入最终提交阶段的那一项会完成，后继项重新检查策略版本。[实际 Git 与工作机验收](https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-storage-policy.py)
+
 ## 为 Agent 配置模型和进程参数
+
 
 从「Agents」进入 Agent 详情，打开「模型与运行参数」。面板按机器展示所用 Runtime 公布的模型和模型支持的思考深度。可以跟随默认模型或选择明确的模型和深度。机器启动参数中固定了模型时，面板显示固定值。Agent 编辑器还可填写参数数组和环境变量对象，环境值默认遮蔽。自定义参数中的每个值按一个进程参数传递，含空格的值保持完整。[HiFox Agent 设置](https://help.hifox.com/docs/agent-and-computer/agents)
 

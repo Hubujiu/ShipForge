@@ -98,7 +98,7 @@
 | C05 | 私有会话授权管理、邀请/撤回、任务内私有会话 | [会话授权][nov13] · [对话][chat] | 有对应 | 测试 · [两个独立登录的本地团队客户端][chat-http] · [任务权限][chat-tests] · [隐私继承][execution] | 行为、数据、权限、待联调 | 接受前、撤回后，直接读取、附件下载、搜索、事件和产物各按当前身份验证。任务可见性收紧也收回会话访问。离线不能重开此前取过的消息，参考生产租户的跨账号步骤待联调。 |
 | C06 | 对话列表单人置顶、不显示、撤销、新消息恢复 | [侧栏更新][changes] · [对话][chat] | 有对应 | 实机 · [Windows 记录][native] · [窗口用例][chat-flow-ui] · [个人状态][chat-flow-tests] | 行为、数据、权限、待联调 | 独立成员的置顶和隐藏可跨重开保留，撤销恢复原位置。产生本人可见的新消息后重新进入最近对话。 |
 | C07 | 从指定消息 Fork、分享已完成片段、转任务、Slash 与快捷指令 | [对话][chat] | 有对应 | 实机 · [Windows 记录][native] · [Windows 操作][commands-native] · [外部进程][chat-flow-worker] · [三身份核心][commands-tests] · [HTTP 图片分享][commands-team] · [已有 Fork、转任务][chat-flow-tests] | 行为、数据、权限、待联调 | 已验 Slash 的 Tab 插入、Esc 关闭、运行时下线、忙时排队、独立会话和任务快照，以及图片导出、组织限制和撤销。外部 Runtime 声明的原生命令逐家执行仍待联调。 |
-| C08 | 对话工具调用、流式进度、人类回复、同目录继续 | [对话][chat] · [任务执行][run-help] | 部分 | 测试 · [MCP 子进程与进度][worker-tests] | 行为、数据、待联调 | 工具回报与续跑有测试。实际长对话工具卡、流式输出和中途停单在双端的展示待验证。 |
+| C08 | 对话工具调用、流式进度、人类回复、同目录或分支继续 | [对话][chat] · [任务执行][run-help] | 部分 | 实机 · [Windows 记录][native] · [工作目录原生选择][chat-flow-ui] · 测试 · [两个工作机进程][chat-workspaces-http] · [MCP 子进程与进度][worker-tests] | 行为、数据、权限、待联调 | 已验复用原目录、独立基线分支、后续轮次保持目录，以及在另一工作机上只检出相同仓库的可达分支。商用 Runtime 的长对话工具卡、流式输出与中途停单的双端展示仍待联调。 |
 | C09 | 文档库个人/团队区、新建、检索、分享链接与实时权限 | 图 UI08 · [文档][docs-help] | 有对应 | 实机 · [Windows 记录][native] · [Windows 文档入口][commands-native] · [多身份 HTTP][commands-team] · [正文及历史][workspace-tests] | 行为、数据、权限 | 任务、评论和文档里的引用按当前读者打开。已验跨空间身份、正文变更与移出空间后，链接及嵌入同步反映新权限。组织权限检查在本地团队服务验证。 |
 | C10 | 文档历史、恢复、对话产物存入库与附件下载 | 图 UI08 · [文档][docs-help] | 有对应 | 实机 · [文档版本][native] · 测试 · [文件及产物][collab] | 行为、数据、权限 | 实机编辑形成第二版。历史恢复、保存产物后删除源、另一成员下载是独立的测试场景。 |
 | C11 | 市场的技能/Agent 模板两个入口、分类、搜索、详情和安装 | 图 UI07 · [技能][skills] · [官网][home] | 有对应 | 实机 · [原生市场筛选、详情及安装][native] · [HTTP 跨空间目录][market-http] | 行为、数据、权限 | 可按关键词及分类浏览内置和团队条目。空间成员看到共享安装状态，模板可创建独立实例。 |
@@ -127,11 +127,11 @@
 | W09 | 组织/空间/Agent 绑定仓库、平台凭据、默认分支及 PR/MR | 图 补03 · [代码库][repos] · [官网][home] | 部分 | 测试 · [实际 Git 进程][git-workspace-qa] · [工作树][worker-tests] · [工作机][worker-manual] | 行为、数据、权限、待联调 | 已验基线分支与单次覆盖、机器目录优先级、共享 Git 缓存及独立工作树。生产私库凭据、托管分支推送与创建 PR/MR 考核仍待完成。 |
 | W10 | 运行状态、租约、心跳、人工回复、取消、产物和重试 | 图 UI36 · [执行][run-help] | 部分 | 测试 · [租约][execution] · [实际进程][worker-tests] | 行为、数据、权限、待联调 | 核心/进程路径已测。参考只有空历史截图；需非空、运行中、等待、失败、离线重连同场比对。 |
 | W11 | 模型错误、限流、额度、凭据失效、机器诊断和本机日志 | [执行排障][run-help] · [CLI][h-cli] | 部分 | 实机 · [原生诊断入口][native] · [运行隔离与分类][runtime-tests] · [本机进程日志][worker-tests] | 行为、数据、权限、待联调 | 结构化错误码覆盖认证、权限、账单、限流、模型、上下文和图片。真实子进程验证 429、PID 和日志脱敏。尚待使用真实供应商账户验证各适配器错误语料。 |
-| W12 | 本地存储占用、清理已结束的工作目录、迁移和升级 | [CLI][h-cli] · [变更记录][changes] | 部分 | 实机 · [原生验收][native] · [执行端实测][storage-model-test] · [机器配置][storage-models] | 行为、数据、权限、待联调 | 已验证容量预览、确认、内容冲突、活动租约和恢复保护及单个 Git worktree 回收。跨磁盘迁移与操作系统低空间告警仍待验。 |
+| W12 | 本地存储占用、清理已结束的工作目录、迁移和升级 | [机器][computers] · [CLI][h-cli] | 部分 | 实机 · [原生验收][native] · [实际磁盘和镜像回收][storage-policy-test] · [执行端实测][storage-model-test] · [机器配置][storage-models] | 行为、数据、权限、待联调 | 已验证配额、实际可用磁盘、定时保留、固定和发件箱保护、工作树与 Git 镜像回收、压力提醒。跨盘迁移和工作树中的可再生构建目录回收待补。 |
 | W13 | 空间自动化的空态、创建、执行者及多触发器启停 | 图 UI01、UI26、UI27 · [规则][automations] | 有对应 | 实机 · [原生表单][native] · 测试 · [规则][execution] | 行为、数据 | 实际保存过一条每日规则。分别触发状态变化、评论关键词与手动执行，观察同一运行回链。 |
 | W14 | 间隔、每日/每周，IANA 时间、规则暂停后重启与补发 | 图 UI26、UI27 · [规则][automations] | 有对应 | 实机 · [保存时间][native] · 测试 · [时区计划][schedule] | 行为、数据 | 表单保存与 Worker 按时执行需分别举证；测试夏令时与持续在线的实际规则。 |
-| W15 | 规则 Webhook 的私密 URL、轮换、可选签名与 IP 白名单、投递历史 | 图 UI27 · [规则][automations] · [自动化产品页][p-auto] | 部分 | 测试 · [团队回调][team] | 行为、数据、权限、待联调 | 绑定凭据支持规则级范围和重复投递检查。官网列出的单次展示完整 URL、轮换后立即失效、逐触发器签名和 IP 白名单、投递历史仍需实现与验证。 |
-| W16 | 规则健康度、可续聊的运行历史、无人值守会话、暂停恢复归档 | [规则][automations] · [产品页][p-auto] | 部分 | 实现 · [规则与运行][automation-code] | 行为、数据、权限、待联调 | 现有运行记录和结果通知可读。仍需核验每次运行的负责人和触发来源、从记录续聊、无人值守下请求人工输入时的快速失败，以及分页查看旧运行。 |
+| W15 | 逐触发器 Webhook 私密 URL、轮换、可选签名、IP 白名单和投递历史 | 图 UI27 · [规则][automations] · [自动化产品页][p-auto] | 有对应 | 实机 · [Windows 记录][native] · [原生设置][webhook-window] · [三身份和 HTTP][webhook-http] · [配置与验收][webhook-manual] | 行为、数据、权限、待联调 | 已验证首次保存、密钥查看与 URL 轮换、两种原始字节签名、并发重放、IPv4/IPv6 预读拒绝、限流与历史分页。旧的按名称调用方式升级后仍可用。公网代理 TLS 与出口地址需在使用方环境核实。 |
+| W16 | 规则健康度、可续聊的运行历史、无人值守会话、暂停恢复归档 | [规则][automations] · [产品页][p-auto] | 有对应 | 实机 · [Windows 记录][native] · [HTTP 和真实工作机][rule-runs-http] · [核心权限与分页][rule-runs-core] | 行为、数据、权限 | 已验触发者与指定负责人、通知摘要与私有对话、分页和续聊、真实子进程索要授权后的快速失败、原运行重试、暂停跳过排队的时间表、恢复和归档。[使用说明][rule-runs-guide] |
 
 ## 外部集成、导入与实际供应商条件
 
@@ -205,6 +205,9 @@
 [sitemap]: https://hifox.com/sitemap.xml
 [p-agents]: https://hifox.com/features/agents/
 [p-auto]: https://hifox.com/features/automations/
+[webhook-manual]: automation-webhooks.md
+[webhook-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-automation-webhooks.py
+[webhook-window]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/webhook_ui_test.rs
 [p-planning]: https://hifox.com/features/project-management/
 [p-tasks]: https://hifox.com/features/tasks/
 [s-agile]: https://hifox.com/solutions/agile/
@@ -303,6 +306,7 @@
 [inbox-window]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/inbox_ui_test.rs
 [inbox-manual]: inbox.md
 [chat-flow-ui]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/chat_ui_test.rs
+[chat-workspaces-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-conversation-workspaces.py
 [chat-flow-tests]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/chat_workflows.rs
 [chat-flow-worker]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-chat-workflows.py
 [space-window]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/space_ui_test.rs
@@ -328,6 +332,7 @@
 [native-worker]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-desktop/src/machine.rs
 [machine-management]: machine-management.md
 [storage-models]: storage-and-models.md
+[storage-policy-test]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-storage-policy.py
 [storage-model-test]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/tests/storage_and_launch.rs
 [machine-life-test]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-worker/tests/machine_management.rs
 [worker-manual]: ../crates/shipforge-worker/README.md
@@ -367,6 +372,9 @@
 [space-im-guide]: space-task-assistants.md
 [schedule]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/src/automation/schedule.rs
 [automation-code]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/src/automation.rs
+[rule-runs-http]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/verify-automation-history.py
+[rule-runs-core]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/tests/automation_history.rs
+[rule-runs-guide]: automation-history.md
 [checker]: https://github.com/Hubujiu/ShipForge/blob/main/scripts/check-parity-inventory.py
 
 [weekly]: https://github.com/Hubujiu/ShipForge/blob/main/crates/shipforge-core/src/worker/working_hours.rs

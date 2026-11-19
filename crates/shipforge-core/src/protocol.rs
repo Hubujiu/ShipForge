@@ -154,6 +154,7 @@ const READS: &[&str] = &[
     "assistant.history",
     "chat.sidebar",
     "chat.history",
+    "chat.workspace",
     "chat.invitations",
     "chat.share.read",
     "onboarding.catalog",
@@ -208,6 +209,8 @@ pub(crate) fn operation_names() -> Vec<&'static str> {
         .chain(crate::statuses::WRITES)
         .chain(worker::OPS)
         .chain(crate::bots::READS)
+        .chain(crate::automation_hooks::READS)
+        .chain(crate::automation_hooks::WRITES)
         .chain(crate::vcs::forge::READS)
         .chain(crate::vcs::forge::WRITES)
         .chain(crate::task_assistants::READS)
@@ -223,6 +226,7 @@ pub fn is_read_only(op: &str) -> bool {
         || crate::statuses::READS.contains(&op)
         || worker::READ_OPS.contains(&op)
         || crate::bots::READS.contains(&op)
+        || crate::automation_hooks::READS.contains(&op)
         || crate::vcs::forge::READS.contains(&op)
         || crate::task_assistants::READS.contains(&op)
         || crate::conversation_tools::READS.contains(&op)
@@ -256,6 +260,7 @@ pub fn schema() -> Value {
     schema["properties"]["search_scope"] =
         json!({"enum":["space","organization"],"default":"space"});
     crate::git_workspace::schema(&mut schema);
+    crate::chat::fork_directory::schema(&mut schema);
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"directory.people"}}},"then":{"properties":{"kind":{"enum":["agent","crew","member","machine"]}}}}));
     schema["properties"]["sidebar_visible"] = json!({"type":"boolean"});
     schema["allOf"].as_array_mut().unwrap().push(json!({"if":{"properties":{"op":{"const":"organization.ownership"}}},"then":{"required":["expected_rev","action","target"],"properties":{"action":{"enum":["grant","revoke","transfer"]},"target":{"type":"string","minLength":1}}}}));
@@ -294,6 +299,7 @@ pub fn schema() -> Value {
     crate::statuses::schema(&mut schema);
     crate::inbox::schema(&mut schema);
     crate::bots::schema(&mut schema);
+    crate::automation_hooks::schema(&mut schema);
     crate::vcs::forge::schema(&mut schema);
     crate::conversation_tools::schema(&mut schema);
     crate::triage::schema(&mut schema);

@@ -201,6 +201,7 @@ pub(super) fn open(c: &Context<'_>, q: &Value) -> Result<Value> {
         ("automation", "automation"),
         ("task", "task"),
         ("run", "run"),
+        ("machine", "machine"),
     ] {
         if let Some(id) = row.fields[field].as_str()
             && let Ok(r) = c.readable(kind, id)
@@ -218,7 +219,9 @@ pub(super) fn open(c: &Context<'_>, q: &Value) -> Result<Value> {
     if q["op"] == "inbox.open" && row.fields["read"] != true {
         crate::actions::notification(c, &json!({"id":row.id,"action":"read"}))?;
     }
-    Ok(json!({"target":target,"comment":comment.map(|r|r.id),"space":c.space}))
+    Ok(
+        json!({"target":target,"comment":comment.map(|r|r.id),"space":c.space,"storage":row.fields["kind"]=="storage_pressure"&&target.kind=="machine"}),
+    )
 }
 pub(super) fn feed(c: &Context<'_>, q: &Value) -> Result<Value> {
     let org = c.org_id()?;

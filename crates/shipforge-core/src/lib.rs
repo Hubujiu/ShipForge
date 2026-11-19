@@ -1,6 +1,8 @@
 //! The transactional workspace operations used by every ShipForge client.
 mod access;
 mod actions;
+mod automation_hooks;
+pub use automation_hooks::WebhookReply;
 mod agents;
 mod attachments;
 mod bots;
@@ -11,6 +13,7 @@ mod discussions;
 pub use conversation_tools::documents::parts as document_link_parts;
 mod domain;
 mod git_workspace;
+pub use git_workspace::remote_url as git_remote_url;
 mod identity;
 mod im;
 mod inbox;
@@ -235,6 +238,7 @@ impl Store {
             && !op.starts_with("bugly.")
             && !op.starts_with("im.")
             && !op.starts_with("bot.")
+            && !op.starts_with("automation.hook.")
             && !matches!(op, "inbox.open" | "followers.change")
             && !op.starts_with("invitation.");
         let key = if cache {
@@ -306,6 +310,7 @@ impl Store {
                 triage::execute(&c, op, &request)
             }
             op if task_assistants::handles(op) => task_assistants::execute(&c, op, &request),
+            op if op.starts_with("automation.hook.") => automation_hooks::execute(&c, &request, op),
             op if bots::handles(op) => bots::execute(&c, op, &request),
             op if conversation_tools::handles(op) => conversation_tools::execute(&c, op, &request),
             "project.timeline" => project_timeline::timeline(&c, &request),

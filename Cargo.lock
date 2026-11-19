@@ -6155,7 +6155,7 @@ dependencies = [
 
 [[package]]
 name = "shipforge-cli"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "clap",
  "serde_json",
@@ -6165,7 +6165,7 @@ dependencies = [
 
 [[package]]
 name = "shipforge-client"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "aes",
  "base64 0.22.1",
@@ -6193,7 +6193,7 @@ dependencies = [
 
 [[package]]
 name = "shipforge-core"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "base64 0.22.1",
  "chrono",
@@ -6212,7 +6212,7 @@ dependencies = [
 
 [[package]]
 name = "shipforge-desktop"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "chrono",
  "embed-resource",
@@ -6234,7 +6234,7 @@ dependencies = [
 
 [[package]]
 name = "shipforge-server"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "base64 0.22.1",
  "clap",
@@ -6253,9 +6253,10 @@ dependencies = [
 
 [[package]]
 name = "shipforge-worker"
-version = "0.15.0"
+version = "0.16.0"
 dependencies = [
  "base64 0.22.1",
+ "chrono",
  "clap",
  "dunce",
  "libc",
@@ -6859,8 +6860,6 @@ dependencies = [
 [[package]]
 name = "tiny_http"
 version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "389915df6413a2e74fb181895f933386023c71110878cd0825588928e64cdc82"
 dependencies = [
  "ascii",
  "chunked_transfer",

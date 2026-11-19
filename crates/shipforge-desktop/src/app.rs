@@ -11,6 +11,8 @@ mod account_ui;
 pub(crate) mod agent_directory;
 #[path = "assistant_ui.rs"]
 pub(crate) mod assistant_ui;
+#[path = "automation_run_ui.rs"]
+pub(crate) mod automation_run_ui;
 #[path = "chat_actions.rs"]
 pub(crate) mod chat_actions;
 #[path = "conversation_ui.rs"]
@@ -47,6 +49,8 @@ pub(crate) mod space_ui;
 pub(crate) mod status_ui;
 #[path = "task_assistant_ui.rs"]
 pub(crate) mod task_assistant_ui;
+#[path = "webhook_ui.rs"]
+pub(crate) mod webhook_ui;
 #[path = "workspace_ui.rs"]
 pub(crate) mod workspace_ui;
 use serde_json::{Map, Value, json};
@@ -87,6 +91,7 @@ impl Default for Location {
 pub enum UiAction {
     SendAssistantDraft,
     TaskAssist(task_assistant_ui::Action),
+    RuleHistory(automation_run_ui::Action),
     GitWorkspace(git_workspace_ui::Target),
     FoldStatuses(String, bool),
     MachineManagement(machine_management::Action),
@@ -94,6 +99,7 @@ pub enum UiAction {
     LibraryDetails(String),
     Forge(repository_ui::Action),
     Bot(personal_bots_ui::Action),
+    Webhook(webhook_ui::Action),
     IdentityProfile,
     IdentityClose,
     Inbox(inbox_ui::Action),
@@ -171,6 +177,7 @@ enum After {
     Library(market_ui::Reply),
     Forge(repository_ui::Next),
     Bot(personal_bots_ui::Reply),
+    Webhook(webhook_ui::Next),
     Identity(identity_ui::Reply),
     Inbox(inbox_ui::Reply),
     DirectoryOpen,
@@ -179,6 +186,12 @@ enum After {
     Review(review_ui::Response),
     Conversation(conversation_ui::Reply),
     OrganizedChat,
+    ForkWorkspace {
+        room: String,
+        message: String,
+        space: String,
+        revision: u64,
+    },
     OpenChat,
     SpacePreview(Record),
     SpaceSuccessors(Record),
@@ -198,7 +211,10 @@ enum After {
     Saved(String),
     Notice(String),
     Search(String),
-    SearchTarget { space: String, revision: u64 },
+    SearchTarget {
+        space: String,
+        revision: u64,
+    },
     View(String),
     Who,
     Versions(Record),
@@ -222,6 +238,7 @@ struct Pending {
 pub struct Workbench {
     pub assistant_draft: crate::controls::Field,
     pub status_folds: HashMap<String, bool>,
+    rule_pages: automation_run_ui::Pages,
     pub offline: bool,
     pub people_query: String,
     pub people_kind: &'static str,
@@ -240,6 +257,7 @@ pub struct Workbench {
     pub rows: Rows,
     pub errors: BTreeMap<String, String>,
     pub form: Option<Form>,
+    hook_parents: Vec<Form>,
     pub motion: Motion,
     pub root_focus: FocusHandle,
     pub modal_focus: FocusHandle,
@@ -319,8 +337,10 @@ impl Workbench {
             loc,
             rows: Rows::new(),
             status_folds: HashMap::new(),
+            rule_pages: Default::default(),
             errors: BTreeMap::new(),
             form: None,
+            hook_parents: Vec::new(),
             motion: Motion::default(),
             root_focus,
             modal_focus: cx.focus_handle(),
@@ -515,6 +535,9 @@ impl Workbench {
             Page::Spaces | Page::Organizations => kinds.push("organization"),
             Page::Artifacts => kinds.push("artifact"),
             Page::Agents | Page::Crews | Page::Automations | Page::Tools => {
+                if self.loc.page == Page::Automations {
+                    kinds.extend(["project", "member"]);
+                }
                 if self.loc.page == Page::Agents {
                     kinds.extend(["agent_directory", "agent_archived"]);
                 }
@@ -564,7 +587,13 @@ impl Workbench {
                         kinds.push("agent_history");
                     }
                 }
-                "automation" => kinds.extend(["run", "agent", "crew"]),
+                "automation" => kinds.extend([
+                    "automation_history",
+                    "automation_status",
+                    "agent",
+                    "crew",
+                    "member",
+                ]),
                 "project" | "iteration" => kinds.push("task"),
                 "machine" => kinds.push("run"),
                 _ => {}
@@ -611,6 +640,7 @@ impl Workbench {
         kinds.sort_unstable();
         kinds.dedup();
         let _ = self.backend.sender.send(Request::Read {
+            rule_cursor: self.rule_cursor(),
             language: crate::locale::language(),
             people: (self.people_kind, self.people_query.clone()),
             handler: self
@@ -980,6 +1010,7 @@ impl Workbench {
             After::Library(reply) => self.library_reply(reply, value, w, cx),
             After::Forge(reply) => self.repository_result(reply, value, w, cx),
             After::Bot(reply) => self.bot_reply(reply, value, w, cx),
+            After::Webhook(next) => self.webhook_reply(next, value, w, cx),
             After::Identity(reply) => self.identity_reply(reply, value, w, cx),
             After::Inbox(reply) => self.inbox_reply(reply, value, w, cx),
             After::DirectoryOpen => {
@@ -1015,6 +1046,16 @@ impl Workbench {
             After::Review(r) => self.review_response(r, value, w, cx),
             After::Work(r) => self.work_reply(r, value, w, cx),
             After::OrganizedChat => self.chat_organized(&value, w, cx),
+            After::ForkWorkspace {
+                room,
+                message,
+                space,
+                revision,
+            } => {
+                if revision == self.revision && space == self.loc.space {
+                    self.fork_options(room, message, space, value, w, cx);
+                }
+            }
             After::AssistantOpened => {
                 if self.loc.page == Page::Assistant {
                     self.read(false);
@@ -1465,9 +1506,13 @@ impl Workbench {
             return;
         }
         if let Some(f) = self.form.take() {
+            let nested = matches!(&f.mode, Mode::Webhook(_));
             f.origin
                 .unwrap_or_else(|| self.root_focus.clone())
                 .focus(w, cx);
+            if nested {
+                self.form = self.hook_parents.pop();
+            }
         }
         self.revision += 1;
     }
@@ -1491,6 +1536,20 @@ impl Workbench {
     ) {
         self.error = None;
         let mut value = Map::new();
+        if let Mode::Webhook(next) = &mode {
+            let nested = self.form.as_ref().is_some_and(|f| match &f.mode {
+                Mode::Edit(rule) => rule.kind == "automation",
+                Mode::Webhook(webhook_ui::HookForm::Settings(_)) => {
+                    !matches!(next, webhook_ui::HookForm::Settings(_))
+                }
+                _ => false,
+            });
+            if nested && let Some(parent) = self.form.take() {
+                self.hook_parents.push(parent);
+            }
+        } else {
+            self.hook_parents.clear();
+        }
         match &mode {
             Mode::OrgDefaults(r) => {
                 value.insert(
@@ -1540,6 +1599,7 @@ impl Workbench {
             Mode::Device(f) => value = f.prefill(),
             Mode::Forge(f) => value = f.prefill(),
             Mode::GitWorkspace(f) => value = f.prefill(),
+            Mode::Webhook(f) => value = f.prefill(),
             Mode::Bot(f) => {
                 value = f.prefill();
                 if matches!(f, personal_bots_ui::BotForm::Start(_))
@@ -1580,6 +1640,10 @@ impl Workbench {
             Mode::Workflow { op, record } if op.starts_with("task_assistant.") => {
                 value = record.fields.clone()
             }
+            Mode::Workflow {
+                op: "chat.fork.workspace",
+                record,
+            } => value = record.fields.clone(),
             Mode::Create(k) if k == "agent" => {
                 if let Some(default) = self
                     .find("space", &self.loc.space)
@@ -1682,6 +1746,7 @@ impl Workbench {
             Forge(action)=>self.repository_action(action),
             GitWorkspace(target)=>self.git_open(target),
             Bot(action)=>self.bot_action(action,w,cx),
+            Webhook(action)=>self.webhook_action(action),
             IdentityProfile => self.send(
                 json!({"op":"access.account.profile"}),
                 After::Identity(identity_ui::Reply::Profile),
@@ -1700,6 +1765,7 @@ impl Workbench {
             Directory(a) => self.directory_action(a, w, cx),
             Conversation(a) => self.communication_action(a, w, cx),
             TaskAssist(a)=>self.task_assist(a),
+            RuleHistory(a)=>self.rule_history_action(a),
             Review(a) => self.review_action(a, w, cx),
             Work(a) => self.work_action(a, w, cx),
             Inbox(a) => self.inbox_action(a, w, cx),
@@ -2229,6 +2295,7 @@ cx);
             Mode::Forge(f)=>self.repository_submit(f,Value::Object(values),w,cx),
             Mode::GitWorkspace(f)=>self.git_submit(f,Value::Object(values),w,cx)?,
             Mode::Bot(f)=>self.bot_submit(f,Value::Object(values),w,cx)?,
+            Mode::Webhook(f)=>self.webhook_submit(f,Value::Object(values),w,cx),
             Mode::Identity(f) => self.identity_submit(f, Value::Object(values))?,
             Mode::Directory(f) => self.directory_submit(f, values, w, cx)?,
             Mode::Library(f) => self.library_submit(f, values, w, cx)?,
@@ -2360,8 +2427,14 @@ cx);
                         cmd["space"] = json!(org);
                     }
                 }
+                let form_id=f.request_id;
                 if self.field_change(k, old, &cmd) {
                     return Ok(());
+                }
+                if k=="automation" && cmd["fields"]["triggers"].as_array().is_some_and(|list|list.iter().any(|t|t["type"]=="webhook")){
+                    cmd["action"]=cmd["op"].clone();cmd["op"]=json!("automation.hook.save");
+                    if cmd["action"]=="create"{cmd["id"]=json!(form_id.to_string());}
+                    self.send(cmd,After::Webhook(webhook_ui::Next::Saved),true);return Ok(());
                 }
                 self.send(cmd, After::Saved(k.clone()), true);
             }
@@ -2604,6 +2677,7 @@ cx);
                 self.backend.sender.send(Request::Attachment{ticket,command,path}).map_err(|e|e.to_string())?;
             }
             Mode::Workflow{op,record} if op.starts_with("task_assistant.")=>self.save_task_assistant(op,&record,values)?,
+            Mode::Workflow{op:"chat.fork.workspace",record}=>self.fork_submit(&record,Value::Object(values)),
             Mode::Workflow { op, record } => {
                 let mut q = Value::Object(values);
                 if op == "iteration.configure" {
@@ -2752,6 +2826,9 @@ cx);
         Ok(())
     }
     pub fn options(&self, source: &str) -> Vec<(String, String)> {
+        if source == "$fork_machines" {
+            return self.fork_targets();
+        }
         if source == "$git_space_repositories" {
             return self
                 .form
@@ -3110,6 +3187,9 @@ mod agent_directory_ui_test;
 #[cfg(all(test, windows))]
 #[path = "assistant_ui_test.rs"]
 mod assistant_ui_test;
+#[cfg(test)]
+#[path = "automation_run_ui_test.rs"]
+mod automation_run_ui_test;
 #[cfg(all(test, windows))]
 #[path = "chat_ui_test.rs"]
 mod chat_ui_test;
@@ -3167,6 +3247,9 @@ mod task_assistant_ui_test;
 #[cfg(all(test, windows))]
 #[path = "tracker_ui_test.rs"]
 mod tracker_ui_test;
+#[cfg(all(test, windows))]
+#[path = "webhook_ui_test.rs"]
+mod webhook_ui_test;
 #[cfg(all(test, windows))]
 #[path = "wecom_ui_test.rs"]
 mod wecom_ui_test;

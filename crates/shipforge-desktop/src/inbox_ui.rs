@@ -358,6 +358,13 @@ impl Workbench {
                 self.read(false);
                 self.inbox.banner = None;
                 self.notice = None;
+                if v["storage"] == true && target.kind == "machine" {
+                    self.machine_management_action(
+                        super::machine_management::Action::Storage(target.id.clone()),
+                        w,
+                        cx,
+                    );
+                }
                 if let Some(comment) = v["comment"].as_str() {
                     self.work_action(
                         workspace_ui::Action::Locate {

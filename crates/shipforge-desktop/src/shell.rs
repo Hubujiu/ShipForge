@@ -659,6 +659,17 @@ impl Workbench {
         let mode = f.mode.clone();
         let entries = f.entries.clone();
         let trigger_ids = f.triggers.iter().map(|t| t.id).collect::<Vec<_>>();
+        let hook_ids = f
+            .triggers
+            .iter()
+            .filter_map(|t| {
+                t.original
+                    .get("id")
+                    .and_then(Value::as_str)
+                    .filter(|_| t.original.get("type").and_then(Value::as_str) == Some("webhook"))
+                    .map(|id| (t.id, id.to_owned()))
+            })
+            .collect::<std::collections::HashMap<_, _>>();
         let open_pick = f.open_pick;
         let error = f.error.clone();
         let search_term = f.entries.first().map(|e| e.raw(cx)).unwrap_or_default();
@@ -691,6 +702,9 @@ impl Workbench {
         }
         if let Mode::Bot(f) = &mode {
             body = body.child(self.bot_content(f, cx));
+        }
+        if let Mode::Webhook(f) = &mode {
+            body = body.child(self.webhook_content(f, cx));
         }
         if let Mode::MachineManagement(f) = &mode {
             body = body.child(self.machine_management_content(f, cx));
@@ -845,7 +859,24 @@ impl Workbench {
                     card = card.child(self.editor_row(i, e.clone(), open_pick, &mode, w, cx));
                 }
                 if kind == "webhook" {
-                    card = card.child(text("由此规则收到的 Webhook 事件触发。", 12., MUTED));
+                    if let Mode::Edit(rule) = &mode
+                        && let Some(id) = hook_ids.get(&trigger)
+                    {
+                        card = card.child(
+                            outlined(self.button(
+                                format!("edit-hook-{id}"),
+                                "安全设置",
+                                UiAction::Webhook(crate::app::webhook_ui::Action::Settings(
+                                    rule.id.clone(),
+                                    id.clone(),
+                                )),
+                                cx,
+                            ))
+                            .child(crate::locale::label("安全设置")),
+                        );
+                    } else {
+                        card = card.child(text("保存后可复制私密 URL。", 12., MUTED));
+                    }
                 }
                 right = right.child(card);
             }
@@ -893,7 +924,21 @@ impl Workbench {
             } else {
                 Vec::new()
             };
+            let hide_fork_branch = matches!(
+                mode,
+                Mode::Workflow {
+                    op: "chat.fork.workspace",
+                    ..
+                }
+            ) && entries
+                .iter()
+                .find(|entry| entry.spec.key == "workspace_mode")
+                .is_none_or(|entry| entry.raw(cx) != "branch");
             for (i, e) in entries.into_iter().enumerate().filter(|(_, e)| {
+                if hide_fork_branch && matches!(e.spec.key, "checkout_branch" | "target_machine_id")
+                {
+                    return false;
+                }
                 if let Mode::Device(dialog) = &mode
                     && !dialog.field_visible(e.spec.key, &proxy_mode)
                 {

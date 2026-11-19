@@ -262,6 +262,24 @@ Enter 换行	Enter inserts a new line
 执行指令	Instructions
 执行者	Assignee
 规则状态	Rule status
+状态或评论触发的会话负责人（留空使用触发者）	Conversation owner for status and comment triggers (leave empty for the triggering member)
+已暂停	Paused
+尚无运行	No runs yet
+健康	Healthy
+需要关注	Needs attention
+待执行	Pending
+已中断	Interrupted
+等待小队	Waiting for crew
+等待回复	Waiting for a reply
+正在取消	Canceling
+队列中	Queued
+手动	Manual
+时间表	Schedule
+暂停规则	Pause rule
+恢复规则	Resume rule
+归档规则	Archive rule
+打开运行对话	Open run conversation
+重试此运行	Retry this run
 添加触发器	Add trigger
 移除触发器	Remove trigger
 触发器	Triggers
@@ -1028,6 +1046,13 @@ TAPD 个人访问令牌	TAPD personal access token
 全部对话	All conversations
 对话列表操作	Conversation actions
 从此消息分叉	Fork from this message
+使用工作目录分叉	Fork with working directory
+选择分支对话的工作目录	Choose a directory for the conversation fork
+复用原对话目录	Reuse the original directory
+在独立工作树继续	Continue in a separate worktree
+原工作机	Original machine
+目标工作机	Target machine
+当前暂无可接续的工作目录	No continuation workspace is available yet
 绑定到已有任务	Bind to an existing task
 将对话转为任务	Convert conversation to task
 搜索任务标题或编号	Search by task title or number
@@ -1575,3 +1600,33 @@ Git 设置已保存	Git settings saved
 自定义值	Custom value
 自动选择会在 Agent 仓库清单为空时包含全部空间仓库。	Automatic selection includes all space repositories when the agent repository list is empty.
 组织 Git 设置	Organization Git settings
+保存存储策略	Save storage policy
+磁盘可用	Available disk space
+磁盘可用空间过低	Available disk space is low
+存储健康	Storage health
+存储空间正常	Storage is within its limits
+存储配额与清理策略	Storage quota and cleanup policy
+符合保留策略的容量	Eligible for scheduled cleanup
+固定工作区	Pin workspace
+含本地 Git 数据	Local Git data requires review
+缓存保留天数	Cache retention in days
+缓存正在使用	Cache in use
+接近托管容量上限	Approaching the managed storage limit
+仅手动清理	Manual cleanup only
+启用定时安全清理	Enable scheduled safe cleanup
+启用后，工作机会按保留期限重新核验并回收符合条件的数据。	When enabled, the worker checks the retention policy again before reclaiming eligible data.
+清理间隔（分钟）	Cleanup interval in minutes
+取消固定工作区	Unpin workspace
+仍有工作树引用	Referenced by a worktree
+尚无完整磁盘统计	Disk measurements are unavailable
+托管 Git 缓存	Managed Git cache
+托管容量和可用磁盘空间均已触发提醒	Managed storage and free disk space have both reached their alert thresholds
+托管容量上限	Managed storage limit
+托管容量上限（GiB，0 表示不限）	Managed storage limit in GiB (0 for unlimited)
+显示上一次统计，磁盘状态可能已变化。	Showing the last measurement. Current disk usage may differ.
+已固定	Pinned
+已启用定时清理	Scheduled cleanup enabled
+后台统计	Background measurement
+定时安全清理	Scheduled safe cleanup
+终态目录保留天数	Finished workspace retention in days
+最低磁盘可用空间（GiB）	Minimum free disk space in GiB

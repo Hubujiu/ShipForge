@@ -24,6 +24,7 @@ def verify_manuals(payload):
     required = (
         "README.md", "LICENSE", "docs/windows.md", "docs/cli.md", "docs/protocol.schema.json",
         "skills/shipforge/SKILL.md", "licenses/LUCIDE-LICENSE.txt",
+        "licenses/tiny-http-LICENSE-MIT", "licenses/tiny-http-LICENSE-APACHE", "licenses/tiny-http-SHIPFORGE.md",
         "crates/shipforge-worker/README.md", "crates/shipforge-core/PROVIDERS.md",
     )
     for name in required:

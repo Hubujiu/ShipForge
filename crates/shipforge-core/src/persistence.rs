@@ -54,6 +54,7 @@ pub(crate) fn initialize(db: &mut Connection) -> Result<()> {
     crate::inbox::init(&tx)?;
     crate::triage::init(&tx)?;
     crate::bots::init(&tx)?;
+    crate::automation_hooks::init(&tx)?;
     crate::conversation_tools::init(&tx)?;
     tx.pragma_update(None, "application_id", APP_ID)
         .map_err(storage)?;

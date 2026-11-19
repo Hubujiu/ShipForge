@@ -1,13 +1,17 @@
 use super::*;
 use crate::{conflict, forbidden, invalid, storage};
+mod policy;
 const OPS: &[&str] = &[
     "machine.storage.preview",
+    "machine.storage.configure",
+    "machine.storage.pin",
     "machine.storage.request",
     "machine.storage.take",
     "machine.storage.reserve",
     "machine.storage.finish",
 ];
 pub(super) fn init(db: &Connection) -> Result<()> {
+    policy::init(db)?;
     db.execute_batch("CREATE TABLE IF NOT EXISTS sf_storage_inventory(space TEXT,machine TEXT,summary TEXT,PRIMARY KEY(space,machine));
     CREATE TABLE IF NOT EXISTS sf_storage_jobs(space TEXT,machine TEXT,id TEXT,command TEXT,state TEXT,lease TEXT,expires INTEGER,outcome TEXT,at INTEGER,PRIMARY KEY(space,id));CREATE UNIQUE INDEX IF NOT EXISTS sf_storage_single ON sf_storage_jobs(space,machine) WHERE state IN ('queued','running','committing');
     CREATE TRIGGER IF NOT EXISTS sf_storage_machine_removed AFTER DELETE ON records WHEN OLD.kind='machine' BEGIN DELETE FROM sf_storage_inventory WHERE space=OLD.space AND machine=OLD.id;DELETE FROM sf_storage_jobs WHERE space=OLD.space AND machine=OLD.id;END;").map_err(storage)
@@ -42,7 +46,10 @@ fn cleaned(q: &Value) -> Result<Value> {
         if !key(&item["id"])
             || !key(&item["snapshot"])
             || !keys.insert(item["id"].as_str().unwrap())
-            || !matches!(item["category"].as_str(), Some("run" | "task" | "crew"))
+            || !matches!(
+                item["category"].as_str(),
+                Some("run" | "task" | "crew" | "cache")
+            )
         {
             return Err(invalid("invalid storage entry"));
         }
@@ -61,12 +68,20 @@ fn cleaned(q: &Value) -> Result<Value> {
                     | "git_locked"
                     | "unreadable"
                     | "recovery"
+                    | "attached_worktree"
+                    | "local_changes"
+                    | "cache_in_use"
             )
         });
-        entries.push(json!({"id":item["id"],"snapshot":item["snapshot"],"category":item["category"],"bytes":item["bytes"].as_u64().unwrap_or(0),"files":item["files"].as_u64().unwrap_or(0),"runs":runs,"protection":reason}));
+        let protection = if item["protection"].is_null() {
+            None
+        } else {
+            Some(reason.unwrap_or("unverified"))
+        };
+        entries.push(json!({"id":item["id"],"snapshot":item["snapshot"],"category":item["category"],"bytes":item["bytes"].as_u64().unwrap_or(0),"files":item["files"].as_u64().unwrap_or(0),"runs":runs,"protection":protection,"last_used_at":item["last_used_at"].as_i64(),"safe_for_schedule":item["safe_for_schedule"]==true}));
     }
     Ok(
-        json!({"entries":entries,"scanned_at":now(),"total_bytes":q["total_bytes"].as_u64().unwrap_or(0),"other_bytes":q["other_bytes"].as_u64().unwrap_or(0),"pending_reclaim_bytes":q["pending_reclaim_bytes"].as_u64().unwrap_or(0),"omitted":q["omitted"].as_u64().unwrap_or(0)}),
+        json!({"entries":entries,"scanned_at":now(),"total_bytes":q["total_bytes"].as_u64().unwrap_or(0),"other_bytes":q["other_bytes"].as_u64().unwrap_or(0),"pending_reclaim_bytes":q["pending_reclaim_bytes"].as_u64().unwrap_or(0),"omitted":q["omitted"].as_u64().unwrap_or(0),"available_bytes":q["available_bytes"].as_u64(),"local_hour":q["local_hour"].as_u64().filter(|h|*h<24)}),
     )
 }
 fn condition(
@@ -76,6 +91,25 @@ fn condition(
     runs: &[Record],
 ) -> Result<(Option<&'static str>, Option<String>)> {
     if !item["protection"].is_null() {
+        return Ok((None, None));
+    }
+    if policy::pinned(c, machine, item)? {
+        return Ok((Some("pinned"), None));
+    }
+    if item["category"] == "cache" {
+        for run in runs.iter().filter(|r| {
+            r.fields["machine_id"] == machine || r.fields["config"]["machine_id"] == machine
+        }) {
+            if matches!(
+                run.fields["status"].as_str(),
+                Some("running" | "cancelling" | "queued")
+            ) {
+                return Ok((Some("active"), None));
+            }
+            if policy::outbox(c, run)? {
+                return Ok((Some("pending"), None));
+            }
+        }
         return Ok((None, None));
     }
     let ids = array_ids(&item["runs"])?;
@@ -90,6 +124,15 @@ fn condition(
         let f = &run.fields;
         if f["machine_id"] != machine || c.readable("run", id).is_err() {
             return Ok((Some("private_or_unknown"), None));
+        }
+        if f["pinned"] == true {
+            return Ok((Some("pinned"), None));
+        }
+        if f["chat_id"].is_string() {
+            return Ok((Some("conversation"), None));
+        }
+        if policy::outbox(c, run)? {
+            return Ok((Some("pending"), None));
         }
         if f["status"] != "done" {
             return Ok((
@@ -124,8 +167,6 @@ fn condition(
                 return Ok((Some("recovery"), Some(task.title)));
             }
             title = Some(task.title);
-        } else if f["chat_id"].is_string() {
-            return Ok((Some("conversation"), None));
         } else {
             title = Some(run.title.clone());
         }
@@ -159,7 +200,7 @@ fn history(c: &Context<'_>, m: &str) -> Result<Vec<Value>> {
             ))
         })
         .map_err(storage)?;
-    result.map(|row|{let(id,body,state,outcome)=row.map_err(storage)?;let body:Value=serde_json::from_str(&body).map_err(storage)?;Ok(json!({"id":id,"action":body["action"],"workspace":body["workspace"],"state":state,"outcome":outcome}))}).collect()
+    result.map(|row|{let(id,body,state,outcome)=row.map_err(storage)?;let body:Value=serde_json::from_str(&body).map_err(storage)?;Ok(json!({"id":id,"action":body["action"],"workspace":body["workspace"],"state":state,"outcome":outcome,"scheduled":body["cycle"].is_string()}))}).collect()
 }
 fn historical(c: &Context<'_>, machine: &str) -> Result<Vec<Value>> {
     let mut out = Vec::new();
@@ -177,15 +218,29 @@ fn historical(c: &Context<'_>, machine: &str) -> Result<Vec<Value>> {
     Ok(out)
 }
 pub(super) fn dispatch(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
-    if matches!(op, "machine.storage.preview" | "machine.storage.request") {
+    if matches!(
+        op,
+        "machine.storage.preview"
+            | "machine.storage.request"
+            | "machine.storage.configure"
+            | "machine.storage.pin"
+    ) {
         let m = c.readable("machine", req(q, "id")?)?;
         if m.fields["owner"] != c.actor {
             return Err(forbidden("only the machine owner manages local storage"));
         }
         let mut listing = inventory(c, &m.id)?;
+        if op == "machine.storage.configure" {
+            return policy::configure(c, &m, q);
+        }
+        if op == "machine.storage.pin" {
+            return policy::pin(c, &m, q, &listing);
+        }
         if op == "machine.storage.preview" {
+            policy::decorate(c, &m, &mut listing)?;
             let runs = c.records("run")?;
             for v in listing["entries"].as_array_mut().into_iter().flatten() {
+                v["pinned"] = json!(policy::pinned(c, &m.id, v)?);
                 let (protection, title) = condition(c, &m.id, v, &runs)?;
                 if v["protection"].is_null() {
                     v["protection"] = json!(protection);
@@ -245,7 +300,8 @@ pub(super) fn dispatch(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
     }
     let m = authenticate(c, q)?;
     if op == "machine.storage.take" {
-        let job:Option<(String,String)>=c.db.query_row("SELECT id,command FROM sf_storage_jobs WHERE space=? AND machine=? AND (state='queued' OR (state='running' AND expires<=?)) ORDER BY at LIMIT 1",params![c.space,m.id,now()],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(storage)?;
+        policy::start_due(c, &m, q["policy_version"].as_u64() == Some(1))?;
+        let job:Option<(String,String)>=c.db.query_row("SELECT id,command FROM sf_storage_jobs WHERE space=? AND machine=? AND (state='queued' OR (state='running' AND expires<=?)) AND (json_extract(command,'$.cycle') IS NULL OR ?) ORDER BY at LIMIT 1",params![c.space,m.id,now(),q["policy_version"].as_u64()==Some(1)],|r|Ok((r.get(0)?,r.get(1)?))).optional().map_err(storage)?;
         let Some((id, body)) = job else {
             return Ok(Value::Null);
         };
@@ -264,7 +320,13 @@ pub(super) fn dispatch(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
         if state != "running" || body["action"] != "clean" {
             return Err(conflict("storage request cannot commit"));
         }
-        check(c, &m.id, &inventory(c, &m.id)?, &body)?;
+        let owner = Context {
+            actor: req(&m.fields, "owner")?,
+            ..*c
+        };
+        let summary = inventory(c, &m.id)?;
+        let item = check(&owner, &m.id, &summary, &body)?;
+        policy::reserve(&owner, &m, &body, &summary, item)?;
         c.db.execute(
             "UPDATE sf_storage_jobs SET state='committing',expires=? WHERE space=? AND id=?",
             params![now() + 120_000, c.space, id],
@@ -306,12 +368,16 @@ pub(super) fn dispatch(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
         ],
     )
     .map_err(storage)?;
+    policy::finished(c, &m, &body, q["inventory"].is_object())?;
     Ok(json!({"id":id,"outcome":outcome}))
 }
 pub(super) fn schema(s: &mut Value) {
+    policy::schema(s);
     for op in OPS {
         let keys = match *op {
             "machine.storage.preview" => vec!["id"],
+            "machine.storage.configure" => vec!["id", "expected_rev", "policy"],
+            "machine.storage.pin" => vec!["id", "workspace", "pinned"],
             "machine.storage.request" => vec!["id", "action"],
             "machine.storage.take" => vec!["machine_id", "machine_key"],
             "machine.storage.reserve" => vec!["machine_id", "machine_key", "id", "lease"],

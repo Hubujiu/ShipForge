@@ -221,7 +221,9 @@ pub(crate) fn execute(c: &Context<'_>, op: &str, q: &Value) -> Result<Value> {
 }
 
 pub(crate) fn execution(c: &Context<'_>, run: &Record) -> Result<Value> {
-    if run.fields["config"]["directory_mode"] == "temporary"
+    let fork = &run.fields["directory_fork"];
+    if (run.fields["config"]["directory_mode"] == "temporary"
+        && (fork.is_null() || fork["source_machine"] == fork["machine"]))
         || !matches!(run.fields["handler_kind"].as_str(), Some("agent" | "crew"))
     {
         return Ok(Value::Null);
@@ -235,7 +237,12 @@ pub(crate) fn execution(c: &Context<'_>, run: &Record) -> Result<Value> {
     let layers = layers(&requester, Some(&agent), true)?;
     let (author, _) = layers.author();
     let repositories = layers.repositories(run.fields["checkout_branch"].as_str());
-    Ok(json!({"author":author.resolve(&requester,&agent)?,"repositories":repositories}))
+    let trigger = if run.fields["automation_id"].is_string() {
+        run.fields["trigger_actor"].as_str()
+    } else {
+        Some(requester.actor)
+    };
+    Ok(json!({"author":author.resolve(&requester,&agent,trigger)?,"repositories":repositories}))
 }
 
 pub(crate) fn checkout_branch(q: &Value) -> Result<Option<&str>> {
@@ -243,6 +250,10 @@ pub(crate) fn checkout_branch(q: &Value) -> Result<Option<&str>> {
         .filter(|value| !value.is_null())
         .map(repositories::branch)
         .transpose()
+}
+
+pub fn remote_url(raw: &str) -> Result<String> {
+    repositories::remote(raw)
 }
 
 pub(crate) fn schema(schema: &mut Value) {

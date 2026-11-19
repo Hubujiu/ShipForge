@@ -424,6 +424,88 @@
       "if": {
         "properties": {
           "op": {
+            "const": "chat.workspace"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "chat.fork"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "checkout_branch": {
+            "maxLength": 255,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "target_machine_id": {
+            "minLength": 1,
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "workspace_mode": {
+            "enum": [
+              "default",
+              "reuse",
+              "branch"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "message"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "run.report"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "workspace_checkpoint": {
+            "properties": {
+              "git": {
+                "type": "boolean"
+              },
+              "repository": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "git"
+            ],
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "const": "directory.people"
           }
         }
@@ -668,6 +750,124 @@
         "properties": {
           "op": {
             "enum": [
+              "automation.status",
+              "automation.history"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "cursor": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "limit": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "automation.lifecycle"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "action": {
+            "enum": [
+              "pause",
+              "resume",
+              "archive"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "action",
+          "expected_rev"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
+              "automation.conversation",
+              "automation.retry"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "run": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "run"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "automation"
+          },
+          "op": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "fields": {
+            "properties": {
+              "archived": {
+                "type": "boolean"
+              },
+              "project": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "run_owner": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "enum": [
               "machine.runtimes"
             ]
           }
@@ -819,6 +1019,93 @@
       "if": {
         "properties": {
           "op": {
+            "const": "machine.storage.take"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "policy_version": {
+            "const": 1
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "machine.storage.configure"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "expected_rev": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "policy": {
+            "additionalProperties": false,
+            "properties": {
+              "cache_retention_days": {
+                "maximum": 3650,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "enabled": {
+                "type": "boolean"
+              },
+              "interval_minutes": {
+                "maximum": 10080,
+                "minimum": 1,
+                "type": "integer"
+              },
+              "min_free_gib": {
+                "maximum": 1048576,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "quota_gib": {
+                "maximum": 1048576,
+                "minimum": 0,
+                "type": "integer"
+              },
+              "retention_days": {
+                "maximum": 3650,
+                "minimum": 0,
+                "type": "integer"
+              }
+            },
+            "type": "object"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "machine.storage.pin"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "pinned": {
+            "type": "boolean"
+          },
+          "workspace": {
+            "pattern": "^[a-fA-F0-9]{64}$",
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "const": "machine.storage.preview"
           }
         }
@@ -826,6 +1113,38 @@
       "then": {
         "required": [
           "id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "machine.storage.configure"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "expected_rev",
+          "policy"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "machine.storage.pin"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "id",
+          "workspace",
+          "pinned"
         ]
       }
     },
@@ -5120,6 +5439,111 @@
       "if": {
         "properties": {
           "op": {
+            "enum": [
+              "automation.hook.settings",
+              "automation.hook.history",
+              "automation.hook.issue",
+              "automation.hook.rotate",
+              "automation.hook.revoke",
+              "automation.hook.configure",
+              "automation.hook.secret",
+              "automation.hook.reset_secret"
+            ]
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "expected_version": {
+            "minimum": 0,
+            "type": "integer"
+          },
+          "trigger_id": {
+            "minLength": 1,
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "trigger_id"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "automation.hook.save"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "action": {
+            "enum": [
+              "create",
+              "update"
+            ]
+          }
+        },
+        "required": [
+          "action"
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "automation.hook.configure"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "allowlist": {
+            "items": {
+              "maxLength": 124,
+              "type": "string"
+            },
+            "maxItems": 20,
+            "type": "array"
+          },
+          "ip_filter": {
+            "type": "boolean"
+          },
+          "signing": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
+            "const": "automation.hook.history"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "before": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "limit": {
+            "maximum": 100,
+            "minimum": 1,
+            "type": "integer"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "op": {
             "const": "forge.status"
           }
         }
@@ -7909,6 +8333,7 @@
         "assistant.history",
         "chat.sidebar",
         "chat.history",
+        "chat.workspace",
         "chat.invitations",
         "chat.share.read",
         "onboarding.catalog",
@@ -8073,6 +8498,8 @@
         "machine.stopped",
         "machine.runtimes",
         "machine.storage.preview",
+        "machine.storage.configure",
+        "machine.storage.pin",
         "machine.storage.request",
         "machine.storage.take",
         "machine.storage.reserve",
@@ -8097,10 +8524,24 @@
         "run.tool",
         "run.discussion",
         "automation.fire",
+        "automation.history",
+        "automation.status",
+        "automation.lifecycle",
+        "automation.conversation",
+        "automation.retry",
         "automation.tick",
         "connector.ingest",
         "connector.export",
         "bot.bindings",
+        "automation.hook.settings",
+        "automation.hook.history",
+        "automation.hook.save",
+        "automation.hook.issue",
+        "automation.hook.rotate",
+        "automation.hook.revoke",
+        "automation.hook.configure",
+        "automation.hook.secret",
+        "automation.hook.reset_secret",
         "forge.status",
         "forge.thread",
         "forge.internal",

@@ -136,10 +136,12 @@ def verify(bin_dir):
     print("Verified member scopes, two clients, request replay, concurrent writes, offline drafts, reconnect and revocation.")
     import_module("verify-slack").verify(bin_dir, start, stop)
     import_module("verify-space-task-assistants").verify(bin_dir)
+    import_module("verify-automation-history").verify(bin_dir)
     import_module("verify-vcs").verify(bin_dir, start, stop)
     import_module("verify-forge").verify(bin_dir)
     import_module("verify-chat").verify(bin_dir, start, stop)
     import_module("verify-chat-workflows").verify(bin_dir)
+    import_module("verify-conversation-workspaces").verify(bin_dir)
     import_module("verify-assistant-groups").verify(bin_dir)
     import_module("verify-conversation-tools").verify(bin_dir)
     import_module("verify-work-collaboration").verify(bin_dir)
@@ -157,6 +159,7 @@ def verify(bin_dir):
     import_module("verify-personal-bots").verify(bin_dir)
     import_module("verify-lark-bots").verify(bin_dir)
     import_module("verify-wecom-bots").verify(bin_dir)
+    import_module("verify-automation-webhooks").verify(bin_dir)
     import_module("verify-personal-tokens").verify(bin_dir, start, stop, connect)
     import_module("verify-accounts").verify(bin_dir, start, stop, connect)
     import_module("verify-identity").verify(bin_dir)
@@ -165,6 +168,7 @@ def verify(bin_dir):
     import_module("verify-inbox").verify(bin_dir)
     import_module("verify-agent-directory").verify(bin_dir)
     import_module("verify-git-workspaces").verify(bin_dir)
+    import_module("verify-storage-policy").verify(bin_dir)
     import_module("verify-skill-market").verify(bin_dir)
 
 
