@@ -1,4 +1,5 @@
 mod auth;
+mod bugly;
 mod github;
 mod jira;
 mod slack;
@@ -133,6 +134,7 @@ fn serve(
 ) -> Result<(), String> {
     let database = dir.join("workspace.sqlite3");
     let server = Server::http(addr).map_err(|e| format!("server: {e}"))?;
+    let bugly_origin = bugly::origin(&server.server_addr().to_string())?;
     let mut scheduler = Store::open(&database)?;
     std::thread::Builder::new()
         .name("shipforge-iteration-clock".into())
@@ -166,8 +168,13 @@ fn serve(
             let routes = &routes;
             let github = &github;
             let jira = &jira;
+            let bugly_origin = &bugly_origin;
             scope.spawn(move||{
                 for mut request in server.incoming_requests() {
+                    if request.url().starts_with("/v1/bugly/") {
+                        bugly::respond(request, &auth, &mut store, bugly_origin);
+                        continue;
+                    }
                     if request.url().starts_with("/rest/api/") {
                         jira.respond(request, &auth, &mut store);
                         continue;
@@ -330,9 +337,17 @@ fn dispatch(
         .as_str()
         .ok_or_else(|| "invalid: op is required".to_owned())?;
     if op.starts_with("access.") {
-        return auth::execute(auth, p, &body);
+        return auth::execute(auth, p, store, &body);
     }
     auth::authorize(p, &body)?;
+    if op == "machine.register" && p.personal {
+        let space = body["space"].as_str().unwrap_or("default").to_string();
+        let record = store.execute(&p.actor, body)?;
+        if let Some(id) = record["id"].as_str() {
+            auth.associate_machine(p, &space, id)?;
+        }
+        return Ok(record);
+    }
     if op == "automation.fire" && p.scope == "hook" {
         body["source"] = json!("webhook");
     } else if op == "provider.ingest" && body.get("provider").is_none() {

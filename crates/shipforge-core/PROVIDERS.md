@@ -117,7 +117,10 @@ GitHub 使用 `X-GitHub-Delivery`，GitLab 使用 `X-Gitlab-Event-UUID`。在 CL
 | 参考产品中的平台 | 当前可用入口 | 由接入方提供的部分 |
 | --- | --- | --- |
 | GitHub Issues | 机器工具的 Issues 同步适配器、通用事件入库和回写数据导出 | 已授权的 GitHub 访问、仓库绑定 |
-| 禅道、TAPD、Bugly、PingCode、Teambition、Zoho BugTracker 或兼容 Jira 的自建接口 | 文件字段映射导入，或 `connector.ingest` 按外部工单持续更新 | 事件订阅和载荷转换，各平台账号与回写 |
+| 腾讯 Bugly | 原生提单地址、按产品映射建任务、去重及签名状态回写 | 产品配置与可选 OpenAPI 凭据。[接入步骤](../../docs/vendor-imports.md) |
+| Zoho BugTracker | OAuth 项目发现、增量预览、确认和按批次撤销 | 只读门户令牌与项目绑定。[接入步骤](../../docs/vendor-imports.md) |
+| TAPD | 公司或个人身份的项目发现，需求和缺陷分页历史导入、立即检测和按批次回滚 | 公司 API 账号或个人访问令牌。[接入步骤及实时同步边界](../../docs/vendor-imports.md) |
+| 禅道、PingCode、Teambition 或兼容 Jira 的自建接口 | 文件字段映射导入，或 `connector.ingest` 按外部工单持续更新 | 事件订阅和载荷转换，各平台账号与回写 |
 | CNB、Gitee 及其他代码托管服务 | 由 relay 映射工单到 `connector.ingest`，或使用文件导入 | 提取平台工单并提供对象标识、投递标识和版本 |
 | 个人微信、QQ | 由 relay 映射文字消息到 `connector.ingest` | 来源鉴权、事件转换、机器人配置及回复 |
 

@@ -94,12 +94,21 @@ impl Context<'_> {
         }
     }
     pub(crate) fn visible(&self, r: &Record) -> Result<bool> {
+        if matches!(r.kind.as_str(), "message" | "run") && !crate::chat::check_inherited(self, r)? {
+            return Ok(false);
+        }
+        self.intrinsic_visibility(r)
+    }
+    pub(crate) fn intrinsic_visibility(&self, r: &Record) -> Result<bool> {
         let fields = &r.fields;
         if r.space != self.space {
             return Ok(false);
         }
         if r.kind == "chat" {
             return crate::chat::can_read(self, r);
+        }
+        if r.kind == "comment" && !crate::discussions::ancestry_visible(self, r)? {
+            return Ok(false);
         }
         if r.kind == "invitation" {
             return Ok(self.require_admin().is_ok());
@@ -184,6 +193,9 @@ impl Context<'_> {
         if let Some(room) = existing.filter(|r| r.kind == "chat") {
             crate::chat::can_edit(self, room)?;
         }
+        if let Some(view) = existing.filter(|r| r.kind == "view") {
+            crate::saved_views::can_edit(self, view)?;
+        }
         if kind == "space" {
             return match self.metadata_role()?.as_str() {
                 "owner" | "admin" => Ok(()),
@@ -227,6 +239,42 @@ impl Context<'_> {
     }
     pub(crate) fn authorize_replay(&self, q: &Value, result: &Value) -> Result<()> {
         let op = required(q, "op")?;
+        if op == "view.organize" {
+            self.readable("view", required(q, "id")?)?;
+            return Ok(());
+        }
+        if op == "view.save_as" {
+            self.readable("view", required(q, "id")?)?;
+            self.readable("view", required(result, "id")?)?;
+            return self.require_edit();
+        }
+        if matches!(op, "comment.resolve" | "comment.reopen") {
+            self.require_edit()?;
+            self.readable("task", required(q, "task_id")?)?;
+            self.readable("comment", required(q, "id")?)?;
+            self.readable("comment", required(result, "id")?)?;
+            return Ok(());
+        }
+        if matches!(
+            op,
+            "chat.fork" | "chat.convert" | "chat.bind_task" | "chat.organize" | "chat.send"
+        ) {
+            self.readable("chat", required(q, "id")?)?;
+            if op == "chat.fork" {
+                self.readable("message", required(q, "message")?)?;
+                self.readable("chat", required(result, "id")?)?;
+            }
+            if op == "chat.bind_task" {
+                self.readable("task", required(q, "task")?)?;
+            }
+            if op == "chat.convert" {
+                self.readable("run", required(result, "run")?)?;
+            }
+            if op == "chat.send" {
+                self.readable("message", required(result, "message")?)?;
+            }
+            return Ok(());
+        }
         if op == "iteration.close" {
             self.require_edit()?;
             self.readable("iteration", required(q, "id")?)?;

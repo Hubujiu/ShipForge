@@ -42,7 +42,8 @@ def main():
 
     for doc in docs:
         for number, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
-            for destination in re.findall(r"\]\(([^)]+)\)", line):
+            links = re.findall(r"\]\(([^)]+)\)", line) + re.findall(r"^\[[^\]]+\]:\s+(\S+)", line)
+            for destination in links:
                 target = urlsplit(destination.strip("<>"))
                 if target.scheme or target.netloc or not target.path:
                     continue
@@ -52,7 +53,7 @@ def main():
     if errors:
         print("\n".join(errors), file=sys.stderr)
         return 1
-    print(f"Checked {len(docs)} documents, {len(features)} features and {len(screen_ids)} screens.")
+    print(f"Checked {len(docs)} documents, {len(features)} feature groups and {len(screen_ids)} initial UI captures.")
     return 0
 
 

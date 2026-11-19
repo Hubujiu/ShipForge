@@ -4,6 +4,20 @@
 
 ## 建单、修改和重新打开
 
+TAPD 的 `tapd.credential` 保存当前身份的凭据，`tapd.projects` 发现可见项目，`tapd.preview` 的 `import_mode` 可选 `history`、`changes` 或 `refresh`。使用 `imports.commit` 确认当前预览。[TAPD 权限和模式](vendor-imports.md)
+
+### 对话列表、分叉与任务
+
+`chat.sidebar` 返回当前成员可见的对话，置顶项在前，其余按最近可见消息排序。`chat.organize` 接受 `id` 和 `action`，动作可选 `pin`、`unpin`、`hide` 或 `undo`。撤销隐藏需原操作返回的 `undo_token`。对话产生本人可见的新消息后会重新出现。`chat.history` 按原始发言顺序返回本人仍有权读取的消息。
+
+`chat.fork` 以指定 `message` 为最后一条继承消息，返回新分支记录。普通 Agent 对话和任务 Agent 对话均可分叉。`chat.bind_task` 用现有 `task` 绑定当前对话，`chat.convert` 则让 Agent 根据对话起草新任务。两项绑定操作均由对话所有者发起。`chat.send` 以 `body` 发送消息并将本轮排入该对话的运行队列。转换排队时返回运行 ID。工作机成功调用 `run.report` 时可提交 `task_draft` 对象，包含 `title` 和 `description` 两个字符串。创建和绑定在同一次数据库事务内完成。发送、分叉与转换可设置 `request_id` 安全重试。 [对话操作与示例](conversations.md)
+
+Zoho BugTracker 的连接器支持 `zoho.credential`、`zoho.projects` 和 `zoho.preview`。预览号可用于 `imports.commit` 和 `imports.rollback`，`imports.history` 查看批次。腾讯 Bugly 使用 `bugly.rotate` 创建提单地址，管理员可通过 `bugly.credentials`、`bugly.deliver` 和 `bugly.outbox` 管理可选的状态回写，`bugly.revoke` 断开接入。[字段、授权与可执行示例](vendor-imports.md)
+
+自建导入客户端先用 `imports.binding` 读取项目、绑定修订号和检查点，再用 `imports.stage` 提交该批来源数据并生成预览。Bugly 投递程序通过 `bugly.binding` 读取绑定的组织与产品，用 `bugly.claim` 领取待投递记录，随后用 `bugly.settle` 提交投递结果及租约。[请求字段与重试](vendor-imports.md)
+
+切换任务类型时用 `task.type.preview` 查看旧字段值的去向，再提交目标状态、需要补齐的值和用户确认。管理员解绑前可用 `task_type.bindings.preview` 查看受影响的任务数。保存视图支持 `view.catalog`、`view.organize`、`view.preview`、`view.run`、`view.save_as`、`view.share` 和 `view.open`。任务评论可用 `comment.thread` 定位，用 `comment.resolve` 或 `comment.reopen` 更新整个讨论串，执行中的 Agent 通过 `run.discussion` 提交。完整参数、权限和 JSON 示例见[任务类型、保存视图与讨论串](task-collaboration.md)。
+
 ### 空间成员、停用与侧栏
 
 `space.list` 返回当前身份可发现的空间，以及 `joined`、`can_join`、`can_leave` 和管理权限。组织成员使用 `space.join` 自主加入公开空间，`space.leave` 退出。两者都需要明确的 `space`，操作对象始终是当前身份。私有空间和访客通过成员邀请加入。
@@ -100,11 +114,16 @@ Agent 的 `fields.working_hours` 可设每周排班。例如对已有 Agent 提�
 
 ## 团队身份与离线草稿
 
+Windows 左侧的账号按钮打开本机保存的团队身份。每个账号分别保存最近进入的空间、页面、任务或视图。重启和切换会用该账号重新检查访问权。原有任务不可见时返回可访问空间的任务列表，已失效账号会标为需要重新登录。「从本机移除账号」移除该账号保存的登录信息，其他账号和服务端令牌可以继续使用。[HiFox 账号管理](https://help.hifox.com/docs/other/account-management)
+
 组织 Guest 仅可进入显式加入的下属空间。普通组织管理员可用 `space.list` 以及 `get` 或 `update` 空间对象查看和维护私有空间元数据。读取任务、列成员或接收该空间事件需已加入，写入取决于本人空间角色。将私有空间公开需要其内容管理权。单机工作区的安装主体 `owner` 拥有跨空间运维权限；团队服务签发给 `owner` 的令牌在其范围内也代表同一高权限身份。
 
 | 操作 | 用法 |
 | --- | --- |
 | `access.whoami`、`access.issue`、`access.list`、`access.revoke` | 查询当前登录身份；安装所有者可发放、列出或撤销令牌。发放时提交 `actor` 和 `scope`；明文令牌只在创建响应出现。令牌管理与空间成员权限一起生效。 |
+| `access.personal.issue`、`access.personal.list`、`access.personal.revoke` | 成员用团队登录凭据创建自己的个人令牌，提供用途 `label` 和有效期 `lifetime`。可选 `30d`（默认）、`90d`、`1y`（365 天）或 `never`。列表限本人的有效令牌，显示前缀、创建、最近使用、到期和关联机器，时间采用 Unix 秒。吊销传令牌 ID。 |
+| `profiles.list`、`profiles.use`、`profiles.forget` | 读取设备的账号列表与当前 ID，或按保存的 `id` 切换及移除。使用 `shipforge connect <服务地址> --token-stdin` 增加账号；附加 `--account <ID>` 可为同一服务与身份重新认证。旧版单账号文件在升级后仍可使用。 |
+| `profiles.remember` | 附带当前账号 `id` 以及 `location`，例如 `{"space":"default","page":"tasks","kind":"task","id":"design"}`。另一个账号激活后，旧窗口保存位置的请求会被拒绝。 |
 | `sync.status`、`sync.pending` | 查看当前连接、未发送的草稿及冲突。在网络不可达时，客户端可以重开同一身份最近缓存过的查询。 |
 | `sync.enqueue`、`sync.flush`、`sync.resolve` | 把原请求放入 `request` 字段排队。恢复连接后发送，冲突保留在队列。确认新版本后传入草稿 `id`、`expected_rev`；或用 `discard:true` 丢弃该笔草稿。 |
 
@@ -116,7 +135,11 @@ Agent 的 `fields.working_hours` 可设每周排班。例如对已有 Agent 提�
 
 团队业务请求可发到 `POST /v1/command` 并附 `Authorization: Bearer <token>`，响应采用 CLI 相同的成功或失败信封。`sync.*` 操作由设备上的客户端处理。终端可同时设置 `SHIPFORGE_SERVER` 和 `SHIPFORGE_TOKEN` 临时连接。日常使用可通过标准输入将令牌交给 `shipforge connect https://team.example.org --token-stdin`，用 `shipforge disconnect` 清除保存的连接。Windows 保存的令牌由当前系统用户的 DPAPI 加密。
 
-令牌范围可选 `read`、`write`、`worker` 和 `hook`。空间成员权限另行校验。只有持有写令牌的安装所有者 `owner` 能通过 API 管理令牌。签发回调凭据时同时指定 `space`、`resource`（`connector` 或 `automation`）与 `binding`（目标记录 ID）。例如，`{"op":"access.issue","actor":"owner","scope":"hook","space":"default","resource":"automation","binding":"weekday-report"}` 签发只可触发该规则的令牌。
+令牌范围可选 `read`、`write`、`worker` 和 `hook`。空间成员权限另行校验。安装所有者 `owner` 用团队写凭据管理安装级凭据。签发回调凭据时同时指定 `space`、`resource`（`connector` 或 `automation`）与 `binding`（目标记录 ID）。例如，`{"op":"access.issue","actor":"owner","scope":"hook","space":"default","resource":"automation","binding":"weekday-report"}` 签发只可触发该规则的令牌。
+
+团队登录凭据由安装所有者签发。成员在 Windows 的「设置 → 个人访问令牌」中管理自己用于 CLI、脚本或 Jira 的个人令牌。个人令牌继承签发凭据的身份和权限上限，业务数据仍按当前成员权限校验。服务器只保存摘要和展示前缀。使用相同 `request_id` 重试签发返回原 ID，完整值仅在首次成功响应中提供。
+
+从机器页创建连接令牌，或签发时设置 `source:"machine_setup"`，该凭据首次成功注册的机器会显示在个人列表中。CLI 的 `disconnect` 仅退出本机连接。服务端吊销会使下一个认证请求立即失败。通过个人令牌登录时可以查看个人列表并吊销自身。签发另一枚或管理其他令牌使用团队登录凭据，安装管理员撤销签发凭据也会停止其关联的个人令牌。[HiFox 个人令牌行为](https://help.hifox.com/docs/cli/access-tokens)
 
 ## 任务的人员与执行者
 

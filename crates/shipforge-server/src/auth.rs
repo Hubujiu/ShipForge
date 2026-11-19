@@ -4,6 +4,7 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 use std::time::Duration;
 use uuid::Uuid;
+mod personal;
 
 pub struct Auth(Connection);
 #[derive(Clone)]
@@ -11,6 +12,8 @@ pub struct Principal {
     pub actor: String,
     pub scope: String,
     pub id: String,
+    pub personal: bool,
+    prefix: String,
     resource: Option<String>,
     bound_space: Option<String>,
     binding: Option<String>,
@@ -31,7 +34,10 @@ impl Auth {
         db.execute_batch("PRAGMA journal_mode=WAL;
           CREATE TABLE IF NOT EXISTS tokens(id TEXT PRIMARY KEY, digest BLOB NOT NULL UNIQUE, actor TEXT NOT NULL,
           scope TEXT NOT NULL, label TEXT NOT NULL, created INTEGER NOT NULL, revoked INTEGER);
-          CREATE TABLE IF NOT EXISTS token_bindings(token_id TEXT PRIMARY KEY, space TEXT NOT NULL, resource TEXT NOT NULL, binding TEXT NOT NULL);").map_err(sql)?;
+          CREATE TABLE IF NOT EXISTS token_bindings(token_id TEXT PRIMARY KEY, space TEXT NOT NULL, resource TEXT NOT NULL, binding TEXT NOT NULL);
+          CREATE TABLE IF NOT EXISTS personal_tokens(
+            token_id TEXT PRIMARY KEY,issuer TEXT NOT NULL,prefix TEXT NOT NULL,expires INTEGER,last_used INTEGER,
+            lifetime TEXT NOT NULL,source TEXT NOT NULL,machine_space TEXT,machine_id TEXT,request_id TEXT,UNIQUE(issuer,request_id));").map_err(sql)?;
         Ok(Self(db))
     }
     pub fn issue(
@@ -65,11 +71,8 @@ impl Auth {
                 .ok_or("invalid: hook binding ID is required")?;
             binding = Some((space, resource, id));
         }
-        let id = Uuid::new_v4().to_string();
-        let token = format!("sf_{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
         let tx = self.0.unchecked_transaction().map_err(sql)?;
-        tx.execute("INSERT INTO tokens(id,digest,actor,scope,label,created) VALUES(?1,?2,?3,?4,?5,unixepoch())",
-            params![id,fingerprint(&token),actor,scope,label]).map_err(sql)?;
+        let (id, token) = Self::new_token(&tx, actor, scope, label)?;
         if let Some((space, resource, target)) = binding {
             tx.execute(
                 "INSERT INTO token_bindings(token_id,space,resource,binding) VALUES(?1,?2,?3,?4)",
@@ -79,6 +82,18 @@ impl Auth {
         }
         tx.commit().map_err(sql)?;
         Ok(json!({"id":id,"actor":actor,"scope":scope,"label":label,"token":token}))
+    }
+    fn new_token(
+        db: &Connection,
+        actor: &str,
+        scope: &str,
+        label: &str,
+    ) -> Result<(String, String), String> {
+        let id = Uuid::new_v4().to_string();
+        let token = format!("sf_{}{}", Uuid::new_v4().simple(), Uuid::new_v4().simple());
+        db.execute("INSERT INTO tokens(id,digest,actor,scope,label,created) VALUES(?1,?2,?3,?4,?5,unixepoch())",
+            params![id,fingerprint(&token),actor,scope,label]).map_err(sql)?;
+        Ok((id, token))
     }
     pub fn list(&self) -> Result<Value, String> {
         let mut s=self.0.prepare("SELECT id,actor,scope,label,created,revoked,b.space,b.resource,b.binding FROM tokens LEFT JOIN token_bindings b ON b.token_id=tokens.id ORDER BY created,id").map_err(sql)?;
@@ -106,20 +121,37 @@ impl Auth {
         if token.len() > 512 {
             return Err("unauthorized: invalid or revoked access token".into());
         }
-        self.0.query_row("SELECT actor,scope,id,b.space,b.resource,b.binding FROM tokens LEFT JOIN token_bindings b ON b.token_id=tokens.id WHERE digest=?1 AND revoked IS NULL",[fingerprint(token)],
-            |r| Ok(Principal{actor:r.get(0)?,scope:r.get(1)?,id:r.get(2)?,bound_space:r.get(3)?,resource:r.get(4)?,binding:r.get(5)?})).optional().map_err(sql)?
-            .ok_or_else(||"unauthorized: invalid or revoked access token".into())
+        let principal=self.0.query_row("SELECT t.actor,t.scope,t.id,b.space,b.resource,b.binding,p.token_id IS NOT NULL
+            FROM tokens t LEFT JOIN token_bindings b ON b.token_id=t.id LEFT JOIN personal_tokens p ON p.token_id=t.id
+            LEFT JOIN tokens issuer ON p.issuer=issuer.id WHERE t.digest=?1 AND t.revoked IS NULL
+            AND (p.expires IS NULL OR p.expires>unixepoch()) AND issuer.revoked IS NULL",[fingerprint(token)],
+            |r| Ok(Principal{actor:r.get(0)?,scope:r.get(1)?,id:r.get(2)?,bound_space:r.get(3)?,resource:r.get(4)?,binding:r.get(5)?,
+                personal:r.get(6)?,prefix:token.chars().take(11).collect()})).optional().map_err(sql)?
+            .ok_or_else(||"unauthorized: invalid, expired or revoked access token".to_owned())?;
+        if principal.personal {
+            self.0.execute("UPDATE personal_tokens SET last_used=unixepoch() WHERE token_id=?1 AND last_used IS NOT unixepoch()",
+                [&principal.id]).map_err(sql)?;
+        }
+        Ok(principal)
     }
 }
 
-pub fn execute(auth: &Auth, principal: &Principal, request: &Value) -> Result<Value, String> {
+pub fn execute(
+    auth: &Auth,
+    principal: &Principal,
+    store: &mut shipforge_core::Store,
+    request: &Value,
+) -> Result<Value, String> {
     let op = request["op"].as_str().unwrap_or("");
     if op == "access.whoami" {
         return Ok(
-            json!({"actor":principal.actor,"scope":principal.scope,"token_id":principal.id,"mode":"team"}),
+            json!({"actor":principal.actor,"scope":principal.scope,"token_id":principal.id,"prefix":principal.prefix,"personal":principal.personal,"mode":"team"}),
         );
     }
-    if principal.actor != "owner" || principal.scope != "write" {
+    if op.starts_with("access.personal.") {
+        return auth.personal_request(principal, store, op, request);
+    }
+    if principal.personal || principal.actor != "owner" || principal.scope != "write" {
         return Err("forbidden: only the installation owner can manage access tokens".into());
     }
     match op {
@@ -147,6 +179,7 @@ pub fn authorize(principal: &Principal, request: &Value) -> Result<(), String> {
                 | "run.claim"
                 | "run.heartbeat"
                 | "run.report"
+                | "run.discussion"
                 | "run.tool"
                 | "automation.tick"
         ),

@@ -47,13 +47,16 @@ pub(crate) fn write(c: &Context<'_>, q: &Value) -> Result<Value> {
     write_mode(c, q, true)
 }
 pub(crate) fn write_mode(c: &Context<'_>, q: &Value, notify: bool) -> Result<Value> {
-    write_inner(c, q, notify, None, false)
+    write_inner(c, q, notify, None, false, None)
 }
 pub(crate) fn write_import(c: &Context<'_>, q: &Value, notify: bool) -> Result<Value> {
-    write_inner(c, q, notify, None, true)
+    write_inner(c, q, notify, None, true, None)
 }
 pub(crate) fn write_with_files(c: &Context<'_>, q: &Value, files: Value) -> Result<Value> {
-    write_inner(c, q, true, Some(files), false)
+    write_inner(c, q, true, Some(files), false, None)
+}
+pub(crate) fn write_agent_comment(c: &Context<'_>, q: &Value, agent: &str) -> Result<Value> {
+    write_inner(c, q, true, None, false, Some(agent))
 }
 fn write_inner(
     c: &Context<'_>,
@@ -61,6 +64,7 @@ fn write_inner(
     notify: bool,
     files: Option<Value>,
     from_source: bool,
+    agent: Option<&str>,
 ) -> Result<Value> {
     let op = required(q, "op")?;
     let kind = required(q, "kind")?;
@@ -86,6 +90,12 @@ fn write_inner(
     if op == "delete" {
         let r = old.as_ref().ok_or_else(|| invalid("missing record"))?;
         validate_delete(c, r)?;
+        if kind == "comment" {
+            crate::discussions::delete(c, r)?;
+        }
+        if kind == "view" {
+            crate::saved_views::forget(c, &r.id)?;
+        }
         worker::allow_delete(c, r)?;
         if kind == "chat" {
             crate::chat::before_delete(c, r)?;
@@ -94,6 +104,20 @@ fn write_inner(
         return Ok(as_value(r.clone()));
     }
     let mut patch = fields_object(q.get("fields"))?;
+    match kind {
+        "comment" => {
+            crate::discussions::protect(c, &mut patch, old.as_ref(), from_source)?;
+            if let Some(agent) = agent {
+                patch.insert("authored_by_agent".into(), json!(agent));
+            }
+        }
+        "task" => crate::task_fields::prepare_task(c, old.as_ref(), &mut patch, q, from_source)?,
+        "task_type" => crate::task_fields::prepare_type(c, old.as_ref(), &mut patch, q)?,
+        "view" if patch.contains_key("personally_pinned") => {
+            return Err(invalid("use view.organize for personal order"));
+        }
+        _ => {}
+    }
     let infer_iteration = kind == "task" && !from_source && !patch.contains_key("iteration");
     let explicit_unplanned = kind == "task" && patch.get("iteration").is_some_and(Value::is_null);
     if kind == "iteration" {
@@ -196,7 +220,13 @@ fn write_inner(
         created_at: at,
         updated_at: at,
     };
-    validate(c, old.as_ref(), &mut row, from_source)?;
+    validate(
+        c,
+        old.as_ref(),
+        &mut row,
+        from_source,
+        from_source && q["preserve_source_status"] == true,
+    )?;
     if infer_iteration {
         crate::iterations::auto_assign(c, old.as_ref(), &mut row)?;
     }
@@ -371,6 +401,7 @@ fn validate(
     old: Option<&Record>,
     row: &mut Record,
     from_source: bool,
+    historical: bool,
 ) -> Result<()> {
     if row.kind == "iteration" {
         crate::iterations::manual_fields(c, old, row, from_source)?;
@@ -405,7 +436,7 @@ fn validate(
             }
         }
         "tag" | "tag_group" => return crate::tags::validate(c, old, row),
-        "task" => validate_task(c, old, &row.id, f)?,
+        "task" => validate_task(c, old, &row.id, f, historical)?,
         "agent" => {
             if old.is_none() && f["agent_type"].is_null() {
                 let space = c.get("space", c.space)?;
@@ -670,6 +701,7 @@ fn validate(
         }
     }
     if row.kind == "chat" {
+        crate::chat::check_binding(c, old, row)?;
         crate::chat::validate(old, row)?;
     }
     Ok(())

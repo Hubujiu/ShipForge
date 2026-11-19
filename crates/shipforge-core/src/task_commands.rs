@@ -110,7 +110,8 @@ pub(crate) fn move_task(c: &Context<'_>, q: &Value) -> Result<Value> {
     {
         f["status"] = Value::Null;
     }
-    tasks::validate_task(&target, None, &old.id, &mut f)?;
+    tasks::validate_task(&target, None, &old.id, &mut f, true)?;
+    crate::task_fields::validate_destination(&target, &f)?;
     f["labels"] = retained_labels;
     let retired: i64 =
         c.db.query_row(

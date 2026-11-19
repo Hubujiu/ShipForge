@@ -57,7 +57,7 @@ fn main() {
         }
         if arg == "--help" || arg == "-h" {
             print_information(
-                "ShipForge Windows 工作台\nshipforge-desktop [--data-dir <目录>] [--demo] [--smoke-test] [--open-invitation <邀请链接>]\n--demo 使用内存示例数据。",
+                "ShipForge Windows 工作台\nshipforge-desktop [--data-dir <目录>] [--demo] [--smoke-test] [--open-link <视图或邀请链接>]\n--demo 使用内存示例数据。",
             );
             return;
         }
@@ -65,20 +65,21 @@ fn main() {
             smoke = true;
         } else if arg == "--demo" {
             demo = true;
-        } else if arg == "--open-invitation" {
+        } else if arg == "--open-invitation" || arg == "--open-link" {
             invitation = args
                 .next()
                 .and_then(|arg| arg.into_string().ok())
                 .filter(|s| {
-                    s.strip_prefix("shipforge://invite/").is_some_and(|body| {
-                        body.len() == 80
-                            && body.bytes().all(|b| {
-                                b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_')
-                            })
-                    })
+                    shipforge_core::view_link_parts(s).is_ok()
+                        || s.strip_prefix("shipforge://invite/").is_some_and(|body| {
+                            body.len() == 80
+                                && body.bytes().all(|b| {
+                                    b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_')
+                                })
+                        })
                 });
             if invitation.is_none() || args.next().is_some() {
-                print_information("邀请链接无效");
+                print_information("ShipForge 链接无效");
                 std::process::exit(2);
             }
         } else if arg == "--data-dir" {
@@ -137,7 +138,11 @@ fn main() {
                 cx.new(|cx| {
                     let mut workbench = Workbench::new(dir.clone(), demo, smoke, window, cx);
                     if let Some(link) = invitation.clone() {
-                        workbench.open_invitation(link, window, cx);
+                        if link.starts_with("shipforge://view/") {
+                            workbench.open_view_link(link);
+                        } else {
+                            workbench.open_invitation(link, window, cx);
+                        }
                     }
                     workbench
                 })

@@ -22,6 +22,7 @@ pub enum Request {
         stop: bool,
     },
     Read {
+        chat: Option<String>,
         generation: u64,
         space: String,
         kinds: Vec<String>,
@@ -33,8 +34,10 @@ pub enum Request {
     Connect {
         url: String,
         token: String,
+        account: Option<String>,
         ticket: u64,
     },
+    RememberAccount(Value),
     Disconnect {
         ticket: u64,
     },
@@ -50,7 +53,7 @@ pub enum Request {
     },
 }
 pub enum Event {
-    Ready(Result<String, String>),
+    Ready(Result<(String, Value), String>),
     Rows {
         generation: u64,
         space: String,
@@ -84,17 +87,20 @@ impl Backend {
                         Ok(c)
                     });
                 }
-                let report = |client: &Result<Client, String>| {
-                    client
-                        .as_ref()
-                        .map(|c| if demo { "demo" } else { c.mode() }.to_owned())
-                        .map_err(Clone::clone)
+                let report = |client: &mut Result<Client, String>| {
+                    let c=client.as_mut().map_err(|e|e.clone())?;
+                    let session=if demo{Value::Null}else{c.desktop_session()?};
+                    Ok((if demo { "demo" } else { c.mode() }.to_owned(),session))
                 };
-                if events.send(Event::Ready(report(&client))).is_err() {
+                if events.send(Event::Ready(report(&mut client))).is_err() {
                     return;
                 }
                 while let Ok(request) = requests.recv() {
                     match request {
+                        Request::RememberAccount(command)=>{
+                            // A stale window cannot overwrite the active account's saved route.
+                            let _=execute(&mut client,command);
+                        }
                         Request::Machine {
                             ticket,
                             space,
@@ -109,6 +115,7 @@ impl Backend {
                             let _ = events.send(Event::Reply { ticket, result });
                         }
                         Request::Read {
+                            chat,
                             generation,
                             space,
                             kinds,
@@ -118,6 +125,10 @@ impl Backend {
                             for kind in kinds {
                                 let command = if kind == "catalog" {
                                     json!({"op":"catalog.list","space":space})
+                                } else if kind=="message" && let Some(id)=chat.as_ref(){
+                                    json!({"op":"chat.history","space":space,"id":id})
+                                } else if kind == "chat_sidebar" {
+                                    json!({"op":"chat.sidebar","space":space})
                                 } else if kind == "chat_invitation" {
                                     json!({"op":"chat.invitations","space":space})
                                 } else if kind == "member_invitation" {
@@ -126,6 +137,8 @@ impl Backend {
                                     json!({"op":"space.list"})
                                 } else if kind == "iteration" {
                                     json!({"op":"iteration.timeline","space":space})
+                                } else if kind=="view" {
+                                    json!({"op":"view.catalog","space":space})
                                 } else if kind == "iteration_settings" {
                                     json!({"op":"iteration.settings","space":space})
                                 } else {
@@ -141,13 +154,26 @@ impl Backend {
                                         .map_err(|e| e.to_string())
                                 });
                                 match result {
-                                    Ok(records) => {
+                                    Ok(mut records) => {
+                                        if kind=="chat" && let Some(id)=chat.as_ref() && !records.iter().any(|r|&r.id==id)
+                                            && let Ok(room)=execute(&mut client,json!({"op":"get","kind":"chat","space":space,"id":id}))
+                                            && let Ok(room)=serde_json::from_value(room){records.push(room);}
                                         data.insert(kind, records);
                                     }
                                     Err(error) => {
                                         errors.insert(kind, error);
                                     }
                                 }
+                            }
+                            if let Ok(c) = &mut client
+                                && c.mode()=="team"
+                                && errors.values().any(|e|e.starts_with("unauthorized:"))
+                                && std::env::var_os("SHIPFORGE_SERVER").is_none()
+                                && let Ok((mode,session))=report(&mut client)
+                                && session["needs_login"]==true
+                            {
+                                let _=events.send(Event::Ready(Ok((mode,session))));
+                                continue;
                             }
                             if let Ok(c) = &mut client
                                 && c.mode() == "team"
@@ -193,12 +219,14 @@ impl Backend {
                             {
                                 command["queue_if_offline"] = json!(true);
                             }
+                            let profile_change=matches!(command["op"].as_str(),Some("profiles.use"|"profiles.forget"));
                             let result = execute(&mut client, command);
+                            if profile_change && result.is_ok(){let _=events.send(Event::Ready(report(&mut client)));}
                             if events.send(Event::Reply { ticket, result }).is_err() {
                                 break;
                             }
                         }
-                        Request::Connect { url, token, ticket } => {
+                        Request::Connect { url, token, account, ticket } => {
                             let result = if demo {
                                 Err("演示空间使用内存数据。请打开正式工作台连接团队。".to_owned())
                             } else {
@@ -208,15 +236,14 @@ impl Backend {
                                     .and_then(|directory| {
                                         Client::remote_in(&directory, &url, &token)
                                     })
-                                    .and_then(|mut new| {
-                                        new.execute(json!({"op":"space.list"}))?;
-                                        Client::save_connection(dir.as_deref(), &url, &token)?;
+                                    .and_then(|new| {
+                                        Client::sign_in(dir.as_deref(), &url, &token,account.as_deref())?;
                                         client = Ok(new);
                                         Ok(Value::Null)
                                     })
                             };
                             if result.is_ok() {
-                                let _ = events.send(Event::Ready(report(&client)));
+                                let _ = events.send(Event::Ready(report(&mut client)));
                             }
                             let _ = events.send(Event::Reply { ticket, result });
                         }
@@ -228,7 +255,7 @@ impl Backend {
                                     Value::Null
                                 });
                             if result.is_ok() {
-                                let _ = events.send(Event::Ready(report(&client)));
+                                let _ = events.send(Event::Ready(report(&mut client)));
                             }
                             let _ = events.send(Event::Reply { ticket, result });
                         }

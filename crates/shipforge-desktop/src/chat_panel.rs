@@ -1,6 +1,154 @@
 use super::*;
+use crate::app::chat_actions::{self, Action};
 
 impl Workbench {
+    pub(crate) fn chat_row_actions(&self, room: &Record, cx: &Context<Self>) -> Div {
+        let pinned = room
+            .fields
+            .get("sidebar")
+            .is_some_and(|v| v["pinned"] == true);
+        let label = if pinned { "取消置顶" } else { "置顶" };
+        row()
+            .gap(px(6.))
+            .child(
+                outlined(self.button(
+                    format!("chat-pin-{}", room.id),
+                    label,
+                    chat_actions::organize(room, if pinned { "unpin" } else { "pin" }),
+                    cx,
+                ))
+                .child(crate::locale::label(label)),
+            )
+            .child(
+                outlined(self.button(
+                    format!("chat-hide-{}", room.id),
+                    "不显示",
+                    chat_actions::organize(room, "hide"),
+                    cx,
+                ))
+                .child(crate::locale::label("不显示")),
+            )
+    }
+    fn chat_list_row(&self, room: &Record, compact: bool, cx: &Context<Self>) -> Div {
+        let target = room.clone();
+        let menu = room.clone();
+        let prefix = if compact { "side" } else { "page" };
+        let hover = SharedString::from(format!("chat-row-{prefix}-{}", room.id));
+        let mut line = row()
+            .gap(px(3.))
+            .min_h(px(if compact { 29. } else { 43. }))
+            .w_full()
+            .group(hover.clone())
+            .on_mouse_down(
+                MouseButton::Right,
+                cx.listener(move |v, _, w, cx| {
+                    v.act(UiAction::Chat(Action::Row(menu.clone())), w, cx)
+                }),
+            )
+            .child(
+                self.button(
+                    format!("chat-{prefix}-{}", room.id),
+                    room.title.clone(),
+                    UiAction::OpenSearch(target),
+                    cx,
+                )
+                .min_w_0()
+                .flex_1()
+                .justify_start()
+                .child(icon(
+                    if room
+                        .fields
+                        .get("sidebar")
+                        .is_some_and(|v| v["pinned"] == true)
+                    {
+                        "pin"
+                    } else {
+                        "messages-square"
+                    },
+                    14.,
+                ))
+                .child(text(room.title.clone(), 13., INK).truncate()),
+            );
+        if compact {
+            line = line
+                .child(
+                    div()
+                        .invisible()
+                        .group_hover(hover, |el| el.visible())
+                        .child(self.tool_button(
+                            &format!("chat-hover-hide-{}", room.id),
+                            crate::locale::label("不显示"),
+                            "eye-off",
+                            chat_actions::organize(room, "hide"),
+                            cx,
+                        )),
+                )
+                .child(self.tool_button(
+                    &format!("chat-more-{}", room.id),
+                    crate::locale::label("对话列表操作"),
+                    "ellipsis",
+                    UiAction::Chat(Action::Row(room.clone())),
+                    cx,
+                ));
+        } else {
+            line = line.child(self.chat_row_actions(room, cx));
+        }
+        line
+    }
+    pub(crate) fn chat_sidebar_group(&self, cx: &Context<Self>) -> Div {
+        let mut group = col().min_w_0().mb(px(12.)).child(
+            self.button("open-chat-sidebar", "对话", UiAction::Go(Page::Chats), cx)
+                .justify_start()
+                .child(text("对话", 11., DIM)),
+        );
+        let rooms = self.list("chat_sidebar");
+        let fixed = rooms
+            .iter()
+            .take_while(|r| r.fields.get("sidebar").is_some_and(|s| s["pinned"] == true))
+            .count();
+        let max = fixed.max(12);
+        for room in rooms.iter().take(max) {
+            group = group.child(self.chat_list_row(room, true, cx));
+        }
+        if rooms.len() > max {
+            group = group.child(
+                self.button(
+                    "all-chat-sidebar",
+                    "全部对话",
+                    UiAction::Go(Page::Chats),
+                    cx,
+                )
+                .child(crate::locale::label("全部对话")),
+            );
+        }
+        group
+    }
+    pub(super) fn chat_list_page(&self, cx: &Context<Self>) -> impl IntoElement {
+        let mut list = col()
+            .id("chat-recent-list")
+            .flex_1()
+            .min_h_0()
+            .overflow_y_scroll()
+            .px(px(16.))
+            .gap(px(4.));
+        let mut last = None;
+        for room in self.list("chat_sidebar") {
+            let pinned = room
+                .fields
+                .get("sidebar")
+                .is_some_and(|state| state["pinned"] == true);
+            if last != Some(pinned) {
+                list = list
+                    .child(headline(if pinned { "已置顶" } else { "最近对话" }, 13.).pt(px(8.)));
+                last = Some(pinned);
+            }
+            list = list.child(self.chat_list_row(room, false, cx));
+        }
+        if self.list("chat_sidebar").is_empty() {
+            list = list.child(text("这里会显示你的对话。", 13., MUTED));
+        }
+        list
+    }
     pub(super) fn chat_invitations(&self, cx: &Context<Self>) -> Div {
         let open = outlined(self.button(
             "open-conversation-share",
@@ -44,14 +192,14 @@ impl Workbench {
         let managed = group || room.field("visibility") == "private";
         let owner = info["is_owner"] == true;
         let mut actions = row().flex_wrap().gap(px(6.));
-        let button = |id: &str, label: &str, action: UiAction| {
+        let button = |id: &str, label: &'static str, action: UiAction| {
             outlined(self.button(
                 format!("chat-{}-{id}", room.id),
-                label.to_owned(),
+                crate::locale::label(label),
                 action,
                 cx,
             ))
-            .child(label.to_owned())
+            .child(crate::locale::label(label))
         };
         if self.writable() && managed && (owner || !group) {
             let label = if owner {
@@ -79,6 +227,22 @@ impl Workbench {
             ));
         }
         if self.writable() && owner {
+            if chat_actions::agent_room(room)
+                && room.field("task").is_empty()
+                && room.field("task_id").is_empty()
+            {
+                actions = actions
+                    .child(button(
+                        "convert",
+                        "将对话转为任务",
+                        UiAction::Chat(Action::Convert(room.clone())),
+                    ))
+                    .child(button(
+                        "bind",
+                        "绑定到已有任务",
+                        UiAction::Form(Mode::BindChat(room.clone())),
+                    ));
+            }
             actions = actions.child(button(
                 "share",
                 "分享已选消息",
@@ -104,7 +268,7 @@ impl Workbench {
                 UiAction::Apply(cmd, "对话提醒已更新".into()),
             ));
         }
-        let confirm = |action: &str, label: &str| {
+        let confirm = |action: &str, label: &'static str| {
             button(
                 action,
                 label,

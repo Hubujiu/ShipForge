@@ -76,6 +76,15 @@ enum Action {
         #[arg(long)]
         watch: bool,
     },
+    /// Deliver mapped Bugly status changes from the durable queue.
+    BuglyDeliver {
+        #[arg(long, default_value = "default")]
+        space: String,
+        #[arg(long)]
+        connector: String,
+        #[arg(long)]
+        watch: bool,
+    },
     /// Import new and changed GitHub issues through an existing github connector.
     GithubSync {
         #[arg(long)]
@@ -150,6 +159,24 @@ fn execute() -> Result<serde_json::Value> {
                 .map(|s| json!({"name":s,"program":config::program_path(Path::new(s)).ok()}))
                 .collect::<Vec<_>>()
         )),
+        Action::BuglyDeliver {
+            space,
+            connector,
+            watch,
+        } => {
+            let mut client = Client::from_env()?;
+            loop {
+                let outcome =
+                    client.execute(json!({"op":"bugly.deliver","space":space,"id":connector}));
+                if !watch {
+                    return outcome;
+                }
+                if let Err(error) = outcome {
+                    eprintln!("{error}");
+                }
+                std::thread::sleep(std::time::Duration::from_secs(15));
+            }
+        }
         Action::GithubSync {
             config,
             connector,

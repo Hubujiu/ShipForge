@@ -28,6 +28,9 @@ pub fn new_title(noun: &str) -> String {
         format!("新建{noun}")
     }
 }
+pub fn undo_chat_hide() -> &'static str {
+    if ENGLISH.get() { "Undo" } else { "撤销" }
+}
 pub fn edit_title(noun: &str) -> String {
     if ENGLISH.get() {
         format!("Edit {}", label(noun))

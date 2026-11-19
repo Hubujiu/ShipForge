@@ -1,5 +1,7 @@
 # Windows 使用指南
 
+左侧账号按钮可以添加或切换团队身份。ShipForge 使用该账号最近访问的空间、任务或视图，缺少权限时返回可用空间。设置中的「个人访问令牌」可以给 CLI、Jira 或工作机签发有期限的个人凭据。[账号与令牌操作](cli.md)
+
 ## 安装和第一条任务
 
 1. 从 GitHub Release 下载当前版本的 Windows x64 安装程序（文件名以 `-windows-x64-setup.exe` 结尾），安装后在开始菜单打开 ShipForge。也可以将同一版本 ZIP 解压到可写目录，双击 `shipforge-desktop.exe`。[发布页](https://github.com/Hubujiu/ShipForge/releases)

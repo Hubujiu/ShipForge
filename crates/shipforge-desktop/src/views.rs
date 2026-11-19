@@ -1,20 +1,29 @@
 use crate::appearance::{paint as rgb, surface as white};
 use crate::{
     app::{UiAction, Workbench},
-    catalog::{PRIORITIES, Page, Record, STATUSES, TYPES, label_value, summary, value_text},
+    catalog::{PRIORITIES, Page, Record, STATUSES, label_value, summary, value_text},
     controls::*,
     forms::Mode,
     motion,
 };
-use gpui_kit::{prelude::*, *};
+use gpui_kit::{base::Button, prelude::*, *};
 use serde_json::{Value, json};
 #[path = "chat_panel.rs"]
 mod chat_panel;
 #[path = "planning.rs"]
 mod planning;
+#[path = "tokens_ui.rs"]
+mod tokens_ui;
 
 #[derive(Clone)]
 struct DraggedTask(Record, String);
+#[derive(Clone)]
+struct DraggedView(Record);
+impl Render for DraggedView {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        text(self.0.title.clone(), 13., INK)
+    }
+}
 impl Render for DraggedTask {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
         row()
@@ -91,6 +100,18 @@ impl Workbench {
             );
         }
         if p == Page::Machines && self.mode != "demo" {
+            if self.access_identity["scope"] == "write" && self.access_identity["personal"] == false
+            {
+                header = header.child(
+                    outlined(self.button(
+                        "machine-personal-token",
+                        "创建机器连接令牌",
+                        UiAction::NewPersonalToken(true),
+                        cx,
+                    ))
+                    .child(crate::locale::label("创建机器连接令牌")),
+                );
+            }
             header = header.child(
                 outlined(self.button("machine-probe", "扫描本机 Runtime", UiAction::Probe, cx))
                     .child(crate::locale::label("探测 Runtime")),
@@ -276,7 +297,7 @@ impl Workbench {
             Page::Market => root.child(self.market_page(cx)).into_any_element(),
             Page::Chats => root
                 .child(self.chat_invitations(cx))
-                .child(self.record_page(cx))
+                .child(self.chat_list_page(cx))
                 .into_any_element(),
             _ => root.child(self.record_page(cx)).into_any_element(),
         }
@@ -454,12 +475,37 @@ impl Workbench {
                 self.loc.task_type.is_empty(),
                 cx,
             ));
-            for (k, l) in TYPES.iter().copied() {
+            let types = self.options("$types");
+            for (k, l) in types.iter().filter(|_| types.len() > 1) {
                 tools = tools.child(self.pill(
                     format!("type-{k}"),
                     l,
-                    UiAction::TaskType(k.into()),
-                    self.loc.task_type == k,
+                    UiAction::TaskType(k.clone()),
+                    self.loc.task_type == *k,
+                    cx,
+                ));
+            }
+        }
+        if page == Page::Tasks {
+            let max_tabs = ((viewport - 470.) / 100.).clamp(0., 5.) as usize;
+            for view in self.list("view").iter().take(max_tabs) {
+                tools = tools.child(self.saved_view_tab(view, cx));
+            }
+            tools = tools.child(self.tool_button(
+                "more-saved-views",
+                "全部保存视图",
+                "ellipsis",
+                UiAction::Work(crate::app::workspace_ui::Action::ShowViews),
+                cx,
+            ));
+            if let Some(view) = &self.loc.view
+                && view.fields.get("can_edit_view") == Some(&json!(true))
+            {
+                tools = tools.child(self.tool_button(
+                    "save-current-view",
+                    "保存到当前视图",
+                    "save",
+                    UiAction::Work(crate::app::workspace_ui::Action::SaveChanges(view.clone())),
                     cx,
                 ));
             }
@@ -597,6 +643,66 @@ impl Workbench {
             }
             this.act(UiAction::Apply(json!({"op":"update","kind":"task","id":task.id,"expected_rev":task.rev,"fields":patch}),"任务已移动".into()),window,cx);
         }))
+    }
+    fn saved_view_tab(&self, v: &Record, cx: &Context<Self>) -> Button {
+        let label = if v.fields.get("personally_pinned") == Some(&json!(true)) {
+            format!("↑ {}", v.title)
+        } else {
+            v.title.clone()
+        };
+        let mut button = self
+            .button(
+                format!("saved-view-tab-{}", v.id),
+                label.clone(),
+                UiAction::OpenView(v.clone()),
+                cx,
+            )
+            .child(text(label, 12., INK));
+        if v.field("visibility") == "private" && v.field("creator") == self.actor {
+            let target = v.clone();
+            button = button
+                .on_drag(DraggedView(v.clone()), |drag, _, _, cx| {
+                    cx.new(|_| drag.clone())
+                })
+                .on_drop::<DraggedView>(cx.listener(
+                    move |this, drag: &DraggedView, window, cx| {
+                        if drag.0.id != target.id
+                            && drag.0.space == target.space
+                            && drag.0.fields.get("personally_pinned")
+                                == target.fields.get("personally_pinned")
+                        {
+                            this.act(
+                                UiAction::Apply(
+                                    json!({"op":"view.organize","id":drag.0.id,"before":target.id}),
+                                    "视图顺序已保存".into(),
+                                ),
+                                window,
+                                cx,
+                            );
+                        }
+                    },
+                ));
+        }
+        button
+    }
+    pub fn all_saved_views(&self, cx: &Context<Self>) -> Div {
+        let mut list = col().gap(px(4.)).child(
+            self.button(
+                "open-saved-view-link",
+                "打开视图链接",
+                UiAction::Form(Mode::Work(crate::app::workspace_ui::WorkForm::OpenView)),
+                cx,
+            )
+            .child("打开视图链接"),
+        );
+        for v in self.list("view") {
+            list = list.child(
+                row()
+                    .child(self.saved_view_tab(v, cx))
+                    .child(self.view_tools(v, cx)),
+            );
+        }
+        list
     }
     fn board(&self, tasks: &[Record], viewport: f32, cx: &Context<Self>) -> AnyElement {
         let group = self
@@ -1189,6 +1295,9 @@ impl Workbench {
                 b = b.child(chip(label_value("status", r.field("status")), PALE, MUTED));
             }
             if p == Page::Views {
+                b = b.child(self.view_tools(r, cx));
+            }
+            if p == Page::Views && r.fields.get("can_edit_view") == Some(&json!(true)) {
                 b = b.child(self.tool_button(
                     &format!("edit-view-{}", r.id),
                     "编辑视图",
@@ -1248,6 +1357,15 @@ impl Workbench {
                             .child(icon("cloud", 14.))
                             .child(crate::locale::label("连接团队服务")),
                     )
+                    .child(
+                        outlined(self.button(
+                            "settings-accounts",
+                            "账号列表",
+                            UiAction::Accounts,
+                            cx,
+                        ))
+                        .child(crate::locale::label("账号列表")),
+                    )
                     .when(self.mode == "team", |row| {
                         row.child(
                             outlined(self.button(
@@ -1259,16 +1377,43 @@ impl Workbench {
                             .child(crate::locale::label("切换到本机")),
                         )
                     })
-                    .when(self.mode == "team" && self.writable(), |row| {
+                    .when(self.mode == "team", |row| {
                         row.child(
-                            outlined(self.button("issue-token", "签发令牌", UiAction::Grant, cx))
+                            outlined(self.button(
+                                "personal-tokens",
+                                "个人访问令牌",
+                                UiAction::PersonalTokens,
+                                cx,
+                            ))
+                            .child(crate::locale::label("个人访问令牌")),
+                        )
+                    })
+                    .when(
+                        self.mode == "team"
+                            && self.access_identity["actor"] == "owner"
+                            && self.access_identity["scope"] == "write"
+                            && self.access_identity["personal"] == false,
+                        |row| {
+                            row.child(
+                                outlined(self.button(
+                                    "issue-token",
+                                    "签发令牌",
+                                    UiAction::Grant,
+                                    cx,
+                                ))
                                 .child(crate::locale::label("签发令牌")),
-                        )
-                        .child(
-                            outlined(self.button("list-tokens", "管理令牌", UiAction::Tokens, cx))
+                            )
+                            .child(
+                                outlined(self.button(
+                                    "list-tokens",
+                                    "管理令牌",
+                                    UiAction::Tokens,
+                                    cx,
+                                ))
                                 .child(crate::locale::label("管理令牌")),
-                        )
-                    }),
+                            )
+                        },
+                    ),
             );
         }
         if self.mode == "team" {
@@ -1321,6 +1466,12 @@ impl Workbench {
                 buttons=buttons.child(self.button(format!("remove-draft-{index}"),"舍弃草稿",UiAction::Form(Mode::Confirm{label:format!("舍弃草稿「{title}」"),command:json!({"op":"sync.resolve","id":draft["request_id"],"discard":true})}),cx).child(crate::locale::label("舍弃")));
                 page = page.child(item.child(buttons));
             }
+        }
+        if self.loc.section == "accounts" && self.mode != "demo" {
+            page = page.child(self.account_panel(cx));
+        }
+        if self.loc.section == "personal_tokens" && self.mode == "team" {
+            page = page.child(self.personal_tokens_panel(cx));
         }
         if self.loc.section == "tokens" {
             for t in &self.tokens {
@@ -1641,7 +1792,7 @@ impl Workbench {
                 }
                 body = body
                     .child(headline("评论与活动", 14.))
-                    .child(self.thread_items("comment", "task", &r.id, cx));
+                    .child(self.discussion_panel(r, cx));
                 let children: Vec<_> = self
                     .list("task")
                     .iter()
@@ -1671,9 +1822,25 @@ impl Workbench {
                         }
                     }
                 }
+                for room in self
+                    .list("chat")
+                    .iter()
+                    .filter(|room| room.field("task") == r.id || room.field("task_id") == r.id)
+                {
+                    body = body.child(self.related_row(room, cx));
+                }
                 body = self.related_runs(body, r, cx);
             }
             "chat" => {
+                if let Some(id) = r
+                    .fields
+                    .get("task")
+                    .or(r.fields.get("task_id"))
+                    .and_then(Value::as_str)
+                    && let Some(task) = self.find("task", id)
+                {
+                    body = body.child(self.related_row(task, cx));
+                }
                 if let Some(info) = r.fields.get("conversation") {
                     body = body.child(self.chat_controls(r, info, cx));
                 }
@@ -1693,7 +1860,9 @@ impl Workbench {
                     .child(actions)
                     .child(headline("消息", 14.))
                     .child(self.thread_items("message", "chat", &r.id, cx));
-                if r.fields.get("task").is_some_and(Value::is_string) {
+                if crate::app::chat_actions::agent_room(r)
+                    || r.fields.get("task").is_some_and(Value::is_string)
+                {
                     body = self.related_runs(body, r, cx);
                 }
             }
@@ -1853,6 +2022,32 @@ impl Workbench {
             "connector" | "tool" => {
                 let ops: &[&str] = if r.kind == "tool" {
                     &["tool.authorize"]
+                } else if r.field("provider") == "zoho" {
+                    &[
+                        "zoho.credential",
+                        "zoho.projects",
+                        "zoho.preview",
+                        "imports.commit",
+                        "imports.history",
+                        "imports.rollback",
+                    ]
+                } else if r.field("provider") == "tapd" {
+                    &[
+                        "tapd.credential",
+                        "tapd.projects",
+                        "tapd.preview",
+                        "imports.commit",
+                        "imports.history",
+                        "imports.rollback",
+                    ]
+                } else if r.field("provider") == "bugly" {
+                    &[
+                        "bugly.rotate",
+                        "bugly.revoke",
+                        "bugly.credentials",
+                        "bugly.outbox",
+                        "bugly.deliver",
+                    ]
                 } else {
                     &[
                         "provider.preview",
@@ -2122,6 +2317,29 @@ impl Workbench {
                     .child(text(if v.is_empty() { "—".into() } else { v }, 12., INK)),
             );
         }
+        if let Some(bindings) = self
+            .find("task_type", r.field("type"))
+            .and_then(|ty| ty.fields.get("field_bindings"))
+            .and_then(Value::as_array)
+        {
+            for b in bindings.iter().filter(|b| b["enabled"] != false) {
+                if let Some(id) = b["field"].as_str() {
+                    let value = r
+                        .fields
+                        .get("custom")
+                        .and_then(|v| v.get(id))
+                        .map(value_text)
+                        .filter(|v| !v.is_empty())
+                        .unwrap_or_else(|| "—".into());
+                    props = props.child(
+                        row()
+                            .gap(px(6.))
+                            .child(text(self.name("field", id), 12., MUTED).w(px(82.)))
+                            .child(text(value, 12., INK)),
+                    );
+                }
+            }
+        }
         if self.writable() {
             let mut actions = row().flex_wrap().pt(px(8.)).gap(px(4.));
             if r.field("status") == "triage" {
@@ -2203,6 +2421,15 @@ impl Workbench {
                             r.field("external_provider"),
                             r.field("external_author")
                         )
+                    } else if kind == "message" && !r.field("author").is_empty() {
+                        self.name(
+                            if r.field("author_kind") == "agent" {
+                                "agent"
+                            } else {
+                                "member"
+                            },
+                            r.field("author"),
+                        )
                     } else {
                         self.name("member", r.field("creator"))
                     },
@@ -2231,6 +2458,27 @@ impl Workbench {
                     ))
                     .child(icon("arrow-right", 13.))
                     .child(crate::locale::label("查看源记录")),
+                );
+            }
+            if kind == "message"
+                && self.writable()
+                && self
+                    .loc
+                    .selected
+                    .as_ref()
+                    .is_some_and(crate::app::chat_actions::agent_room)
+            {
+                item = item.child(
+                    outlined(self.button(
+                        format!("fork-message-{}", r.id),
+                        "从此消息分叉",
+                        UiAction::Chat(crate::app::chat_actions::Action::Fork {
+                            room: id.to_owned(),
+                            message: r.id.clone(),
+                        }),
+                        cx,
+                    ))
+                    .child(crate::locale::label("从此消息分叉")),
                 );
             }
             col = col.child(item);

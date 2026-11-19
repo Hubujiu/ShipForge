@@ -1,6 +1,8 @@
+mod accounts;
 mod credentials;
 mod files;
 mod remote;
+mod vendors;
 
 pub use files::{save_attachment, upload_file};
 
@@ -16,6 +18,7 @@ enum Backend {
 
 pub struct Client {
     backend: Backend,
+    directory: Option<PathBuf>,
 }
 
 /// Complete request schema at the desktop / CLI boundary, including transport commands.
@@ -27,11 +30,26 @@ pub fn schema() -> Value {
             "access.issue",
             "access.list",
             "access.revoke",
+            "access.personal.issue",
+            "access.personal.list",
+            "access.personal.revoke",
+            "profiles.list",
+            "profiles.use",
+            "profiles.forget",
+            "profiles.remember",
             "sync.status",
             "sync.pending",
             "sync.enqueue",
             "sync.flush",
             "sync.resolve",
+            "zoho.projects",
+            "zoho.preview",
+            "bugly.deliver",
+            "zoho.credential",
+            "bugly.credentials",
+            "tapd.projects",
+            "tapd.preview",
+            "tapd.credential",
         ] {
             operations.push(json!(name));
         }
@@ -50,11 +68,27 @@ pub fn schema() -> Value {
     for (op, required) in [
         ("access.issue", vec!["actor", "scope"]),
         ("access.revoke", vec!["id"]),
+        ("access.personal.issue", vec!["label"]),
+        ("access.personal.revoke", vec!["id"]),
+        ("profiles.use", vec!["id"]),
+        ("profiles.forget", vec!["id"]),
+        ("profiles.remember", vec!["id", "location"]),
         ("sync.enqueue", vec!["request"]),
         ("sync.resolve", vec!["id"]),
+        ("zoho.projects", vec!["id"]),
+        ("zoho.preview", vec!["id"]),
+        ("bugly.deliver", vec!["id"]),
+        ("zoho.credential", vec!["id"]),
+        ("bugly.credentials", vec!["id"]),
+        ("tapd.projects", vec!["id"]),
+        ("tapd.preview", vec!["id"]),
+        ("tapd.credential", vec!["id"]),
     ] {
         rules.push(json!({"if":{"properties":{"op":{"const":op}}},"then":{"required":required}}));
     }
+    rules.push(json!({"if":{"properties":{"op":{"const":"access.personal.issue"}}},
+        "then":{"properties":{"lifetime":{"enum":["30d","90d","1y","never"]},"source":{"enum":["personal","machine_setup"]},
+        "label":{"type":"string","minLength":1,"maxLength":100}},"not":{"anyOf":[{"required":["actor"]},{"required":["scope"]}]}}}));
     schema
 }
 
@@ -128,7 +162,7 @@ impl Client {
             std::env::var("SHIPFORGE_TOKEN").ok(),
         ) {
             (Some(url), Some(token)) => Self::remote_in(&dir, &url, &token),
-            (None, None) => match credentials::Connection::read(&dir)? {
+            (None, None) => match accounts::connection(&dir)? {
                 Some((url, token)) => Self::remote_in(&dir, &url, &token),
                 None => Self::local(&dir),
             },
@@ -140,11 +174,13 @@ impl Client {
     pub fn local(directory: &Path) -> Result<Self, String> {
         Ok(Self {
             backend: Backend::Local(Store::open(&directory.join("workspace.sqlite3"))?),
+            directory: Some(directory.to_path_buf()),
         })
     }
     pub fn memory() -> Result<Self, String> {
         Ok(Self {
             backend: Backend::Local(Store::memory()?),
+            directory: None,
         })
     }
     pub fn remote(url: &str, token: &str) -> Result<Self, String> {
@@ -153,28 +189,45 @@ impl Client {
     pub fn remote_in(directory: &Path, url: &str, token: &str) -> Result<Self, String> {
         Ok(Self {
             backend: Backend::Remote(Box::new(remote::Remote::new(directory, url, token)?)),
+            directory: Some(directory.to_path_buf()),
         })
     }
     pub fn save_connection(directory: Option<&Path>, url: &str, token: &str) -> Result<(), String> {
+        Self::sign_in(directory, url, token, None)
+    }
+    pub fn sign_in(
+        directory: Option<&Path>,
+        url: &str,
+        token: &str,
+        expected: Option<&str>,
+    ) -> Result<(), String> {
         let location = match directory {
             Some(p) => p.to_owned(),
             None => data_dir()?,
         };
         let normalized = remote::endpoint(url, token)?;
         let mut client = Self::remote_in(&location, &normalized, token)?;
-        client.execute(json!({"op":"access.whoami"}))?;
-        credentials::Connection::save(&location, &normalized, token)
+        let who = client.execute(json!({"op":"access.whoami"}))?;
+        let actor = who["actor"]
+            .as_str()
+            .ok_or("server: missing account identity")?;
+        accounts::save(&location, &normalized, token, actor, expected)
     }
     pub fn forget_connection(directory: Option<&Path>) -> Result<(), String> {
         let location = match directory {
             Some(p) => p.to_owned(),
             None => data_dir()?,
         };
-        match std::fs::remove_file(location.join("connection.json")) {
-            Ok(()) => Ok(()),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-            Err(e) => Err(format!("storage: {e}")),
+        accounts::logout(&location, None)
+    }
+    pub fn desktop_session(&mut self) -> Result<Value, String> {
+        let Some(dir) = self.directory.clone() else {
+            return Ok(Value::Null);
+        };
+        if std::env::var_os("SHIPFORGE_SERVER").is_some() {
+            return Ok(Value::Null);
         }
+        accounts::startup(&dir, self)
     }
     pub fn mode(&self) -> &'static str {
         match self.backend {
@@ -183,6 +236,53 @@ impl Client {
         }
     }
     pub fn execute(&mut self, request: Value) -> Result<Value, String> {
+        if let Some(op) = request["op"]
+            .as_str()
+            .filter(|op| op.starts_with("profiles."))
+        {
+            let dir = self
+                .directory
+                .clone()
+                .ok_or("invalid: saved accounts need a device profile")?;
+            if op == "profiles.list" {
+                return accounts::list(&dir);
+            }
+            if std::env::var_os("SHIPFORGE_SERVER").is_some() {
+                return Err("invalid: this connection is controlled by SHIPFORGE_SERVER".into());
+            }
+            let id = request["id"]
+                .as_str()
+                .ok_or("invalid: expected account id")?;
+            return match op {
+                "profiles.use" => {
+                    let (new, login) = accounts::switch(&dir, id)?;
+                    *self = new;
+                    Ok(login)
+                }
+                "profiles.forget" => {
+                    accounts::logout(&dir, Some(id))?;
+                    *self = Self::from_dir(Some(&dir))?;
+                    accounts::list(&dir)
+                }
+                "profiles.remember" => accounts::remember(&dir, &request),
+                _ => Err("invalid: unknown saved account operation".into()),
+            };
+        }
+        if matches!(
+            request["op"].as_str(),
+            Some(
+                "zoho.projects"
+                    | "zoho.preview"
+                    | "bugly.deliver"
+                    | "zoho.credential"
+                    | "bugly.credentials"
+                    | "tapd.projects"
+                    | "tapd.preview"
+                    | "tapd.credential"
+            )
+        ) {
+            return vendors::execute(self, &request);
+        }
         if request["op"] == "schema" {
             return Ok(schema());
         }

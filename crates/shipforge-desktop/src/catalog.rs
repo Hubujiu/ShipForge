@@ -38,7 +38,8 @@ pub fn value_text(v: &Value) -> String {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum Page {
     GettingStarted,
     Tags,

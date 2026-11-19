@@ -18,6 +18,7 @@ pub(super) fn validate(c: &Context<'_>, r: &Record) -> Result<()> {
     if r.kind == "connector" {
         c.require_admin()?;
         crate::vcs::validate(f)?;
+        crate::vendors::validate(c, r)?;
         crate::task_commands::source_members::validate_map(c, f)?;
         if f.get("slack_assignment")
             .is_some_and(|value| !value.is_boolean())
