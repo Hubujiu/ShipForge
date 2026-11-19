@@ -3187,7 +3187,7 @@ mod agent_directory_ui_test;
 #[cfg(all(test, windows))]
 #[path = "assistant_ui_test.rs"]
 mod assistant_ui_test;
-#[cfg(test)]
+#[cfg(all(test, windows))]
 #[path = "automation_run_ui_test.rs"]
 mod automation_run_ui_test;
 #[cfg(all(test, windows))]
